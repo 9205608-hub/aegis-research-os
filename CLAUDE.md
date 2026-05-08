@@ -5,7 +5,7 @@
 端到端自动化股票研报生成系统。从 ticker 出发，拉财报数据 → 归一化 → 计算指标 → DCF 估值 → 7 位 LLM 智能体分析 → 批评审核 → 发布门槛 → 论点合成 → 报告编辑 → HTML 输出。
 
 **数据覆盖**: 美股 (SEC EDGAR XBRL) + A 股 (akshare / eastmoney / yfinance fallback)
-**LLM 后端**: Kimi k2.6 (默认)，可切 sonnet / subprocess
+**LLM 后端**: DeepSeek V4 Pro (默认，OpenAI-compatible，国内直连)，可切 sdk (Claude Max) / subprocess
 **入口**: `./run_research.sh <TICKER>`
 
 ## 开工前必读
@@ -73,7 +73,7 @@ LLM 会在叙述里编算术式不闭合的数字（例："净负债 47 亿 = �
 ./run_research.sh 301358
 
 # 从 cache 快速重渲染（不重跑 LLM agent，约 1 秒）
-export KIMI_API_KEY="..."  # Editor 需要
+export DEEPSEEK_API_KEY="..."  # Editor 需要
 python scripts/replay_from_cache.py 301358 --allow-stale
 python scripts/replay_from_cache.py 301358 --allow-stale --editor  # 顺带重跑 Report Editor
 ```
@@ -82,7 +82,7 @@ python scripts/replay_from_cache.py 301358 --allow-stale --editor  # 顺带重�
 
 - Python 3.12 (miniforge)
 - 关键包: `yfinance` `akshare` `openbb` `pydantic` `pandas`
-- LLM: Kimi API key 在 `run_research.sh` 里硬编码（注意不要误提交外部仓库）
+- LLM: 通过 `DEEPSEEK_API_KEY` 环境变量传入（建议在 `~/.zshrc` 或本地 `run_research.local.sh` 中 export，**不要**把真实 key 提交到仓库）
 - **网络环境**: 用户在中国大陆 + Clash Verge 代理。`.cn` / `eastmoney.com` 域名需要 bypass 代理 —— `akshare_connector._no_proxy()` 里有处理。`push2.eastmoney.com` 在当前代理配置下仍然不可达（已知遗留问题）
 - **LLM 偏好**: 优先用 Claude Max 订阅（SDK/OAuth），不要提议申请新的独立 API key
 

@@ -37,16 +37,14 @@ def main():
     parser.add_argument("--output-dir", default=None, help="Output directory for reports")
     parser.add_argument("--llm", action="store_true", help="Use LLM-powered agents (auto-detects best backend)")
     parser.add_argument("--model", default="sonnet", help="LLM model: sonnet, opus, haiku (default: sonnet)")
-    parser.add_argument("--backend", default="auto", choices=["auto", "sdk", "subprocess", "kimi", "deepseek"],
-                        help="LLM backend: auto (default), sdk (Anthropic API), subprocess (claude CLI), kimi (Moonshot), deepseek (DeepSeek)")
-    parser.add_argument("--kimi-key", default=None, help="Kimi API key (or set KIMI_API_KEY env var)")
-    parser.add_argument("--kimi-model", default="k2.6", help="Kimi model: k2.6 (default, latest 2026-04-13), k2.5, moonshot-v1-8k/32k/128k")
+    parser.add_argument("--backend", default="auto", choices=["auto", "sdk", "subprocess", "deepseek"],
+                        help="LLM backend: auto (default), sdk (Anthropic API), subprocess (claude CLI), deepseek (DeepSeek)")
     parser.add_argument("--deepseek-key", default=None, help="DeepSeek API key (or set DEEPSEEK_API_KEY env var)")
     parser.add_argument("--deepseek-model", default="deepseek-v4-pro", help="DeepSeek model: deepseek-v4-pro (default, flagship), deepseek-v4-flash (faster/cheaper)")
     parser.add_argument("--fast-agents", action="store_true",
-                        help="Use cheaper model (k2.5) for specialist agents, keep k2.6 for synthesizer/editor")
-    parser.add_argument("--fast-agent-model", default="k2.5",
-                        help="Model for specialist agents in fast mode (default: k2.5)")
+                        help="Use cheaper model (deepseek-v4-flash) for specialist agents, keep flagship for synthesizer/editor")
+    parser.add_argument("--fast-agent-model", default="deepseek-v4-flash",
+                        help="Model for specialist agents in fast mode (default: deepseek-v4-flash)")
     parser.add_argument("--fast", action="store_true",
                         help="Fast pipeline: override Director's DEEP designations to standard "
                              "(skips narrative_supplement) and runs iterative re-analysis at "
@@ -94,8 +92,6 @@ def main():
         use_llm=args.llm,
         llm_model=args.model,
         llm_backend=args.backend,
-        kimi_api_key=args.kimi_key,
-        kimi_model=args.kimi_model,
         deepseek_api_key=args.deepseek_key,
         deepseek_model=args.deepseek_model,
         fast_agents=args.fast_agents,
@@ -121,7 +117,7 @@ def main():
     if config.use_llm:
         print(f"  LLM Mode: {config.llm_model} (backend: {config.llm_backend})")
         if config.fast_agents:
-            print(f"  Fast Agents: {config.fast_agent_model} (premium: {config.kimi_model})")
+            print(f"  Fast Agents: {config.fast_agent_model} (premium: {config.deepseek_model})")
     print()
 
     orchestrator = AutoResearchOrchestrator()

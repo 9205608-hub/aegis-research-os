@@ -32,7 +32,7 @@ Run a research report:
 Configure secrets through environment variables. Do not commit live keys.
 
 - `SEC_USER_AGENT`
-- `KIMI_API_KEY`
+- `DEEPSEEK_API_KEY`
 - `FMP_API_KEY`
 - `FRED_API_KEY`
 

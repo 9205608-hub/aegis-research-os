@@ -15,7 +15,7 @@ class LLMMode(str, Enum):
     LIVE = "live"
     SUBPROCESS = "subprocess"  # Use claude CLI
     SDK = "sdk"  # Use Anthropic SDK with OAuth token (Claude Max subscription)
-    KIMI = "kimi"  # Use Moonshot/Kimi API (low cost, China-direct) — primary
+    DEEPSEEK = "deepseek"  # Use DeepSeek V4 API (low cost, China-direct) — primary
 
 
 @dataclass(frozen=True)
@@ -111,13 +111,6 @@ class UsageRecord:
             return (self.input_tokens * 3 + self.output_tokens * 15) / 1_000_000
         if "haiku" in m:
             return (self.input_tokens * 0.8 + self.output_tokens * 4) / 1_000_000
-        # Kimi / Moonshot — K2.6 (current) and K2.5 (legacy)
-        if "k2.6" in m or "kimi-k2.6" in m:
-            # K2.6 Code (2026-04-13): $0.60 / $2.50 per M token
-            return (self.input_tokens * 0.60 + self.output_tokens * 2.50) / 1_000_000
-        if "kimi" in m or "moonshot" in m or m.startswith("k2"):
-            # K2.5 / Moonshot v1 legacy rates
-            return (self.input_tokens * 0.15 + self.output_tokens * 2.50) / 1_000_000
         # DeepSeek — V4 (deepseek-v4-pro / deepseek-v4-flash) and legacy
         # V3 IDs. Published rate cards (2026-Q2):
         #   deepseek-v4-pro:     $0.27 in (miss) / $0.07 in (hit) / $1.10 out
@@ -184,7 +177,7 @@ class CostTracker:
             "estimated_cost_usd": round(self.total_cost_usd, 4),
         }
         # Only surface reasoning stats if the run actually used a thinking
-        # model — otherwise this clutters non-DeepSeek/Kimi summaries.
+        # model — otherwise this clutters non-DeepSeek summaries.
         rt = self.total_reasoning_tokens
         if rt:
             out["reasoning_tokens"] = rt

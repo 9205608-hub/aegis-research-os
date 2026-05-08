@@ -1,6 +1,6 @@
 """Robust coercion helpers for LLM output parse boundaries.
 
-LLM outputs (DeepSeek V4, Kimi k2.6, Claude tool_use) occasionally serialize
+LLM outputs (DeepSeek V4, Claude tool_use) occasionally serialize
 list-typed schema fields as STRINGS containing JSON arrays
 ('["a", "b", "c"]') instead of returning the array directly. Downstream code
 that does ``for x in lst`` then iterates character-by-character — symptom:

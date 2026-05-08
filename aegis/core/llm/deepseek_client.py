@@ -1,8 +1,8 @@
 """DeepSeek LLM Client — uses DeepSeek API (OpenAI-compatible).
 
 Direct access from China, low cost. Supports tool_use/function calling for
-structured output. Mirrors KimiClient surface so the orchestrator can swap
-backends transparently.
+structured output. Shares the same client surface as the SDK / subprocess
+backends so the orchestrator can swap transparently.
 
 Models: deepseek-chat (always points to latest GA chat model, currently V4),
 deepseek-reasoner (R-series reasoning model).
@@ -60,7 +60,7 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 
 # TODO-Y1 (2026-05-06): the `_repair_json` and `_repair_truncated_array`
 # helpers used to live here. They were extracted to `aegis.core.llm._recovery`
-# so Kimi/SDK/Subprocess can share the same logic. Kept the names below as
+# so SDK/Subprocess can share the same logic. Kept the names below as
 # thin wrappers / module-level aliases for back-compat.
 _repair_truncated_array = _shared_repair_truncated_array
 

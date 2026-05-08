@@ -234,11 +234,11 @@ class LLMAgentBase(AgentBase):
         schema = JUDGMENT_TOOL_SCHEMA_DEEP if is_deep else JUDGMENT_TOOL_SCHEMA
 
         # Call LLM with tiered fallback on failure:
-        # 1. primary LLM (Kimi)
+        # 1. primary LLM (DeepSeek)
         # 2. if content_filter: strip geopolitically-sensitive phrases, retry primary
         # 3. last resort: mock fallback (produces thin output, flag as degraded)
         def _strip_sensitive(text: str) -> str:
-            """Remove or soften phrases that commonly trip Kimi's content filter.
+            """Remove or soften phrases that commonly trip the LLM provider's content filter.
             Keeps financial substance, removes geopolitical/regulatory framings."""
             import re
             replacements = [
@@ -457,7 +457,7 @@ class LLMAgentBase(AgentBase):
                 )
 
         # Parse LLM output into typed objects
-        # Strip extra fields that LLMs (especially Kimi) add beyond the schema
+        # Strip extra fields that LLMs occasionally add beyond the schema
         def _strip_extra(data: dict, model_cls: type) -> dict:
             allowed = set(model_cls.model_fields.keys())
             return {k: v for k, v in data.items() if k in allowed}
@@ -495,9 +495,9 @@ class LLMAgentBase(AgentBase):
         obs_count = len(observations)
 
         def _coerce_inference(data: dict) -> dict:
-            """Coerce Kimi-style inference data to match schema types.
+            """Coerce loose inference data shapes to match schema types.
 
-            - Strings → ints (Kimi sometimes returns "3" instead of 3)
+            - Strings → ints (LLMs sometimes return "3" instead of 3)
             - Out-of-range indices clamped to valid bounds:
               · idx == obs_count (1-indexed LLM) → obs_count - 1
               · idx > obs_count (hallucinated) → dropped
@@ -505,7 +505,7 @@ class LLMAgentBase(AgentBase):
             - Empty result defaults to [0] (so logic_critic doesn't block on
               "no grounding") only when there's at least one observation.
 
-            Without this clamping, a Kimi quirk of 1-indexed references
+            Without this clamping, an LLM quirk of 1-indexed references
             produces 3+ false-positive LOGIC_UNGROUNDED_INFERENCE blocks per
             run, eating the cumulative critic block budget and forcing
             otherwise-good reports into 'downgraded' status.
@@ -537,8 +537,7 @@ class LLMAgentBase(AgentBase):
                 cleaned["based_on_observation_indices"] = deduped
             # BUG-Y24 (2026-05-06): LLM occasionally emits compound
             # confidence values like `medium_high` / `high_medium` /
-            # `mediumlow` (DeepSeek V4 was the culprit, but seen on
-            # Kimi too). Pydantic strict pattern `^(low|medium|high)$`
+            # `mediumlow`. Pydantic strict pattern `^(low|medium|high)$`
             # rejects them → whole agent falls back to mock. Coerce to
             # the closest pattern-valid bucket so the LLM's substantive
             # output (text + indices) survives.

@@ -34,12 +34,11 @@ export SEC_USER_AGENT="Aegis Research research@aegis.ai"
 # Keep legacy env name working for older SEC client call sites.
 export EDGAR_USER_AGENT="${EDGAR_USER_AGENT:-$SEC_USER_AGENT}"
 # LLM / data enrichment keys.
-# 2026-05-04: switched default LLM from Kimi (key revoked, BUG-23) to
-# DeepSeek V4 — OpenAI-compatible, direct access from China, low cost.
-# Set DEEPSEEK_API_KEY in your environment (e.g., export it from ~/.zshrc or
-# use a local-only run_research.local.sh). Do not commit a real key here.
+# Default LLM is DeepSeek V4 — OpenAI-compatible, direct access from China,
+# low cost. Set DEEPSEEK_API_KEY in your environment (e.g., export it from
+# ~/.zshrc or use a local-only run_research.local.sh). Do not commit a real
+# key here.
 export DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
-export KIMI_API_KEY="${KIMI_API_KEY:-}"
 export FMP_API_KEY="${FMP_API_KEY:-}"
 export FRED_API_KEY="${FRED_API_KEY:-}"
 

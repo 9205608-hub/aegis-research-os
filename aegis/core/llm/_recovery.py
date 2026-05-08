@@ -3,7 +3,7 @@
 History: this logic was originally embedded in `deepseek_client.py` (BUG-A20
 v1-v4 series, 2026-05-05) where it salvaged ~5 truncations / run for V4-pro.
 TODO-Y1 (2026-05-06): the same repair chain belongs on every LLM backend
-because if DeepSeek is rate-limited and we fall back to Kimi/SDK/Subprocess,
+because if DeepSeek is rate-limited and we fall back to SDK/Subprocess,
 the user used to drop straight to a 17-min mock burn.
 
 Two pieces:
