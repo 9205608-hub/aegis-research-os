@@ -1,0 +1,111 @@
+sector_pack_id: sp_pharma_cn_v1
+sector_name: "中国医药 / Chinese Pharmaceuticals & Healthcare"
+version: "1.0"
+
+key_kpis:
+  - "创新药收入占比 (Innovative drug revenue ratio)"
+  - "管线数量/阶段分布 (Pipeline count by stage)"
+  - "集采中标品种数 (VBP bid-winning products)"
+  - "销售费用率 (Selling expense ratio)"
+  - "研发费用率 (R&D expense ratio)"
+  - "医保目录纳入品种数 (NRDL listed products)"
+
+cycle_characteristics:
+  cyclicality: low_to_moderate
+  leading_indicators:
+    - "NMPA drug approval pace and priority review designations"
+    - "Volume-Based Procurement (VBP) round announcements and bid results"
+    - "National Reimbursement Drug List (NRDL) negotiation outcomes"
+    - "CDE IND/NDA acceptance rate for innovative drugs"
+  typical_cycle_length_years: 6
+
+competitive_dynamics:
+  moat_sources:
+    - "Pipeline depth and first-in-class / best-in-class assets"
+    - "Established hospital channel relationships and KOL networks"
+    - "GMP manufacturing scale and API self-sufficiency"
+    - "Clinical trial execution speed (China patient pool advantage)"
+  disruption_risks:
+    - "VBP (集采) price cuts of 50-90% on genericized molecules"
+    - "Anti-corruption campaign targeting hospital purchasing"
+    - "Global biotech competition in PD-1/ADC/bispecific antibody space"
+    - "CDE raising clinical trial standards (increasing cost per program)"
+
+valuation_framework:
+  primary_method: "DCF-FCFF + rNPV for pipeline"
+  typical_operating_margin_range: [0.15, 0.35]
+  typical_revenue_growth_range: [0.08, 0.20]
+  key_multiples:
+    - "P/E Forward"
+    - "EV/EBITDA"
+    - "EV/Pipeline (for biotech)"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.55, 0.85]
+    operating_margin: [0.15, 0.35]
+  variable_cost_drivers:
+    - "API and raw materials (active pharmaceutical ingredients)"
+    - "Clinical trial costs (Phase I-III)"
+    - "Licensing fees and milestone payments"
+  fixed_cost_drivers:
+    - "Sales force (medical representatives, hospital coverage)"
+    - "R&D personnel and laboratory infrastructure"
+    - "GMP manufacturing facility maintenance"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Innovative Drug Revenue + Generic Drug Revenue + API/CDMO Revenue"
+    tree:
+      - name: "Innovative_Drug_Revenue"
+        unit: "CNY billions"
+        base_value: 12
+        near_growth: 0.20
+        long_growth: 0.12
+        growth_driver: "Pipeline maturation, NRDL inclusion driving volume, license-out milestones"
+        note: "恒瑞创新药占比~50%, 信达/百济~90%; innovator premium sustains margins"
+
+      - name: "Generic_Drug_Revenue"
+        unit: "CNY billions"
+        base_value: 15
+        near_growth: -0.05
+        long_growth: -0.03
+        growth_driver: "VBP price erosion offset partially by volume gains from hospital market share"
+        note: "集采品种平均降价60%; volume增长20-30%不足以补偿; 逐年收缩"
+
+      - name: "API_CDMO_Revenue"
+        unit: "CNY billions"
+        base_value: 5
+        near_growth: 0.15
+        long_growth: 0.10
+        growth_driver: "Global CDMO outsourcing trend, cost advantage of China manufacturing"
+        note: "药明系CDMO收入快速增长; 但US BIOSECURE Act带来政策风险"
+
+      - name: "Medical_Devices_Services"
+        unit: "CNY billions"
+        base_value: 8
+        near_growth: 0.12
+        long_growth: 0.08
+        growth_driver: "Aging population, hospital expansion, medical device localization policy"
+        note: "爱尔眼科连锁扩张, 迈瑞医疗设备国产替代; recurring revenue model"
+
+accounting_considerations:
+  - "销售费用合规(Selling expense compliance): Medical anti-corruption campaign targeting hospital kickbacks — watch for sudden selling expense drops and revenue impact"
+  - "研发资本化(R&D capitalization): Companies may capitalize Phase III costs; aggressive vs conservative policy significantly impacts reported earnings"
+  - "集采降价影响(VBP impact): Revenue decline from VBP rounds often front-loaded in 1-2 quarters after implementation; gross margin compression is permanent"
+  - "许可费确认(License revenue recognition): Upfront license payments recognized at signing vs amortized over agreement life — one-time vs recurring debate"
+  - "商誉减值(Goodwill impairment): Aggressive M&A during 2015-2020 left large goodwill balances; impairment risk as acquired assets underperform"
+
+special_risk_factors:
+  vbp_expansion:
+    description: "Volume-Based Procurement expanding to biologics and complex generics; could compress margins on current innovative drugs as they lose exclusivity"
+    severity: high
+  anti_corruption:
+    description: "Healthcare anti-corruption campaign disrupting hospital purchasing, conferences, academic meetings — sales channel restructuring required"
+    severity: high
+  biosecure_act:
+    description: "US BIOSECURE Act may restrict Chinese CDMO companies from serving US pharma clients — revenue concentration risk"
+    severity: medium
+  nrdl_negotiation:
+    description: "NRDL price negotiations can demand 40-60% price cuts for reimbursement inclusion; volume-price tradeoff uncertain"
+    severity: medium

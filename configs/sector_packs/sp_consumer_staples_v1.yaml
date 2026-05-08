@@ -1,0 +1,123 @@
+sector_pack_id: sp_consumer_staples_v1
+sector_name: "Consumer Staples / Packaged Goods"
+version: "1.0"
+
+key_kpis:
+  - "Organic revenue growth"
+  - "Price vs volume split"
+  - "Market share by category"
+  - "Gross margin"
+  - "Free cash flow productivity"
+  - "Advertising-to-sales ratio"
+
+cycle_characteristics:
+  cyclicality: very_low
+  leading_indicators:
+    - "Consumer staples private label share trends"
+    - "Input commodity prices (palm oil, pulp, resin, sugar)"
+    - "Retail scanner data (Nielsen/IRI)"
+    - "Emerging market consumer spending growth"
+  typical_cycle_length_years: 10
+
+competitive_dynamics:
+  moat_sources:
+    - "Brand portfolio strength and consumer loyalty"
+    - "Retail shelf space dominance and distribution scale"
+    - "R&D and product formulation expertise"
+    - "Global supply chain and procurement leverage"
+  disruption_risks:
+    - "Private label and retail own-brand growth"
+    - "DTC and digitally-native brands"
+    - "Input cost inflation compressing margins"
+    - "ESG and health-conscious consumer shifts"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.20, 0.30]
+  typical_revenue_growth_range: [0.03, 0.06]
+  key_multiples:
+    - "P/E Forward"
+    - "EV/EBITDA"
+    - "Dividend Yield"
+    - "FCF Yield"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.45, 0.58]
+    operating_margin: [0.20, 0.30]
+  variable_cost_drivers:
+    - "Raw materials and commodity inputs"
+    - "Packaging costs (resin, aluminum, glass)"
+    - "Trade promotions and retailer incentives"
+  fixed_cost_drivers:
+    - "Advertising and brand investment"
+    - "Manufacturing overhead and plant depreciation"
+    - "R&D (product innovation, formulation)"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Volume x Price/Mix across categories and geographies"
+    tree:
+      - name: "Developed_Market_Volume"
+        unit: "billions of units"
+        base_value: 32
+        near_growth: 0.01
+        long_growth: 0.005
+        growth_driver: "Mature market with population-level growth; share gains in premium tiers"
+        note: "PG/KO/PEP North America + Europe; volume growth is structurally low"
+
+      - name: "Developed_Market_PriceMix"
+        unit: "index (1.0 = base)"
+        base_value: 1.0
+        near_growth: 0.035
+        long_growth: 0.025
+        growth_driver: "List price increases, premiumization mix, pack-size optimization"
+        note: "Price/mix contributes 3-5% annually; reflects pricing power"
+
+      - name: "Emerging_Market_Volume"
+        unit: "billions of units"
+        base_value: 18
+        near_growth: 0.04
+        long_growth: 0.03
+        growth_driver: "Rising middle class, category penetration, urbanization"
+        note: "PG China/India/LatAm, KO Africa/SE Asia; higher volume growth"
+
+      - name: "Emerging_Market_PriceMix"
+        unit: "index (1.0 = base)"
+        base_value: 1.0
+        near_growth: 0.05
+        long_growth: 0.03
+        growth_driver: "Inflation pass-through, trade-up from local brands, format upgrades"
+        note: "Higher pricing in EM due to inflation; FX headwinds partially offset"
+
+      - name: "Beauty_Health_Revenue"
+        unit: "billions"
+        base_value: 30
+        near_growth: 0.06
+        long_growth: 0.04
+        growth_driver: "SK-II, Olay, personal care premiumization, wellness trends"
+        note: "PG Beauty ~$16B, Unilever beauty ~$14B; higher-margin segment"
+
+      - name: "Beverages_Revenue"
+        unit: "billions"
+        base_value: 46
+        near_growth: 0.05
+        long_growth: 0.04
+        growth_driver: "Sparkling water, energy drinks, zero-sugar innovation, emerging market per-capita consumption"
+        note: "KO ~$46B, PEP beverages ~$25B; strong brand moats"
+
+      - name: "Snacks_Packaged_Food"
+        unit: "billions"
+        base_value: 30
+        near_growth: 0.04
+        long_growth: 0.03
+        growth_driver: "Snacking occasion growth, convenience formats, emerging market expansion"
+        note: "PEP Frito-Lay ~$24B, Mondelez ~$36B; defensive category"
+
+accounting_considerations:
+  - "Organic growth vs reported growth (stripping out M&A and FX)"
+  - "Trade promotion spending classification (contra-revenue vs S&M expense)"
+  - "Goodwill from large acquisitions (PG/Gillette, KO/Costa, PEP/SodaStream)"
+  - "Pension liabilities and actuarial assumption sensitivity"
+  - "Hyperinflationary accounting for Argentina, Turkey operations (IAS 29)"
+  - "Commodity hedging gains/losses and mark-to-market impact"

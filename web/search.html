@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Aegis 投研 — 新建报告</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --bg:       oklch(0.155 0.012 255);
+    --bg-elev:  oklch(0.185 0.013 255);
+    --surface:  oklch(0.205 0.014 255);
+    --surface-2: oklch(0.235 0.015 255);
+    --hairline: oklch(0.28 0.015 255 / 0.7);
+    --hairline-strong: oklch(0.34 0.018 255 / 0.9);
+
+    --text:     oklch(0.94 0.005 255);
+    --text-2:   oklch(0.72 0.008 255);
+    --text-3:   oklch(0.54 0.009 255);
+    --text-4:   oklch(0.40 0.010 255);
+
+    --accent:     oklch(0.72 0.075 210);
+    --accent-dim: oklch(0.52 0.055 210);
+    --accent-bg:  oklch(0.28 0.04 210 / 0.35);
+
+    /* US convention on cross-market home: up=green, down=red. A股报告页单独沿用涨红跌绿 */
+    --up:       oklch(0.72 0.13 155);
+    --up-soft:  oklch(0.30 0.06 155 / 0.55);
+    --down:     oklch(0.68 0.17 25);
+    --down-soft: oklch(0.30 0.08 25 / 0.55);
+    --warn:     oklch(0.78 0.12 72);
+
+    --serif: "Source Serif 4", "Songti SC", "Noto Serif SC", Georgia, serif;
+    --sans:  "Inter", "PingFang SC", "HarmonyOS Sans SC", system-ui, sans-serif;
+    --mono:  "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; font-feature-settings: "cv11","ss01"; }
+  a { color: inherit; text-decoration: none; }
+
+  /* Ambient bg glow */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -10%, oklch(0.28 0.04 210 / 0.28), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 50% 120%, oklch(0.22 0.04 260 / 0.18), transparent 60%);
+  }
+
+  .topbar { position: relative; z-index: 10; height: 56px; display:flex; align-items: center; padding: 0 32px; border-bottom: 1px solid var(--hairline); background: color-mix(in oklab, var(--bg) 85%, transparent); backdrop-filter: blur(14px); }
+  .brand { font-family: var(--serif); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+  .brand .dim { color: var(--text-3); font-weight: 400; margin-left: 10px; }
+  .topbar .right { margin-left: auto; display:flex; gap: 22px; align-items: center; font-size: 13px; color: var(--text-3); }
+  .topbar .right a:hover { color: var(--text); }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--hairline); display:flex; align-items:center; justify-content: center; font-family: var(--mono); font-size: 11px; color: var(--text-2); }
+
+  .shell { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; padding: 72px 32px 120px; }
+
+  .hero { text-align: center; padding-top: 40px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-4); margin-bottom: 22px; }
+  h1.hero-title { font-family: var(--serif); font-size: 56px; line-height: 1.04; letter-spacing: -0.024em; font-weight: 400; color: var(--text); margin: 0 0 16px; }
+  h1.hero-title em { font-style: italic; color: var(--accent); font-weight: 400; }
+  .hero-sub { font-family: var(--serif); font-size: 19px; line-height: 1.6; color: var(--text-3); font-weight: 300; max-width: 620px; margin: 0 auto; }
+
+  /* Search */
+  .search-wrap { margin-top: 56px; position: relative; max-width: 760px; margin-left: auto; margin-right: auto; }
+  .search-box { display: flex; align-items: center; padding: 4px 4px 4px 22px; background: var(--bg-elev); border: 1px solid var(--hairline-strong); border-radius: 14px; transition: border-color .2s, box-shadow .2s; }
+  .search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 14%, transparent); }
+  .search-box .glass { color: var(--text-3); width: 18px; height: 18px; flex-shrink: 0; }
+  .search-box .glass svg { stroke: currentColor; stroke-width: 1.5; fill: none; }
+  .search-input { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font-family: var(--sans); font-size: 17px; padding: 18px 14px; letter-spacing: -0.005em; }
+  .search-input::placeholder { color: var(--text-4); }
+  .search-box .kbd { font-family: var(--mono); font-size: 11px; color: var(--text-3); border:1px solid var(--hairline); padding: 4px 8px; border-radius: 5px; background: var(--surface); margin-right: 8px; }
+  .cta { appearance: none; border: none; font-family: var(--sans); font-weight: 500; font-size: 13.5px; padding: 12px 22px; border-radius: 10px; background: var(--accent); color: oklch(0.12 0.02 210); cursor: pointer; letter-spacing: -0.005em; display:flex; align-items: center; gap: 8px; }
+  .cta:hover { background: oklch(0.78 0.08 210); }
+  .cta svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2; fill: none; }
+
+  /* Results dropdown */
+  .results { margin-top: 10px; background: var(--bg-elev); border: 1px solid var(--hairline-strong); border-radius: 12px; overflow: hidden; box-shadow: 0 20px 40px -20px oklch(0 0 0 / 0.5); display: none; }
+  .results.on { display: block; }
+  .result-group { padding: 8px 0; border-bottom: 1px solid var(--hairline); }
+  .result-group:last-child { border-bottom: none; }
+  .result-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em; color: var(--text-4); text-transform: uppercase; padding: 8px 20px 6px; }
+  .result-row { display: grid; grid-template-columns: 44px 1fr auto auto; gap: 14px; align-items: center; padding: 10px 20px; cursor: pointer; transition: background .1s; }
+  .result-row:hover, .result-row.active { background: color-mix(in oklab, var(--surface) 60%, transparent); }
+  .result-row.active::before {
+    content: ""; width: 2px; position: absolute; left: 0; top: 10px; bottom: 10px; background: var(--accent);
+  }
+  .result-row { position: relative; }
+  .result-row .mark { width: 32px; height: 32px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--hairline); display:flex; align-items:center; justify-content: center; font-family: var(--serif); font-size: 13px; color: var(--text-2); font-weight: 500; }
+  .result-row .name { font-family: var(--serif); font-size: 15.5px; color: var(--text); }
+  .result-row .tck { font-family: var(--mono); font-size: 12px; color: var(--text-3); margin-top: 2px; }
+  .result-row .px { font-family: var(--mono); font-size: 13px; color: var(--text-2); text-align: right; }
+  .result-row .chg { font-family: var(--mono); font-size: 11.5px; margin-top: 2px; text-align: right; }
+  .result-row .chg.up { color: var(--up); }
+  .result-row .chg.down { color: var(--down); }
+  /* A-share rows: local --up/--down swap so up=red / down=green */
+  .result-row[data-market="CN"] {
+    --up:   oklch(0.68 0.17 25);
+    --down: oklch(0.72 0.13 155);
+  }
+  .result-row .ent { color: var(--text-4); font-family: var(--mono); font-size: 11px; }
+
+  /* Filters / chips */
+  .chips { display:flex; gap: 8px; justify-content: center; margin-top: 20px; flex-wrap: wrap; }
+  .chip { padding: 6px 12px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 100px; font-size: 12px; color: var(--text-3); cursor: pointer; display:flex; align-items:center; gap: 7px; transition: color .15s, border-color .15s, background .15s; }
+  .chip:hover { color: var(--text); border-color: var(--hairline-strong); }
+  .chip.on { color: var(--text); background: var(--surface-2); border-color: var(--hairline-strong); }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .chip .dot.us { background: oklch(0.72 0.075 210); }
+  .chip .dot.cn { background: oklch(0.68 0.14 25); }
+
+  /* Section blocks */
+  section { margin-top: 96px; }
+  .section-head { display:flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+  .section-head h2 { font-family: var(--serif); font-size: 22px; font-weight: 500; letter-spacing: -0.012em; margin: 0; color: var(--text); }
+  .section-head .meta { font-family: var(--mono); font-size: 11.5px; color: var(--text-4); letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* Recent reports */
+  .recent-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 12px; overflow: hidden; }
+  .recent-card { background: var(--bg-elev); padding: 22px 24px; cursor: pointer; transition: background .15s; display:flex; flex-direction: column; gap: 14px; min-height: 180px; }
+  .recent-card:hover { background: var(--surface); }
+  /* A-share cards: swap local --up/--down so verdict "buy" reads red
+     (bullish in CN convention) and "sell" reads green. Scoped to the card
+     so it doesn't bleed into the global page styling. */
+  .recent-card[data-market="CN"] {
+    --up:        oklch(0.68 0.17 25);
+    --up-soft:   oklch(0.30 0.08 25 / 0.55);
+    --down:      oklch(0.72 0.13 155);
+    --down-soft: oklch(0.30 0.06 155 / 0.55);
+  }
+  .recent-card .hd { display:flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .recent-card .tck { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); letter-spacing: 0.04em; }
+  .recent-card .name { font-family: var(--serif); font-size: 19px; font-weight: 500; color: var(--text); letter-spacing: -0.01em; margin-top: 2px; line-height: 1.2; }
+  .recent-card .verdict { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; padding: 3px 8px; border-radius: 3px; text-transform: uppercase; white-space: nowrap; }
+  .recent-card .verdict.buy { color: var(--up); background: var(--up-soft); }
+  .recent-card .verdict.sell { color: var(--down); background: var(--down-soft); }
+  .recent-card .verdict.hold { color: var(--warn); background: oklch(0.28 0.06 72 / 0.5); }
+  .recent-card .body { flex: 1; color: var(--text-3); font-size: 13.5px; line-height: 1.65; font-family: var(--serif); font-weight: 300; text-wrap: pretty; }
+  .recent-card .ft { display:flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 11px; color: var(--text-4); padding-top: 12px; border-top: 1px solid var(--hairline); }
+  .recent-card .px-pair { display:flex; gap: 8px; color: var(--text-2); }
+  .recent-card .px-pair .target { color: var(--accent); }
+  .recent-card .px-pair .arrow { color: var(--text-4); }
+
+  /* Suggest section - trending & watch */
+  .two-col { display:grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  .list { display: flex; flex-direction: column; }
+  .list-row { display: grid; grid-template-columns: 32px 1fr auto; gap: 14px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--hairline); cursor: pointer; }
+  .list-row:hover .name { color: var(--text); }
+  .list-row:last-child { border-bottom: none; }
+  .list-row .rank { font-family: var(--mono); font-size: 11px; color: var(--text-4); }
+  .list-row .name { font-family: var(--serif); font-size: 15.5px; color: var(--text-2); transition: color .15s; }
+  .list-row .tck { font-family: var(--mono); font-size: 11.5px; color: var(--text-4); margin-top: 2px; }
+  .list-row .meta-right { text-align: right; }
+  .list-row .meta-right .px { font-family: var(--mono); font-size: 13px; color: var(--text-2); }
+  .list-row .meta-right .chg { font-family: var(--mono); font-size: 11px; margin-top: 2px; }
+  .list-row .chg.up { color: var(--up); }
+  .list-row .chg.down { color: var(--down); }
+
+  /* Small tip line */
+  .tips { margin-top: 32px; text-align: center; color: var(--text-4); font-size: 12.5px; display:flex; justify-content: center; gap: 24px; flex-wrap: wrap; }
+  .tips .tip { display:flex; align-items: center; gap: 8px; }
+  .tips .kbd { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); border: 1px solid var(--hairline); padding: 2px 6px; border-radius: 4px; background: var(--bg-elev); }
+
+  /* Footer */
+  footer { margin-top: 100px; padding: 24px 0; border-top: 1px solid var(--hairline); display:flex; justify-content: space-between; font-family: var(--mono); font-size: 11.5px; color: var(--text-4); }
+
+  @media (max-width: 900px) {
+    h1.hero-title { font-size: 40px; }
+    .recent-grid { grid-template-columns: 1fr; }
+    .two-col { grid-template-columns: 1fr; gap: 40px; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Aegis <span class="dim">投研 OS</span></div>
+    <div class="right">
+      <a>报告</a>
+      <a>自选股</a>
+      <a>设置</a>
+      <div class="avatar">SG</div>
+    </div>
+  </div>
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    // 数据默认为空 — 服务端挂载时通过 API 拉取真实数据。
+    // 如果这个页面被以 file:// 方式直接打开（没有 API 可用），我们
+    // 用一个小的离线兜底数据让页面不至于空白。
+    const OFFLINE_UNIVERSE = [
+      { tck: "NVDA", ex: "NASDAQ", name: "NVIDIA 英伟达", sector: "半导体 · AI 基础设施" },
+      { tck: "301358", ex: "SZ",  name: "湖南裕能", sector: "磷酸铁锂正极 · 新能源" },
+      { tck: "AAPL", ex: "NASDAQ", name: "Apple 苹果", sector: "消费电子" },
+    ];
+
+    // TRENDING/WATCH were hardcoded mock (AAPL at $244.80 etc). Until we
+    // wire real trending data, derive quick-picks from /api/universe:
+    // — left column: A-share subset (exchange SH/SZ)
+    // — right column: US subset (everything else)
+    // This keeps the "explore" UX but with real, non-stale data.
+
+    function Glass() {
+      return (
+        <span className="glass">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </span>
+      );
+    }
+
+    function ResultRow({ item, active }) {
+      const ex = item.ex;
+      const isCN = ex === "SH" || ex === "SZ";
+      const curr = isCN ? "¥" : "$";
+      // Universe API returns px=0, chg=0 as placeholders (no live-price
+      // integration yet). Rendering "$0.00" and a red "+0.00%" looks like
+      // actual data; show em-dashes instead until real ticks are wired.
+      const hasPx = item.px > 0;
+      const hasChg = item.chg !== 0;
+      return (
+        <div className={`result-row ${active ? "active" : ""}`} data-market={isCN ? "CN" : "US"}>
+          <div className="mark">{item.tck.slice(0,1)}</div>
+          <div>
+            <div className="name">{item.name}</div>
+            <div className="tck">{item.tck} · {item.ex} · {item.sector}</div>
+          </div>
+          <div>
+            <div className="px">{hasPx ? `${curr}${item.px.toLocaleString(undefined, {maximumFractionDigits: 2})}` : "—"}</div>
+            {hasChg && (
+              <div className={`chg ${item.chg > 0 ? "up" : "down"}`}>
+                {item.chg > 0 ? "+" : ""}{item.chg.toFixed(2)}%
+              </div>
+            )}
+          </div>
+          <div className="ent">↵  生成报告</div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [q, setQ] = useState("");
+      const [mkt, setMkt] = useState("all");
+      const [depth, setDepth] = useState("deep");
+      const [activeIdx, setActiveIdx] = useState(0);
+      const [universe, setUniverse] = useState(OFFLINE_UNIVERSE);
+      const [recent, setRecent] = useState([]);
+      const [submitting, setSubmitting] = useState(false);
+      const inputRef = useRef(null);
+
+      useEffect(() => { inputRef.current?.focus(); }, []);
+
+      // 拉取真实数据。服务端 mount 时两个 endpoint 都可用；离线打开时失败静默。
+      useEffect(() => {
+        fetch("/api/universe").then(r => r.ok ? r.json() : null).then(d => {
+          if (Array.isArray(d) && d.length) setUniverse(d);
+        }).catch(() => {});
+        fetch("/api/recent").then(r => r.ok ? r.json() : null).then(d => {
+          if (Array.isArray(d)) setRecent(d);
+        }).catch(() => {});
+      }, []);
+
+      const filtered = universe.filter(u => {
+        if (mkt === "us" && u.ex !== "NASDAQ" && u.ex !== "NYSE") return false;
+        if (mkt === "cn" && u.ex !== "SH" && u.ex !== "SZ") return false;
+        if (!q) return false;
+        const needle = q.toLowerCase();
+        return u.tck.toLowerCase().includes(needle) || u.name.toLowerCase().includes(needle);
+      }).slice(0, 6);
+
+      const submitAnalysis = async () => {
+        if (submitting) return;
+        // 优先用当前高亮的候选；没候选时用输入框原文
+        const chosen = filtered[activeIdx] || null;
+        const ticker = (chosen?.tck || q).trim().toUpperCase();
+        if (!ticker) return;
+
+        setSubmitting(true);
+        try {
+          const res = await fetch("/api/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticker }),
+          });
+          if (!res.ok) throw new Error(`run failed: ${res.status}`);
+          const state = await res.json();
+          window.location.href = `/progress?run_id=${encodeURIComponent(state.run_id)}&ticker=${encodeURIComponent(ticker)}`;
+        } catch (err) {
+          // 服务端未启动（纯 file:// 打开）— 回落到静态 progress 页演示
+          console.warn("/api/run unavailable, falling back to demo progress", err);
+          window.location.href = "progress.html";
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      useEffect(() => {
+        const onKey = (e) => {
+          if (e.key === "ArrowDown" && filtered.length) { setActiveIdx(i => Math.min(i+1, filtered.length-1)); e.preventDefault(); }
+          if (e.key === "ArrowUp") { setActiveIdx(i => Math.max(i-1, 0)); e.preventDefault(); }
+          if (e.key === "Enter") { submitAnalysis(); }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [filtered.length, activeIdx, q, submitting]);
+
+      return (
+        <div className="shell">
+          <div className="hero">
+            <div className="eyebrow">新建报告</div>
+            <h1 className="hero-title">25 分钟生成任意 <em>上市公司</em><br/>的深度投研报告。</h1>
+            <p className="hero-sub">输入股票代码或公司名。Aegis 自动拉取财报、跨 GAAP 与 CAS 归一化、执行 DCF 建模、七位专家 Agent 协同推理，并完成报告编辑。</p>
+          </div>
+
+          <div className="search-wrap">
+            <div className="search-box">
+              <Glass/>
+              <input
+                ref={inputRef}
+                className="search-input"
+                placeholder="NVDA、301358、特斯拉、湖南裕能…"
+                value={q}
+                onChange={(e) => { setQ(e.target.value); setActiveIdx(0); }}
+              />
+              <span className="kbd">⌘K</span>
+              <button className="cta" onClick={submitAnalysis} disabled={submitting}>
+                {submitting ? "提交中…" : "生成报告"}
+                <svg viewBox="0 0 24 24"><path d="M5 12h14 M13 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+
+            <div className={`results ${q && filtered.length ? "on" : ""}`}>
+              <div className="result-group">
+                <div className="result-label">匹配结果</div>
+                {filtered.map((r, i) => <ResultRow key={r.tck} item={r} active={i === activeIdx}/>)}
+              </div>
+            </div>
+
+            <div className="chips">
+              <div className={`chip ${mkt === "all" ? "on" : ""}`} onClick={() => setMkt("all")}>全部市场</div>
+              <div className={`chip ${mkt === "us" ? "on" : ""}`} onClick={() => setMkt("us")}><span className="dot us"/>美股 · EDGAR</div>
+              <div className={`chip ${mkt === "cn" ? "on" : ""}`} onClick={() => setMkt("cn")}><span className="dot cn"/>A 股 · akshare</div>
+              <div style={{width: 1, background: "var(--hairline)", margin: "0 4px"}}/>
+              <div className={`chip ${depth === "quick" ? "on" : ""}`} onClick={() => setDepth("quick")}>快速 · 4 分钟</div>
+              <div className={`chip ${depth === "deep" ? "on" : ""}`} onClick={() => setDepth("deep")}>深度 · 25 分钟</div>
+            </div>
+
+            <div className="tips">
+              <div className="tip"><span className="kbd">↵</span> 生成</div>
+              <div className="tip"><span className="kbd">↑ ↓</span> 导航</div>
+              <div className="tip"><span className="kbd">⌘ P</span> 从缓存回放</div>
+              <div className="tip"><span className="kbd">?</span> 快捷键</div>
+            </div>
+          </div>
+
+          <section>
+            <div className="section-head">
+              <h2>近期研报</h2>
+              <div className="meta">{recent.length > 0 ? `已完成 ${recent.length} 份` : "暂无"}</div>
+            </div>
+            {recent.length === 0 ? (
+              <div style={{padding: "40px 24px", textAlign: "center", color: "var(--text-4)", border: "1px dashed var(--hairline)", borderRadius: 12, fontFamily: "var(--serif)", fontSize: 15}}>
+                还没有已完成的报告。在上方搜索框输入 ticker 生成第一份。
+              </div>
+            ) : (
+              <div className="recent-grid">
+                {recent.map(r => (
+                  <div className="recent-card" key={r.tck + r.fy} data-market={r.market || "US"} onClick={() => { if (r.file) window.location.href = r.file; }}>
+                    <div className="hd">
+                      <div>
+                        <div className="tck">{r.tck} · {r.ex} · {r.fy}</div>
+                        <div className="name">{r.name}</div>
+                      </div>
+                      <div className={`verdict ${r.verdict}`}>{r.rating}</div>
+                    </div>
+                    <div className="body">{r.thesis}</div>
+                    <div className="ft">
+                      <div className="px-pair">
+                        <span>{r.ex === "SH" || r.ex === "SZ" ? "¥" : "$"}{(r.px || 0).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+                        <span className="arrow">→</span>
+                        <span className="target">{r.ex === "SH" || r.ex === "SZ" ? "¥" : "$"}{(r.target || 0).toLocaleString(undefined, {maximumFractionDigits: 2})}</span>
+                      </div>
+                      <span>{r.when}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {(() => {
+            const aShares = universe.filter(u => u.ex === "SH" || u.ex === "SZ");
+            const usShares = universe.filter(u => u.ex !== "SH" && u.ex !== "SZ");
+            const runTicker = (tck) => {
+              fetch("/api/run", {method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ticker: tck})})
+                .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+                .then(s => window.location.href = `/progress?run_id=${encodeURIComponent(s.run_id)}&ticker=${encodeURIComponent(tck)}`)
+                .catch(() => alert("服务未启动，无法发起分析"));
+            };
+            return (
+              <section>
+                <div className="two-col">
+                  <div>
+                    <div className="section-head">
+                      <h2>A 股候选</h2>
+                      <div className="meta">{aShares.length} 只</div>
+                    </div>
+                    <div className="list">
+                      {aShares.slice(0, 6).map((t, i) => (
+                        <div className="list-row" key={t.tck} onClick={() => runTicker(t.tck)}>
+                          <span className="rank">0{i+1}</span>
+                          <div>
+                            <div className="name">{t.name}</div>
+                            <div className="tck">{t.tck} · {t.sector}</div>
+                          </div>
+                          <div className="meta-right">
+                            <div className="ent" style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--text-4)"}}>↵ 分析</div>
+                          </div>
+                        </div>
+                      ))}
+                      {aShares.length === 0 && (
+                        <div style={{padding: "16px 0", color: "var(--text-4)", fontSize: 13}}>候选池暂无 A 股。</div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="section-head">
+                      <h2>美股候选</h2>
+                      <div className="meta">{usShares.length} 只</div>
+                    </div>
+                    <div className="list">
+                      {usShares.slice(0, 6).map((t, i) => (
+                        <div className="list-row" key={t.tck} onClick={() => runTicker(t.tck)}>
+                          <span className="rank">0{i+1}</span>
+                          <div>
+                            <div className="name">{t.name}</div>
+                            <div className="tck">{t.tck} · {t.sector}</div>
+                          </div>
+                          <div className="meta-right">
+                            <div className="ent" style={{fontFamily:"var(--mono)", fontSize:11, color:"var(--text-4)"}}>↵ 分析</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            );
+          })()}
+
+          <footer>
+            <span>Aegis 投研 OS · v0.9.3</span>
+            <span>EDGAR · akshare · Kimi k2.6</span>
+            <span>候选池 {universe.length} 只 · 已生成 {recent.length} 份</span>
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>

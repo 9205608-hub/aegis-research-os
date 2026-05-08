@@ -1,0 +1,107 @@
+sector_pack_id: sp_banking_cn_v1
+sector_name: "A股银行 / Chinese Commercial Banking"
+version: "1.0"
+
+key_kpis:
+  - "净息差 NIM (Net Interest Margin)"
+  - "不良贷款率 (NPL Ratio)"
+  - "拨备覆盖率 (Provision Coverage Ratio)"
+  - "资本充足率 (Capital Adequacy Ratio)"
+  - "拨贷比 (Provision-to-Loan Ratio)"
+  - "成本收入比 (Cost-to-Income Ratio)"
+
+cycle_characteristics:
+  cyclicality: high
+  leading_indicators:
+    - "LPR (Loan Prime Rate) changes and PBOC policy signals"
+    - "M2 growth rate and social financing aggregate"
+    - "Real estate developer default rates and land sale revenue"
+    - "Local government financing vehicle (LGFV) debt maturity profile"
+  typical_cycle_length_years: 5
+
+competitive_dynamics:
+  moat_sources:
+    - "Government implicit guarantee (systemically important banks)"
+    - "Deposit franchise scale (especially retail deposits)"
+    - "Regulatory license barriers (limited banking licenses)"
+    - "Fintech integration (WeChat Pay / Alipay ecosystem partnerships)"
+  disruption_risks:
+    - "Fintech competition eroding fee income and deposit stickiness"
+    - "Interest rate liberalization compressing NIM"
+    - "Real estate sector downturn increasing NPLs"
+    - "LGFV debt restructuring and writeoff risk"
+
+valuation_framework:
+  primary_method: "Residual Income / P/B"
+  typical_operating_margin_range: [0.35, 0.50]
+  typical_revenue_growth_range: [0.03, 0.10]
+  key_multiples:
+    - "P/B (Price to Book)"
+    - "P/E"
+    - "Dividend Yield"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.55, 0.70]
+    operating_margin: [0.35, 0.50]
+  variable_cost_drivers:
+    - "Cost of deposits and interbank funding"
+    - "Credit cost (provision charges)"
+  fixed_cost_drivers:
+    - "Employee compensation (30-40% of revenue)"
+    - "Technology and digital transformation investment"
+    - "Branch network and physical infrastructure"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Interest Income + Non-Interest Income = (Earning Assets × NIM) + Fee Income + Investment Income"
+    tree:
+      - name: "Earning_Assets"
+        unit: "CNY trillions"
+        base_value: 8.5
+        near_growth: 0.07
+        long_growth: 0.05
+        growth_driver: "Loan growth aligned with nominal GDP + government credit policy guidance"
+        note: "招商银行 ~8.5万亿, 工商银行 ~35万亿; joint-stock banks grow faster than Big 4"
+
+      - name: "Net_Interest_Margin"
+        unit: "bps"
+        base_value: 195
+        near_growth: -0.02
+        long_growth: 0.0
+        growth_driver: "LPR cuts compress asset yields; deposit cost optimization partially offsets"
+        note: "Industry NIM declined from ~2.5% (2019) to ~1.7% (2025); stabilization expected"
+
+      - name: "Fee_Income"
+        unit: "CNY billions"
+        base_value: 85
+        near_growth: 0.04
+        long_growth: 0.05
+        growth_driver: "Wealth management, credit card, trade finance; fee waivers for SME ending"
+        note: "招商银行手续费占比~25%, 高于行业平均~15%; wealth management is key differentiator"
+
+      - name: "Investment_Income"
+        unit: "CNY billions"
+        base_value: 35
+        near_growth: 0.03
+        long_growth: 0.02
+        growth_driver: "Bond portfolio and FVTPL securities; rate cuts create mark-to-market gains"
+        note: "Volatile component; local government bond allocation is growing"
+
+accounting_considerations:
+  - "拨备计提(Provisioning): Banks use expected credit loss (ECL) model; provision coverage ratio >150% is regulatory minimum but banks maintain 200-400% as buffer"
+  - "不良认定(NPL recognition): Watch for loans overdue 60+ days not classified as NPL — stricter recognition → higher NPL ratio but cleaner balance sheet"
+  - "同业往来(Interbank transactions): Complex interbank structures can obscure true asset quality; watch for assets moved to investment receivables"
+  - "理财回表(WMP on-balance-sheet): Wealth management products returning to balance sheet increases assets but also risk exposure"
+  - "地方债敞口(LGFV exposure): Local government financing vehicle loans may require restructuring; classify as performing but watch concentration"
+
+special_risk_factors:
+  real_estate_exposure:
+    description: "Real estate developer loans + mortgages can be 20-30% of loan book; developer defaults cascade into bank NPLs"
+    severity: high
+  lgfv_risk:
+    description: "Local government financing vehicle debt refinancing risk; implicit guarantee may not hold under fiscal stress"
+    severity: high
+  nim_compression:
+    description: "Continued LPR cuts without proportional deposit rate reduction erode net interest margin"
+    severity: medium

@@ -1,0 +1,80 @@
+sector_pack_id: sp_banking_v1
+sector_name: "Banking / Financial Services"
+version: "1.0"
+
+key_kpis:
+  - "Net Interest Margin"
+  - "Return on Tangible Equity"
+  - "CET1 Ratio"
+  - "Efficiency Ratio"
+  - "Provision for Credit Losses"
+
+cycle_characteristics:
+  cyclicality: high
+  leading_indicators:
+    - "Yield curve slope (2s10s)"
+    - "Credit default swap spreads"
+    - "Loan growth rate"
+  typical_cycle_length_years: 7
+
+competitive_dynamics:
+  moat_sources:
+    - "Deposit franchise (low-cost funding)"
+    - "Regulatory barriers to entry"
+    - "Scale economics in compliance"
+  disruption_risks:
+    - "Fintech disintermediation"
+    - "CBDC / digital currency"
+    - "Regulatory capital increases"
+
+valuation_framework:
+  primary_method: "Residual Income / P/TBV"
+  typical_operating_margin_range: [0.30, 0.45]
+  typical_revenue_growth_range: [0.03, 0.08]
+  key_multiples:
+    - "P/TBV (Price to Tangible Book)"
+    - "P/E"
+    - "Dividend Yield"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.60, 0.75]
+    operating_margin: [0.30, 0.45]
+  variable_cost_drivers:
+    - "Cost of funds (deposit rates)"
+    - "Provision for credit losses"
+  fixed_cost_drivers:
+    - "Compensation (40-50% of revenue)"
+    - "Technology infrastructure"
+    - "Regulatory compliance"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = NII + Non-Interest Income = (Earning Assets x NIM) + Fees + Trading"
+    tree:
+      - name: "Earning_Assets"
+        unit: "trillions"
+        base_value: 3.5
+        near_growth: 0.04
+        long_growth: 0.03
+        growth_driver: "Loan growth + securities portfolio expansion"
+
+      - name: "Net_Interest_Margin"
+        unit: "bps"
+        base_value: 270
+        near_growth: 0.0
+        long_growth: 0.0
+        growth_driver: "Rate environment and deposit mix; modeled as base with yield curve sensitivity"
+
+      - name: "Fee_Income"
+        unit: "billions"
+        base_value: 45
+        near_growth: 0.05
+        long_growth: 0.03
+        growth_driver: "Asset management, investment banking, card fees"
+
+accounting_considerations:
+  - "Loan loss provisioning timing (CECL methodology)"
+  - "Trading revenue volatility"
+  - "Off-balance sheet exposures (derivatives, commitments)"
+  - "Goodwill impairment from M&A"

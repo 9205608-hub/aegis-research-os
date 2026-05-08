@@ -1,0 +1,90 @@
+sector_pack_id: sp_semiconductor_v1
+sector_name: "Semiconductor"
+version: "1.0"
+
+key_kpis:
+  - "Data center GPU shipments"
+  - "ASP (average selling price)"
+  - "Gross margin"
+  - "Compute TFLOPS shipped"
+  - "Market share by segment"
+
+cycle_characteristics:
+  cyclicality: high
+  leading_indicators:
+    - "Capex guidance from hyperscalers"
+    - "Semiconductor booking-to-billing ratio"
+    - "Memory pricing trends"
+  typical_cycle_length_years: 4
+
+competitive_dynamics:
+  moat_sources:
+    - "CUDA software ecosystem lock-in"
+    - "Design complexity barrier (years of R&D)"
+    - "Manufacturing process leadership"
+  disruption_risks:
+    - "Custom silicon (Google TPU, Amazon Trainium)"
+    - "Architecture shift (RISC-V, photonics)"
+    - "Export controls / geopolitical"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.35, 0.65]
+  typical_revenue_growth_range: [0.10, 0.40]
+  key_multiples:
+    - "P/E Forward"
+    - "EV/Revenue"
+    - "PEG ratio"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.60, 0.78]
+    operating_margin: [0.35, 0.65]
+  variable_cost_drivers:
+    - "Wafer costs (TSMC foundry)"
+    - "Packaging costs (CoWoS)"
+  fixed_cost_drivers:
+    - "R&D (chip design, CUDA/software)"
+    - "Tape-out costs per generation"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = GPU_Units x ASP + Networking_Revenue + Software_Revenue"
+    tree:
+      - name: "GPU_Units"
+        unit: "millions"
+        base_value: 8.5
+        near_growth: 0.25
+        long_growth: 0.08
+        growth_driver: "AI training + inference demand — hyperscaler capex cycle, enterprise adoption"
+        note: "Data center GPU units shipped annually (H100/B100/B200 family)"
+
+      - name: "GPU_ASP"
+        unit: "$/unit"
+        base_value: 25000
+        near_growth: 0.10
+        long_growth: 0.02
+        growth_driver: "Product mix shift to higher-end (B200, Grace Blackwell), system-level pricing"
+        note: "Blended average selling price per GPU"
+
+      - name: "Networking_Revenue"
+        unit: "billions"
+        base_value: 13.0
+        near_growth: 0.15
+        long_growth: 0.05
+        growth_driver: "InfiniBand + Spectrum-X adoption for AI cluster interconnect"
+        note: "Annual networking segment revenue"
+
+      - name: "Software_Revenue"
+        unit: "billions"
+        base_value: 2.5
+        near_growth: 0.30
+        long_growth: 0.10
+        growth_driver: "CUDA Enterprise, AI Enterprise, Omniverse licensing"
+        note: "Annual software and licensing revenue"
+
+accounting_considerations:
+  - "Inventory write-downs during cycle downturns"
+  - "Revenue recognition on long-term supply agreements"
+  - "R&D capitalization policy differences across peers"
+  - "Customer concentration risk (top 5 hyperscalers = 40%+ of revenue)"

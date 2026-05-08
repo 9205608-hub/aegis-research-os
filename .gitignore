@@ -1,0 +1,52 @@
+# --- Secrets ---
+.env
+.env.local
+*.local.sh
+run_research.local.sh
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.tox/
+.venv/
+venv/
+env/
+
+# --- Project artifacts ---
+.cache/
+logs/
+data/
+*.db
+*.sqlite
+*.sqlite3
+aegis_research.db
+
+# Generated HTML reports — large, regenerated from cache
+demos/*.html
+demos/*.json
+demos/*_cache/
+demos/*_payload/
+
+# --- Editor / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Claude harness state ---
+.claude-design-handoff/
+.claude/settings.local.json

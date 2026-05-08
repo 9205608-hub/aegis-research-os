@@ -1,0 +1,108 @@
+sector_pack_id: sp_new_energy_cn_v1
+sector_name: "新能源 / Chinese New Energy (EV Battery, Solar, Wind)"
+version: "1.0"
+
+key_kpis:
+  - "电池装机量/出货量 GWh (Battery shipment volume)"
+  - "产能利用率 (Capacity utilization rate)"
+  - "单位成本 CNY/Wh (Unit cost per Wh)"
+  - "海外收入占比 (Overseas revenue ratio)"
+  - "研发费用率 (R&D expense ratio)"
+  - "毛利率 (Gross margin)"
+
+cycle_characteristics:
+  cyclicality: high
+  leading_indicators:
+    - "NEV subsidy policy changes and purchase tax exemptions"
+    - "Lithium carbonate / iron phosphate spot prices"
+    - "Monthly NEV penetration rate (% of total auto sales)"
+    - "European / US EV mandate timelines and tariff announcements"
+  typical_cycle_length_years: 4
+
+competitive_dynamics:
+  moat_sources:
+    - "Manufacturing scale and cost curve leadership (learning rate)"
+    - "Vertical integration (mining → materials → cells → packs)"
+    - "Customer lock-in through co-development with OEMs"
+    - "Technology lead in LFP / CTP / sodium-ion innovation"
+  disruption_risks:
+    - "Overcapacity driving price wars and margin compression"
+    - "Solid-state battery technology leapfrog by competitors"
+    - "Trade barriers (EU anti-subsidy duties, US IRA local content)"
+    - "Raw material price spikes (lithium, cobalt, nickel)"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.08, 0.20]
+  typical_revenue_growth_range: [0.15, 0.35]
+  key_multiples:
+    - "P/E Forward"
+    - "EV/EBITDA"
+    - "EV/GWh (enterprise value per GWh capacity)"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.15, 0.28]
+    operating_margin: [0.08, 0.20]
+  variable_cost_drivers:
+    - "Raw materials (lithium, cobalt, nickel, iron phosphate, graphite)"
+    - "Energy costs (electricity for manufacturing)"
+    - "Logistics and shipping costs (especially overseas)"
+  fixed_cost_drivers:
+    - "Capex depreciation (Giga-factory investment)"
+    - "R&D personnel and equipment"
+    - "Overseas factory ramp-up costs (Hungary, Morocco, etc.)"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = EV Battery GWh × ASP + Energy Storage GWh × ASP + Materials Revenue"
+    tree:
+      - name: "EV_Battery_GWh"
+        unit: "GWh"
+        base_value: 390
+        near_growth: 0.25
+        long_growth: 0.12
+        growth_driver: "Global EV penetration rise from ~20% to ~50% by 2030; CATL ~37% global share"
+        note: "宁德时代 2024出货~390GWh; 比亚迪~180GWh (internal + external)"
+
+      - name: "Battery_ASP"
+        unit: "CNY/Wh"
+        base_value: 0.55
+        near_growth: -0.08
+        long_growth: -0.04
+        growth_driver: "Cost reduction from scale, LFP adoption, material deflation; partially offset by technology premium"
+        note: "Industry ASP declined from ~1.0 (2020) to ~0.55 (2025); floor ~0.35-0.40 on material cost"
+
+      - name: "Energy_Storage_GWh"
+        unit: "GWh"
+        base_value: 100
+        near_growth: 0.40
+        long_growth: 0.18
+        growth_driver: "Grid-scale storage mandates, renewable intermittency, peak shaving demand"
+        note: "Fastest growing segment; lower ASP but long-duration contracts"
+
+      - name: "Battery_Materials_Revenue"
+        unit: "CNY billions"
+        base_value: 45
+        near_growth: 0.15
+        long_growth: 0.08
+        growth_driver: "Cathode materials, separators, electrolytes; vertical integration play"
+        note: "比亚迪弗迪电池, CATL从材料到回收的全链条布局"
+
+accounting_considerations:
+  - "政府补贴确认(Government subsidies): NEV subsidies recognized when compliance conditions met; timing can create revenue lumpiness"
+  - "研发资本化(R&D capitalization): Watch for aggressive capitalization of development costs — some companies capitalize 30-50% of R&D"
+  - "产能折旧(Capacity depreciation): Massive capex for Giga-factories creates high depreciation; straight-line vs accelerated methods impact margins"
+  - "汇兑损益(FX gains/losses): Overseas revenue growing fast; EUR/USD settlement creates P&L volatility"
+  - "长期合同定价(Long-term contract pricing): Multi-year OEM supply agreements may lock in unfavorable prices during raw material deflation"
+
+special_risk_factors:
+  overcapacity:
+    description: "Industry capacity buildout exceeding demand growth; utilization rates may fall below 60% triggering price wars"
+    severity: high
+  trade_barriers:
+    description: "EU anti-subsidy duties (17-37%), US IRA local content requirements, potential India tariffs"
+    severity: high
+  technology_disruption:
+    description: "Solid-state battery commercialization by Toyota/Samsung could erode current LFP/NCM technology advantage"
+    severity: medium

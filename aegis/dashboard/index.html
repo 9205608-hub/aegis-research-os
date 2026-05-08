@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aegis Research OS — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --border: #30363d;
+  --text: #c9d1d9; --text-dim: #8b949e; --accent: #58a6ff;
+  --green: #3fb950; --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+h1 { color: var(--accent); font-size: 1.5rem; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+h1 .badge { background: var(--surface); border: 1px solid var(--border); padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; color: var(--text-dim); }
+h2 { color: var(--text); font-size: 1.1rem; margin-bottom: 12px; }
+
+/* Stats Grid */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.stat-card .label { color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-card .value { font-size: 1.8rem; font-weight: 700; margin-top: 4px; }
+.stat-card .value.green { color: var(--green); }
+.stat-card .value.blue { color: var(--accent); }
+.stat-card .value.yellow { color: var(--yellow); }
+.stat-card .value.purple { color: var(--purple); }
+
+/* Tables */
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+tr:hover { background: rgba(88,166,255,0.05); }
+
+/* Badges */
+.badge-green { background: rgba(63,185,80,0.15); color: var(--green); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+.badge-red { background: rgba(248,81,73,0.15); color: var(--red); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+.badge-yellow { background: rgba(210,153,34,0.15); color: var(--yellow); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+.badge-blue { background: rgba(88,166,255,0.15); color: var(--accent); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+
+/* Grid Layout */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* Chart Container */
+.chart-container { height: 250px; position: relative; }
+
+/* Action Bar */
+.action-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+.action-bar input { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; }
+.action-bar button { background: var(--accent); color: #000; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; }
+.action-bar button:hover { opacity: 0.9; }
+.action-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Status */
+#status-bar { color: var(--text-dim); font-size: 0.75rem; text-align: right; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>
+    Aegis Research OS
+    <span class="badge">v2 Dashboard</span>
+  </h1>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card"><div class="label">Research Runs</div><div class="value blue" id="stat-runs">0</div></div>
+    <div class="stat-card"><div class="label">Active Signals</div><div class="value green" id="stat-signals">0</div></div>
+    <div class="stat-card"><div class="label">Predictions</div><div class="value yellow" id="stat-predictions">0</div></div>
+    <div class="stat-card"><div class="label">Post-Mortems</div><div class="value purple" id="stat-postmortems">0</div></div>
+  </div>
+
+  <!-- Quick Research -->
+  <div class="panel">
+    <h2>Quick Research</h2>
+    <div class="action-bar">
+      <input id="ticker-input" type="text" placeholder="Ticker (e.g., META)" style="width:120px" />
+      <input id="price-input" type="number" placeholder="Price (optional)" style="width:140px" />
+      <button id="run-btn" onclick="runResearch()">Run Research</button>
+    </div>
+    <div id="run-status" style="color: var(--text-dim); font-size: 0.85rem; margin-top: 8px;"></div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Research Runs Table -->
+    <div class="panel">
+      <h2>Recent Research Runs</h2>
+      <table>
+        <thead><tr><th>Ticker</th><th>DCF Value</th><th>Direction</th><th>Confidence</th><th>Status</th></tr></thead>
+        <tbody id="runs-table"><tr><td colspan="5" style="color:var(--text-dim)">No runs yet. Use Quick Research above.</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Portfolio Signals -->
+    <div class="panel">
+      <h2>Portfolio Signals</h2>
+      <table>
+        <thead><tr><th>Entity</th><th>Direction</th><th>Conviction</th><th>Sizing</th><th>Quality</th></tr></thead>
+        <tbody id="signals-table"><tr><td colspan="5" style="color:var(--text-dim)">No signals yet.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Valuation Chart -->
+    <div class="panel">
+      <h2>Valuation Scenarios</h2>
+      <div class="chart-container"><canvas id="valuation-chart"></canvas></div>
+    </div>
+
+    <!-- Metrics Chart -->
+    <div class="panel">
+      <h2>Key Metrics Comparison</h2>
+      <div class="chart-container"><canvas id="metrics-chart"></canvas></div>
+    </div>
+  </div>
+
+  <div id="status-bar">Dashboard ready. API: <span id="api-url">http://localhost:8000</span></div>
+</div>
+
+<script>
+const API_BASE = window.location.port === '' ? 'http://localhost:8000' : `${window.location.protocol}//${window.location.host}`;
+let valuationChart = null;
+let metricsChart = null;
+
+async function fetchJSON(path) {
+  try {
+    const res = await fetch(`${API_BASE}${path}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch { return null; }
+}
+
+async function refreshDashboard() {
+  // Stats
+  const stats = await fetchJSON('/api/v1/portfolio/stats');
+  if (stats) {
+    document.getElementById('stat-runs').textContent = stats.total_runs || stats.completed_runs || 0;
+    document.getElementById('stat-signals').textContent = stats.total_signals || 0;
+    document.getElementById('stat-predictions').textContent = stats.active_predictions || 0;
+    document.getElementById('stat-postmortems').textContent = stats.total_postmortems || 0;
+  }
+
+  // Runs
+  const runs = await fetchJSON('/api/v1/research/runs');
+  if (runs && runs.length > 0) {
+    const tbody = document.getElementById('runs-table');
+    tbody.innerHTML = runs.map(r => `
+      <tr>
+        <td><strong>${r.ticker}</strong></td>
+        <td>${r.dcf_per_share ? '$' + r.dcf_per_share.toFixed(0) : '-'}</td>
+        <td>${directionBadge(r.direction)}</td>
+        <td>${confidenceBadge(r.confidence_bucket)}</td>
+        <td>${statusBadge(r.status)}</td>
+      </tr>
+    `).join('');
+
+    updateCharts(runs);
+  }
+
+  // Signals
+  const signals = await fetchJSON('/api/v1/portfolio/signals');
+  if (signals && signals.length > 0) {
+    const tbody = document.getElementById('signals-table');
+    tbody.innerHTML = signals.map(s => `
+      <tr>
+        <td>${s.entity_id}</td>
+        <td>${directionBadge(s.direction)}</td>
+        <td>${s.conviction || '-'}</td>
+        <td>${s.sizing_tier || '-'}</td>
+        <td>${s.data_quality_tier || '-'}</td>
+      </tr>
+    `).join('');
+  }
+}
+
+function directionBadge(d) {
+  if (!d) return '-';
+  if (d === 'long') return '<span class="badge-green">LONG</span>';
+  if (d === 'short') return '<span class="badge-red">SHORT</span>';
+  return `<span class="badge-yellow">${d.toUpperCase()}</span>`;
+}
+function confidenceBadge(c) {
+  if (!c) return '-';
+  const colors = { very_low: 'red', low: 'yellow', medium: 'blue', high: 'green', very_high: 'green' };
+  return `<span class="badge-${colors[c] || 'blue'}">${c}</span>`;
+}
+function statusBadge(s) {
+  if (s === 'completed') return '<span class="badge-green">Done</span>';
+  if (s === 'failed') return '<span class="badge-red">Failed</span>';
+  return `<span class="badge-yellow">${s}</span>`;
+}
+
+function updateCharts(runs) {
+  const completed = runs.filter(r => r.dcf_per_share);
+  if (completed.length === 0) return;
+
+  // Valuation chart — would need scenario data; show DCF values for now
+  if (valuationChart) valuationChart.destroy();
+  const ctx1 = document.getElementById('valuation-chart').getContext('2d');
+  valuationChart = new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: completed.map(r => r.ticker),
+      datasets: [{
+        label: 'DCF Value ($/share)',
+        data: completed.map(r => r.dcf_per_share),
+        backgroundColor: 'rgba(88, 166, 255, 0.6)',
+        borderColor: 'rgba(88, 166, 255, 1)',
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } }, x: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } } },
+      plugins: { legend: { labels: { color: '#c9d1d9' } } }
+    }
+  });
+}
+
+async function runResearch() {
+  const ticker = document.getElementById('ticker-input').value.trim().toUpperCase();
+  const price = document.getElementById('price-input').value;
+  if (!ticker) { alert('Enter a ticker'); return; }
+
+  const btn = document.getElementById('run-btn');
+  const status = document.getElementById('run-status');
+  btn.disabled = true;
+  status.textContent = `Running research for ${ticker}...`;
+
+  try {
+    const body = { ticker };
+    if (price) body.current_price = parseFloat(price);
+    const res = await fetch(`${API_BASE}/api/v1/research/auto`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      status.innerHTML = `<span style="color:var(--green)">Completed: ${data.ticker} — DCF $${data.dcf_per_share?.toFixed(0) || 'N/A'}/share, ${data.direction || 'no signal'}</span>`;
+      refreshDashboard();
+    } else {
+      status.innerHTML = `<span style="color:var(--red)">Error: ${data.detail || JSON.stringify(data)}</span>`;
+    }
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--red)">Network error — is the API server running? (uvicorn aegis.api.rest.app:app)</span>`;
+  }
+  btn.disabled = false;
+}
+
+// Initial load + auto-refresh
+refreshDashboard();
+setInterval(refreshDashboard, 30000);
+document.getElementById('api-url').textContent = API_BASE;
+</script>
+</body>
+</html>

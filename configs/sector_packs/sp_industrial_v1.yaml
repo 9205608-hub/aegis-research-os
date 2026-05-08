@@ -1,0 +1,113 @@
+sector_pack_id: sp_industrial_v1
+sector_name: "Multi-Industry / Industrial Conglomerates"
+version: "1.0"
+
+key_kpis:
+  - "Book-to-bill ratio"
+  - "Backlog value and conversion rate"
+  - "Organic revenue growth"
+  - "Segment operating margins"
+  - "Free cash flow conversion"
+  - "Aftermarket revenue mix"
+
+cycle_characteristics:
+  cyclicality: moderate_to_high
+  leading_indicators:
+    - "PMI (Purchasing Managers Index)"
+    - "Industrial production index"
+    - "Non-residential construction starts"
+    - "Commercial aerospace order book"
+  typical_cycle_length_years: 5
+
+competitive_dynamics:
+  moat_sources:
+    - "Installed base generating recurring aftermarket revenue"
+    - "Regulatory certifications and qualification costs"
+    - "Long-cycle contracts with switching cost (aerospace, defense)"
+    - "Technology leadership in automation and controls"
+  disruption_risks:
+    - "Digital disruption (IoT competitors, software-defined industry)"
+    - "China domestic competitors in heavy machinery"
+    - "Electrification changing powertrain value chain"
+    - "Supply chain reshoring altering demand patterns"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.15, 0.25]
+  typical_revenue_growth_range: [0.03, 0.08]
+  key_multiples:
+    - "P/E Forward"
+    - "EV/EBITDA"
+    - "FCF Yield"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.30, 0.42]
+    operating_margin: [0.15, 0.25]
+  variable_cost_drivers:
+    - "Raw materials (steel, copper, aluminum, rare earths)"
+    - "Component sourcing and sub-assembly costs"
+    - "Freight and logistics"
+  fixed_cost_drivers:
+    - "R&D (product development, digital platform investment)"
+    - "Manufacturing overhead and facility costs"
+    - "Sales force and service network"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Orders x Backlog Conversion Rate + Aftermarket Services"
+    tree:
+      - name: "New_Equipment_Orders"
+        unit: "billions"
+        base_value: 42
+        near_growth: 0.05
+        long_growth: 0.03
+        growth_driver: "Infrastructure spending, reshoring capex, energy transition investment"
+        note: "Annual new equipment orders; GE Aerospace ~$42B, Honeywell ~$38B total orders"
+
+      - name: "Backlog_Conversion_Rate"
+        unit: "ratio"
+        base_value: 0.65
+        near_growth: 0.01
+        long_growth: 0.00
+        growth_driver: "Supply chain normalization, production ramp-up, delivery execution"
+        note: "Percentage of backlog converted to revenue annually; typically 60-70%"
+
+      - name: "Aftermarket_Services"
+        unit: "billions"
+        base_value: 22
+        near_growth: 0.07
+        long_growth: 0.05
+        growth_driver: "Fleet aging, long-term service agreements, connected equipment analytics"
+        note: "High-margin recurring revenue; GE Aerospace services ~$22B"
+
+      - name: "Automation_Controls_Revenue"
+        unit: "billions"
+        base_value: 18
+        near_growth: 0.06
+        long_growth: 0.04
+        growth_driver: "Factory automation, building management systems, process controls"
+        note: "Honeywell PMT + Building Tech ~$18B, Emerson automation ~$12B"
+
+      - name: "Construction_Mining_Equipment"
+        unit: "billions"
+        base_value: 65
+        near_growth: 0.03
+        long_growth: 0.02
+        growth_driver: "Non-residential construction, mining capex, infrastructure bills"
+        note: "Caterpillar total revenue ~$65B; Deere construction ~$12B"
+
+      - name: "Defense_Revenue"
+        unit: "billions"
+        base_value: 15
+        near_growth: 0.06
+        long_growth: 0.04
+        growth_driver: "NATO defense spending increases, modernization programs"
+        note: "GE, Honeywell, RTX defense-related segments"
+
+accounting_considerations:
+  - "Percentage-of-completion revenue recognition on long-term contracts"
+  - "Goodwill impairment risk from historical M&A (GE, Honeywell)"
+  - "Pension and OPEB liabilities (legacy defined-benefit plans)"
+  - "Restructuring charges and stranded costs from portfolio simplification"
+  - "Segment reporting changes post-spin-off (GE Vernova, GE HealthCare)"

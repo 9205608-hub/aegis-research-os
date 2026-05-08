@@ -1,0 +1,79 @@
+sector_pack_id: sp_saas_v1
+sector_name: "Enterprise SaaS"
+version: "1.0"
+
+key_kpis:
+  - "ARR / MRR"
+  - "Net Revenue Retention"
+  - "CAC Payback Period"
+  - "Rule of 40"
+  - "Gross Margin"
+
+cycle_characteristics:
+  cyclicality: low
+  leading_indicators:
+    - "Enterprise IT spending surveys"
+    - "Net new ARR growth rate"
+    - "Sales pipeline conversion"
+  typical_cycle_length_years: 5
+
+competitive_dynamics:
+  moat_sources:
+    - "Switching costs (data lock-in)"
+    - "Platform ecosystem stickiness"
+    - "Distribution advantage (enterprise sales force)"
+  disruption_risks:
+    - "AI-native competitors"
+    - "Open source alternatives"
+    - "Platform consolidation (Microsoft bundling)"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.15, 0.35]
+  typical_revenue_growth_range: [0.15, 0.35]
+  key_multiples:
+    - "EV/Revenue"
+    - "EV/ARR"
+    - "Rule of 40 score"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.70, 0.85]
+    operating_margin: [0.15, 0.35]
+  variable_cost_drivers:
+    - "Cloud hosting costs"
+    - "Payment processing fees"
+  fixed_cost_drivers:
+    - "R&D (product development)"
+    - "S&M (enterprise sales)"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Customers x ARPU x Net Retention"
+    tree:
+      - name: "Enterprise_Customers"
+        unit: "thousands"
+        base_value: 150
+        near_growth: 0.12
+        long_growth: 0.05
+        growth_driver: "New logo acquisition + land-and-expand"
+
+      - name: "ARPU"
+        unit: "$/year"
+        base_value: 180000
+        near_growth: 0.08
+        long_growth: 0.03
+        growth_driver: "Upselling premium tiers, platform expansion, price increases"
+
+      - name: "Net_Retention_Factor"
+        unit: "ratio"
+        base_value: 1.0
+        near_growth: 0.0
+        long_growth: 0.0
+        growth_driver: "Net retention ~120-130% implies organic expansion; modeled as base=1.0 with growth in ARPU"
+
+accounting_considerations:
+  - "Revenue recognition: ASC 606 multi-element arrangements"
+  - "Capitalized commissions (ASC 340-40) amortized over contract life"
+  - "Stock-based compensation typically 15-25% of revenue"
+  - "Deferred revenue as leading indicator"

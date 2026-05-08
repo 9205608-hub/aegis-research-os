@@ -1,0 +1,115 @@
+sector_pack_id: sp_energy_v1
+sector_name: "Integrated Oil & Gas / Energy"
+version: "1.0"
+
+key_kpis:
+  - "Production volume (mboe/d)"
+  - "Reserve life (years)"
+  - "Finding & development cost ($/boe)"
+  - "Realized price ($/boe)"
+  - "Reserve replacement ratio"
+  - "Refining utilization rate"
+
+cycle_characteristics:
+  cyclicality: very_high
+  leading_indicators:
+    - "Brent/WTI crude oil forward curve"
+    - "OPEC+ spare capacity and compliance"
+    - "US rig count (Baker Hughes)"
+    - "Global oil inventory levels (days of supply)"
+  typical_cycle_length_years: 7
+
+competitive_dynamics:
+  moat_sources:
+    - "Low-cost acreage positions (Permian, Guyana)"
+    - "Integrated value chain (upstream + downstream + chemicals)"
+    - "Scale in refining and logistics infrastructure"
+    - "LNG long-term contract portfolio"
+  disruption_risks:
+    - "Energy transition / peak oil demand timeline"
+    - "Carbon tax and emissions regulation"
+    - "Renewable energy cost deflation"
+    - "Geopolitical risk (sanctions, expropriation)"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.08, 0.25]
+  typical_revenue_growth_range: [-0.05, 0.10]
+  key_multiples:
+    - "EV/EBITDA"
+    - "EV/DACF (Debt-adjusted cash flow)"
+    - "P/CF (Price-to-cash-flow)"
+    - "EV/2P Reserves"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.25, 0.55]
+    operating_margin: [0.08, 0.25]
+  variable_cost_drivers:
+    - "Lifting costs ($/boe)"
+    - "Refining input costs (crude feedstock)"
+    - "Transportation and midstream tariffs"
+  fixed_cost_drivers:
+    - "Exploration and appraisal spending"
+    - "Depreciation, depletion & amortization (DD&A)"
+    - "Decommissioning and environmental liabilities"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Production Volume x Realized Price + Downstream Throughput x Crack Spread + Chemical Sales"
+    tree:
+      - name: "Upstream_Production"
+        unit: "mboe/d"
+        base_value: 3800
+        near_growth: 0.02
+        long_growth: 0.01
+        growth_driver: "Permian growth, Guyana ramp (Exxon), LNG expansion projects"
+        note: "Total liquids + gas production; Exxon ~3.8M boe/d, Chevron ~3.1M boe/d"
+
+      - name: "Upstream_Realized_Price"
+        unit: "$/boe"
+        base_value: 62
+        near_growth: 0.00
+        long_growth: -0.01
+        growth_driver: "Commodity price driven by OPEC+, demand growth, and inventory cycles"
+        note: "Blended realized price across oil, gas, NGL; highly volatile"
+
+      - name: "Downstream_Throughput"
+        unit: "kbd (thousand barrels/day)"
+        base_value: 4200
+        near_growth: 0.01
+        long_growth: 0.00
+        growth_driver: "Refinery utilization optimization, turnaround scheduling"
+        note: "Refining throughput; Exxon ~4.2M b/d global refining capacity"
+
+      - name: "Crack_Spread"
+        unit: "$/barrel"
+        base_value: 18
+        near_growth: 0.00
+        long_growth: -0.01
+        growth_driver: "Product demand (gasoline, diesel, jet fuel) vs crude input cost"
+        note: "3-2-1 crack spread benchmark; cyclical, mean-reverting"
+
+      - name: "Chemical_Sales"
+        unit: "billions"
+        base_value: 32
+        near_growth: 0.03
+        long_growth: 0.02
+        growth_driver: "Polyethylene/polypropylene demand, advantaged feedstock from US ethane"
+        note: "Chemical segment revenue; Exxon ~$32B, SABIC integration for peers"
+
+      - name: "LNG_Revenue"
+        unit: "billions"
+        base_value: 12
+        near_growth: 0.08
+        long_growth: 0.05
+        growth_driver: "Long-term LNG offtake contracts, Asia-Pacific demand growth"
+        note: "LNG portfolio revenue; growing structural segment"
+
+accounting_considerations:
+  - "Successful efforts vs full cost method for exploration costs"
+  - "Impairment testing of upstream assets under low-price scenarios"
+  - "Asset retirement obligations (ARO) and decommissioning provisions"
+  - "LIFO vs FIFO inventory method impact on downstream earnings"
+  - "Production-sharing and joint venture consolidation methods"
+  - "Hedging gains/losses and mark-to-market on commodity derivatives"

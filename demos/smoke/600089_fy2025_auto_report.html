@@ -1,0 +1,1480 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Aegis 投研 — 特变电工 (600089)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  :root {
+    /* Near-black, cool-tinted */
+    --bg:       oklch(0.155 0.012 255);
+    --bg-elev:  oklch(0.185 0.013 255);
+    --surface:  oklch(0.205 0.014 255);
+    --surface-2: oklch(0.235 0.015 255);
+    --hairline: oklch(0.28 0.015 255 / 0.7);
+    --hairline-strong: oklch(0.34 0.018 255 / 0.9);
+
+    --text:     oklch(0.94 0.005 255);
+    --text-2:   oklch(0.72 0.008 255);
+    --text-3:   oklch(0.54 0.009 255);
+    --text-4:   oklch(0.40 0.010 255);
+
+    /* Muted, low-sat accents */
+    --accent:     oklch(0.72 0.075 210);   /* cool teal-slate */
+    --accent-dim: oklch(0.52 0.055 210);
+    --accent-bg:  oklch(0.28 0.04 210 / 0.35);
+
+    /* Default (US / global): green = up, red = down */
+    --up:        oklch(0.72 0.13 155);
+    --up-soft:   oklch(0.30 0.06 155 / 0.55);
+    --down:      oklch(0.68 0.17 25);
+    --down-soft: oklch(0.30 0.08 25 / 0.55);
+    --warn:      oklch(0.78 0.12 72);
+    --warn-soft: oklch(0.28 0.06 72 / 0.50);
+
+    --serif: "Source Serif 4", "Songti SC", "Noto Serif SC", Georgia, serif;
+    --sans:  "Inter", "PingFang SC", "HarmonyOS Sans SC", system-ui, -apple-system, sans-serif;
+    --mono:  "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* A-share override: red = up, green = down (China convention) */
+  body[data-market="CN"] {
+    --up:        oklch(0.68 0.17 25);
+    --up-soft:   oklch(0.30 0.08 25 / 0.55);
+    --down:      oklch(0.72 0.13 155);
+    --down-soft: oklch(0.30 0.06 155 / 0.55);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-feature-settings: "cv11","ss01","ss03"; }
+  a { color: inherit; text-decoration: none; }
+
+  /* Scroll progress hairline */
+  #scroll-progress { position: fixed; top:0; left:0; height:1px; background: var(--accent); z-index:100; width:0; transition: width 60ms linear; }
+
+  /* Top bar */
+  .topbar { position: sticky; top:0; z-index:40; height: 52px; display:flex; align-items:center; padding: 0 28px; background: color-mix(in oklab, var(--bg) 85%, transparent); backdrop-filter: blur(14px) saturate(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.1); border-bottom: 1px solid var(--hairline); }
+  .topbar .brand { font-family: var(--serif); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+  .topbar .brand .dim { color: var(--text-3); font-weight: 400; margin-left: 10px; }
+  .topbar .path { color: var(--text-3); font-size: 13px; margin-left: 20px; }
+  .topbar .right { margin-left: auto; display:flex; align-items:center; gap: 18px; font-size: 12.5px; color: var(--text-3); }
+  .kbd { font-family: var(--mono); font-size: 11px; color: var(--text-3); border:1px solid var(--hairline); padding: 2px 6px; border-radius: 4px; background: var(--bg-elev); }
+
+  /* Layout grid */
+  .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr) 280px; gap: 0; max-width: 1440px; margin: 0 auto; padding: 0 28px; }
+  .toc { position: sticky; top: 52px; align-self: start; height: calc(100vh - 52px); padding: 36px 20px 24px 0; overflow-y: auto; border-right: 1px solid var(--hairline); }
+  .toc::-webkit-scrollbar { width: 6px; } .toc::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
+  .main { padding: 36px 56px 160px; min-width: 0; }
+  .rail { position: sticky; top: 52px; align-self: start; height: calc(100vh - 52px); padding: 36px 0 24px 24px; overflow-y: auto; border-left: 1px solid var(--hairline); }
+  .rail::-webkit-scrollbar { width: 6px; } .rail::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
+
+  @media (max-width: 1200px) { .layout { grid-template-columns: 240px 1fr; } .rail { display: none; } }
+  @media (max-width: 900px)  {
+    .layout { grid-template-columns: 1fr; padding: 0 20px; }
+    .toc { display:none; }
+    .main { padding: 24px 0 120px; }
+    /* Stack 2-col grids at mobile width */
+    .thesis-grid, .agent-points, .scen-grid { grid-template-columns: 1fr !important; }
+    /* Top-right dock buttons would overflow at 320px — shrink gaps */
+    .dock { right: 12px; bottom: 12px; font-size: 11.5px; }
+    /* Stat-strip auto-fit already collapses; no change needed */
+  }
+
+  /* Print: light theme, hide floating UI chrome */
+  @media print {
+    html, body { background: white !important; color: #0a0a0a !important; font-size: 11pt; }
+    .dock, .tweaks, #scroll-progress, .toc { display: none !important; }
+    .layout { grid-template-columns: 1fr !important; padding: 0 !important; }
+    .main { padding: 0 !important; max-width: 100% !important; }
+    .topbar { position: static !important; border-bottom: 1px solid #bbb !important; background: white !important; }
+    section { break-inside: avoid; page-break-inside: avoid; }
+    .scen-cell, .stat, .agent, table, .callout { break-inside: avoid; page-break-inside: avoid; }
+    .hero, .verdict, .scen-grid, .agent, .callout, .barlist, table.heat {
+      border-color: #ccc !important; background: white !important; color: #0a0a0a !important;
+    }
+    a { color: #0a0a0a !important; text-decoration: none !important; }
+    /* Keep semantic colors for up/down numbers */
+    .up, .price-change.up, .v.up, .word.buy { color: #0a7e4a !important; }
+    .down, .price-change.down, .v.down, .word.avoid { color: #c2302e !important; }
+    .warn, .word.hold { color: #a05c00 !important; }
+  }
+
+  /* TOC */
+  .toc-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); margin: 18px 0 10px; font-weight: 500; }
+  .toc a { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px 6px 10px; border-radius: 6px; color: var(--text-3); font-size: 13.5px; line-height: 1.35; border-left: 1px solid transparent; margin-left: -1px; transition: color .15s, background .15s, border-color .15s; }
+  .toc a .num { font-family: var(--mono); font-size: 11px; color: var(--text-4); min-width: 22px; }
+  .toc a:hover { color: var(--text); background: color-mix(in oklab, var(--surface) 40%, transparent); }
+  .toc a.active { color: var(--text); border-left-color: var(--accent); background: color-mix(in oklab, var(--accent-bg) 40%, transparent); }
+  .toc a.active .num { color: var(--accent); }
+  .toc .meta { font-size: 11.5px; color: var(--text-4); line-height: 1.5; padding: 0 10px; }
+
+  /* Typography */
+  h1, h2, h3, h4 { font-family: var(--serif); font-weight: 500; color: var(--text); letter-spacing: -0.015em; text-wrap: pretty; }
+  .h-display { font-family: var(--serif); font-size: 44px; line-height: 1.08; font-weight: 500; letter-spacing: -0.022em; }
+  .h-section { font-family: var(--serif); font-size: 30px; line-height: 1.15; font-weight: 500; letter-spacing: -0.018em; margin: 0 0 6px; }
+  .h-sub { font-family: var(--serif); font-size: 20px; line-height: 1.25; font-weight: 500; letter-spacing: -0.012em; margin: 0 0 6px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-4); }
+  .lede { font-family: var(--serif); font-size: 19px; line-height: 1.55; color: var(--text-2); font-weight: 300; }
+  p { color: var(--text-2); margin: 0 0 14px; font-size: 15px; line-height: 1.72; }
+  .prose p { font-family: var(--serif); font-size: 16.5px; line-height: 1.78; color: var(--text); font-weight: 300; }
+  .prose p strong { font-weight: 500; color: var(--text); }
+  .num, .mono, .tabular { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Section spacing */
+  section { margin-top: 96px; scroll-margin-top: 72px; }
+  section:first-of-type { margin-top: 0; }
+  .section-head { display:flex; align-items: baseline; gap: 14px; margin-bottom: 28px; padding-bottom: 16px; }
+  .section-head .idx { font-family: var(--mono); font-size: 11px; color: var(--text-4); letter-spacing: 0.14em; }
+
+  /* Header region */
+  .hero { padding: 56px 0 40px; }
+  .ticker-row { display:flex; align-items: center; gap: 16px; margin-bottom: 22px; }
+  .ticker-mark { width: 44px; height: 44px; border-radius: 8px; background: linear-gradient(135deg, var(--accent-bg), transparent); border: 1px solid var(--hairline-strong); display:flex; align-items:center; justify-content:center; font-family: var(--serif); font-size: 20px; font-weight: 500; color: var(--accent); }
+  .ticker-meta { display:flex; flex-direction: column; gap: 2px; }
+  .ticker-meta .code { font-family: var(--mono); font-size: 12.5px; color: var(--text-3); letter-spacing: 0.04em; }
+  .ticker-meta .code .dot { margin: 0 6px; color: var(--text-4); }
+
+  .price-row { display:flex; align-items: baseline; gap: 22px; margin-top: 10px; }
+  .price { font-family: var(--mono); font-size: 40px; font-weight: 500; color: var(--text); letter-spacing: -0.02em; }
+  .price .curr { font-size: 20px; color: var(--text-3); margin-right: 6px; font-weight: 400; }
+  .price-change { font-family: var(--mono); font-size: 15px; padding: 3px 10px; border-radius: 4px; }
+  .price-change.up { color: var(--up); background: var(--up-soft); }
+  .price-change.down { color: var(--down); background: var(--down-soft); }
+  .price-meta { color: var(--text-3); font-size: 12.5px; }
+
+  .stale-banner { margin-top: 28px; display: flex; align-items:flex-start; gap: 14px; padding: 14px 18px; border: 1px solid color-mix(in oklab, var(--warn) 30%, transparent); background: var(--warn-soft); border-radius: 8px; }
+  .stale-banner .icon { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--warn); color: var(--warn); display:flex; align-items:center; justify-content:center; font-size: 11px; font-family: var(--mono); font-weight: 600; flex-shrink: 0; margin-top: 1px; }
+  .stale-banner .title { color: var(--warn); font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .stale-banner .body { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+
+  /* Quick stats strip */
+  /* Auto-fit grid so the border-right trim lands cleanly whether the
+     pipeline emits 3, 4, or 5 quick tiles. */
+  .stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0; margin-top: 34px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .stat { padding: 18px 20px 18px 0; border-right: 1px solid var(--hairline); }
+  .stat:last-child { border-right: none; }
+  .stat:last-child { border-right: none; padding-right: 0; }
+  .stat .lbl { font-size: 11.5px; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .stat .val { font-family: var(--mono); font-size: 22px; color: var(--text); letter-spacing: -0.01em; }
+  .stat .sub { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+
+  /* Lede card (recommendation band) */
+  .verdict { margin-top: 36px; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; padding: 24px 28px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px; }
+  .verdict .rating { display:flex; flex-direction: column; align-items: center; gap: 4px; padding-right: 28px; border-right: 1px solid var(--hairline); }
+  .verdict .rating .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-4); }
+  /* Rating word semantics (both markets):
+     buy/overweight → bullish  (--up, green in US / red in CN)
+     hold/neutral   → caution  (--warn, amber)
+     avoid/reduce   → bearish  (--down, red in US / green in CN) */
+  .verdict .rating .word { font-family: var(--serif); font-size: 26px; color: var(--up); font-weight: 500; letter-spacing: -0.01em; }
+  .verdict .rating .word.buy   { color: var(--up); }
+  .verdict .rating .word.hold  { color: var(--warn); }
+  .verdict .rating .word.avoid { color: var(--down); }
+  .verdict .tgt { display:flex; flex-direction: column; gap: 3px; }
+  .verdict .tgt .lbl { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); font-family: var(--mono); }
+  .verdict .tgt .val { font-family: var(--mono); font-size: 22px; color: var(--text); }
+  .verdict .spread { font-family: var(--mono); font-size: 13px; color: var(--up); }
+
+  /* Prose */
+  .reading { max-width: 720px; }
+  .reading.wide { max-width: 820px; }
+
+  /* Pull quote */
+  .pullquote { font-family: var(--serif); font-size: 22px; line-height: 1.5; color: var(--text); padding: 4px 0 4px 24px; border-left: 1px solid var(--accent); margin: 28px 0; font-weight: 300; letter-spacing: -0.012em; }
+  .pullquote .attrib { display:block; margin-top: 10px; font-size: 12px; color: var(--text-4); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* Scenario card */
+  .scen-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
+  .scen-cell { background: var(--bg-elev); padding: 22px 22px 24px; position: relative; }
+  .scen-cell .hd { display:flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .scen-cell .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); }
+  .scen-cell .prob { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+  .scen-cell .px { font-family: var(--mono); font-size: 32px; font-weight: 500; letter-spacing: -0.015em; margin-bottom: 2px; }
+  .scen-cell.bear .px { color: var(--down); }
+  .scen-cell.base .px { color: var(--text); }
+  .scen-cell.bull .px { color: var(--up); }
+  .scen-cell .delta { font-family: var(--mono); font-size: 12px; color: var(--text-3); margin-bottom: 14px; }
+  .scen-cell p { font-family: var(--serif); font-size: 14px; line-height: 1.65; color: var(--text-2); font-weight: 300; margin: 0; }
+
+  /* Probability bar under scenarios */
+  .prob-bar { display:flex; height: 3px; margin-top: 18px; border-radius: 2px; overflow: hidden; background: var(--surface-2); }
+  .prob-bar .seg { height: 100%; }
+  .prob-bar .seg.bear { background: var(--down); }
+  .prob-bar .seg.base { background: var(--accent); }
+  .prob-bar .seg.bull { background: var(--up); }
+  .prob-legend { display:flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--text-4); margin-top: 8px; letter-spacing: 0.06em; }
+
+  /* Weighted line */
+  .weighted { margin-top: 28px; display:flex; align-items: baseline; gap: 18px; padding: 20px 24px; background: color-mix(in oklab, var(--surface) 55%, transparent); border: 1px solid var(--hairline); border-radius: 8px; }
+  .weighted .k { font-size: 12px; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.12em; font-family: var(--mono); }
+  .weighted .v { font-family: var(--mono); font-size: 26px; color: var(--text); }
+  .weighted .delta { margin-left: auto; font-family: var(--mono); font-size: 13px; color: var(--up); }
+
+  /* Tables */
+  table.data { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.data th, table.data td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--hairline); }
+  table.data th { font-weight: 500; color: var(--text-4); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid var(--hairline-strong); }
+  table.data td.num, table.data th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  table.data tr:hover td { background: color-mix(in oklab, var(--surface) 30%, transparent); }
+  table.data tr.total td { border-top: 1px solid var(--hairline-strong); font-weight: 500; color: var(--text); }
+
+  /* Sensitivity heatmap */
+  table.heat { width:100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+  table.heat th, table.heat td { padding: 8px 10px; text-align: right; border: 1px solid var(--hairline); }
+  table.heat th { font-size: 11px; color: var(--text-4); font-weight: 500; background: var(--surface); }
+  table.heat td.rh { text-align: left; color: var(--text-3); background: var(--surface); }
+  table.heat td.hot { position: relative; }
+
+  /* Agent cards */
+  .agent-list { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .agent { padding: 22px 24px; background: var(--bg-elev); border: 1px solid var(--hairline); border-radius: 10px; transition: border-color .2s, background .2s; }
+  .agent:hover { border-color: var(--hairline-strong); }
+  .agent .hd { display:flex; align-items: baseline; gap: 16px; margin-bottom: 8px; }
+  .agent .role { font-family: var(--mono); font-size: 11px; color: var(--text-4); letter-spacing: 0.14em; text-transform: uppercase; min-width: 110px; }
+  .agent .name { font-family: var(--serif); font-size: 20px; font-weight: 500; color: var(--text); letter-spacing: -0.01em; flex: 1; }
+  .agent .stance { font-family: var(--mono); font-size: 11.5px; padding: 3px 9px; border-radius: 3px; letter-spacing: 0.06em; }
+  .agent .stance.bear { color: var(--down); background: var(--down-soft); }
+  .agent .stance.bull { color: var(--up); background: var(--up-soft); }
+  .agent .stance.neutral { color: var(--warn); background: var(--warn-soft); }
+  .agent .thesis { font-family: var(--serif); font-size: 15.5px; line-height: 1.72; color: var(--text-2); margin-bottom: 14px; font-weight: 300; }
+  .agent .thesis strong { color: var(--text); font-weight: 500; }
+  .agent-points { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+  .agent-points .col h5 { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-4); font-weight: 500; margin: 0 0 8px; }
+  .agent-points ul { margin: 0; padding: 0; list-style: none; }
+  .agent-points li { font-size: 13px; color: var(--text-2); line-height: 1.55; padding-left: 14px; position: relative; margin-bottom: 8px; }
+  .agent-points li::before { content: ""; position: absolute; left: 0; top: 9px; width: 4px; height: 1px; background: var(--text-4); }
+
+  /* Rail side-note */
+  .rail-block { margin-bottom: 32px; }
+  .rail-block .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); margin-bottom: 10px; }
+  .rail-kv { display:flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--hairline); font-size: 12.5px; }
+  .rail-kv:last-child { border-bottom: none; }
+  .rail-kv .k { color: var(--text-3); }
+  .rail-kv .v { font-family: var(--mono); color: var(--text); }
+  .rail-kv .v.up { color: var(--up); }
+  .rail-kv .v.down { color: var(--down); }
+
+  .critic-row { display:flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: 12px; }
+  .critic-row .cn { flex: 1; color: var(--text-3); }
+  .critic-row .cc { font-family: var(--mono); font-size: 11.5px; color: var(--text-4); }
+  /* Status dots use absolute colors — green = ok, red = err — irrespective
+     of market convention. (They're UI/system semantics, not up/down P&L.) */
+  .critic-row .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .critic-row .dot.ok   { background: oklch(0.72 0.13 155); }
+  .critic-row .dot.warn { background: var(--warn); }
+  .critic-row .dot.err  { background: oklch(0.68 0.17 25); }
+
+  /* Callouts */
+  .callout { margin: 22px 0; padding: 18px 22px; background: color-mix(in oklab, var(--accent-bg) 28%, transparent); border-left: 1px solid var(--accent); border-radius: 0 6px 6px 0; font-family: var(--serif); font-size: 15.5px; line-height: 1.7; color: var(--text); font-weight: 300; }
+  .callout strong { font-weight: 500; }
+
+  /* Thesis panel */
+  .thesis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px 48px; margin-top: 8px; }
+  .thesis-item { border-top: 1px solid var(--hairline); padding-top: 18px; }
+  .thesis-item h5 { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-4); font-weight: 500; margin: 0 0 10px; }
+  .thesis-item p { font-family: var(--serif); font-size: 15px; line-height: 1.7; color: var(--text-2); font-weight: 300; margin: 0; }
+
+  /* Floating action dock */
+  .dock { position: fixed; right: 28px; bottom: 28px; display:flex; gap: 1px; padding: 0; background: var(--hairline-strong); border-radius: 10px; overflow: hidden; box-shadow: 0 12px 32px -12px oklch(0 0 0 / 0.5), 0 0 0 1px var(--hairline); z-index: 50; }
+  .dock button { appearance: none; border: none; background: var(--bg-elev); color: var(--text-2); padding: 12px 18px; font-family: var(--sans); font-size: 13px; cursor: pointer; display:flex; align-items: center; gap: 8px; transition: background .15s, color .15s; }
+  .dock button:hover { background: var(--surface); color: var(--text); }
+  .dock button.primary { background: var(--surface); color: var(--text); }
+  .dock button svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.5; fill: none; }
+
+  /* Tweaks panel */
+  .tweaks { position: fixed; right: 28px; bottom: 80px; width: 280px; background: var(--bg-elev); border: 1px solid var(--hairline-strong); border-radius: 10px; padding: 16px 18px; z-index: 49; display: none; box-shadow: 0 12px 32px -8px oklch(0 0 0 / 0.6); }
+  .tweaks.on { display: block; }
+  .tweaks h4 { font-family: var(--serif); font-size: 14px; font-weight: 500; margin: 0 0 12px; color: var(--text); }
+  .tweak-row { display:flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 12.5px; color: var(--text-3); }
+  .swatches { display:flex; gap: 8px; }
+  .swatch { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--hairline); cursor: pointer; }
+  .swatch.on { outline: 2px solid var(--text); outline-offset: 2px; }
+
+  /* Segmented */
+  .seg-ctl { display:inline-flex; background: var(--surface); border: 1px solid var(--hairline); border-radius: 6px; padding: 2px; }
+  .seg-ctl button { appearance: none; background: transparent; border: none; font-family: var(--sans); font-size: 11.5px; color: var(--text-3); padding: 4px 10px; cursor: pointer; border-radius: 4px; letter-spacing: 0.02em; }
+  .seg-ctl button.on { background: var(--bg-elev); color: var(--text); box-shadow: 0 0 0 1px var(--hairline); }
+
+  /* Footnote */
+  .footnote { font-size: 11.5px; color: var(--text-4); line-height: 1.6; margin-top: 16px; font-family: var(--mono); }
+
+  /* Chart placeholder blocks */
+  .chart { position: relative; width: 100%; background: var(--bg-elev); border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
+  .chart .axis { position: absolute; color: var(--text-4); font-family: var(--mono); font-size: 10.5px; }
+
+  /* Bar list */
+  .barlist { display: grid; gap: 4px; }
+  .barlist-row { display: grid; grid-template-columns: 140px 1fr 64px; align-items: center; gap: 12px; padding: 6px 0; font-size: 12.5px; }
+  .barlist-row .label { color: var(--text-3); }
+  .barlist-row .track { position: relative; height: 5px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .barlist-row .fill { position: absolute; top:0; height: 100%; }
+  .barlist-row .fill.pos { background: var(--up); left: 50%; }
+  .barlist-row .fill.neg { background: var(--down); right: 50%; }
+  .barlist-row .midline { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--text-4); opacity: 0.4; }
+  .barlist-row .v { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--text-2); }
+  .barlist-row .v.up { color: var(--up); }
+  .barlist-row .v.down { color: var(--down); }
+</style>
+</head>
+<body>
+  <div id="scroll-progress"></div>
+  <div id="root"></div>
+
+  <!-- Tweaks defaults -->
+  <script>
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "accentHue": 210,
+      "readingWidth": "comfortable",
+      "showRail": false
+    }/*EDITMODE-END*/;
+  </script>
+
+  <script>window.REPORT = {"company": "特变电工", "code": "600089", "exchange": "SH", "sector": "—", "reportDate": "2026-05-04 13:04 UTC", "runId": "run_20260504_130439_61097034", "period": "FY2025 年报", "tickerMark": "特", "confidence": "中", "bias": "warned", "pipelineDuration": "8s", "model": "k2.6", "staleBanner": null, "price": {"last": 26.82, "change": 0.0, "changePct": 0.0, "currency": "¥", "asOf": "2026-05-04 13:04 UTC", "market": "CN"}, "rating": {"word": "增持", "tone": "buy", "target": 30.29, "weighted": "概率加权", "timeHorizon": "12 个月", "riskLevel": "中高"}, "headline": "", "lede": "", "executiveParagraphs": [], "coreCalloutHtml": "<strong>核心判断：</strong>基准 DCF 公允价值 ¥30.31；概率加权 ¥30.29，较现价 ¥26.82 存在 <strong>+12.9%</strong> 估值回归空间。", "quick": [{"lbl": "市值", "val": "¥1,355.2 亿", "sub": "市销率 1.4×"}, {"lbl": "市盈率 (TTM)", "val": "23.1×", "sub": "每股收益 1.16"}, {"lbl": "营业利润率", "val": "8.4%", "sub": ""}, {"lbl": "自由现金流", "val": "¥-127.5 亿", "sub": "CFO / NI = 1.55"}], "scenarios": [{"key": "bear", "tag": "悲观情景", "prob": 0.25, "px": 19.71, "narrative": ""}, {"key": "base", "tag": "基准情景", "prob": 0.5, "px": 30.31, "narrative": ""}, {"key": "bull", "tag": "乐观情景", "prob": 0.25, "px": 40.84, "narrative": ""}], "valuationPullquote": null, "macro": null, "financials": {"title": "利润表 vs 现金流表", "subtitle": "会计分析师 · 业务分析师", "paragraphs": [], "revTitle": "年度营收 · 亿元人民币", "revHistory": [{"y": "2021", "v": 690.3}, {"y": "2022", "v": 965.1}, {"y": "2023", "v": 982.1}, {"y": "2024", "v": 979.1}, {"y": "2025", "v": 973.2}], "revHighlightYear": "2025", "revFootnote": "", "kpisTitle": "FY2025 关键指标", "kpis": [{"label": "营收", "value": "¥973.2 亿"}, {"label": "净利润", "value": "¥60.0 亿"}, {"label": "EBITDA", "value": "¥148.5 亿"}, {"label": "经营现金流", "value": "¥93.3 亿", "tone": "up"}, {"label": "自由现金流", "value": "¥-127.5 亿", "tone": "down"}, {"label": "毛利率", "value": "18.9%", "total": true}, {"label": "营业利润率", "value": "8.4%"}, {"label": "ROIC", "value": "5.6%"}, {"label": "ROE", "value": "6.0%"}, {"label": "市盈率 (静态)", "value": "23.1×"}], "calloutHtml": "<strong>会计分析师提示 · </strong>CFO / NI = <span class='mono'>1.55</span>。"}, "dcf": {"title": "十年现金流桥接与企业价值拆解", "subtitle": "DCF 引擎 · FCFF 两阶段模型", "unit": "亿元人民币", "waccBase": 9.5, "gBase": 3.0, "sharesBase": 50.53, "paragraphHtml": "FCFF 两阶段模型：Y1–Y10 明细期 + 永续期（g = 3.0%, WACC = 9.5%）。", "projection": [[1, 1091.6168700482021, 91.47749371003933, 66.8629594345, 72.26722003093107, 247.68786781393703, 1.18436099745802, -109.74204934596399, -100.22104963101737], [2, 1212.8955043105573, 102.4896701142421, 116.40053299728741, 80.96683939025125, 242.82167996297355, 1.212786342623552, -46.66709391805843, -38.92086813707673], [3, 1347.64819483946, 114.819626200322, 164.96486898988212, 90.70750469825438, 233.6821969851624, 1.3475269052890289, 20.6426497976851, 15.722553720777205], [4, 1480.2567772116631, 127.0060314847607, 211.7013083869146, 100.33476487296097, 217.153669216951, 1.3260858237220308, 93.55631821920254, 65.07536994625224], [5, 1607.114783018703, 139.0154287311178, 255.13204223030482, 109.82218869758306, 192.85377396224433, 1.2685800580703979, 170.83187690757316, 108.51713432371604], [6, 1724.59487365737, 150.38467298292267, 293.70279702275366, 118.80389165650891, 206.9513848388844, 1.1748009063866698, 204.38050293399147, 118.56452028117994], [7, 1828.760404026275, 160.56516347350694, 285.55550042774314, 126.84647914407049, 219.451248483153, 1.0416553036890503, 191.9090757849716, 101.67090273954867], [8, 1915.9922752983287, 169.56531636390207, 280.881414131779, 133.95659992748264, 229.9190730357994, 0.8723187127205353, 184.0466223107417, 89.04609896108701], [9, 1983.05200493377, 176.88823884009227, 280.12878934190644, 139.7417086836729, 237.96624059205237, 0.6705972963544129, 181.2336601371726, 80.07773651317018], [10, 2052.4588251064515, 184.31080249455937, 284.2913036169267, 145.6055339707019, 246.2950590127742, 0.6940682017268188, 182.9077103731276, 73.80585599958646]], "summary": {"pvCashflows": 513.3, "pvTerminal": 1169.5, "ev": 1682.9, "netDebt": 151.5, "equity": 1531.4, "shares": 50.53, "perShare": 30.31}}, "agents": [{"role": "会计分析师", "name": "财报质量与现金流真实性", "stance": "neutral", "score": 3.0, "thesis": "Earnings quality appears sound — accruals and cash conversion are within normal ranges", "pros": ["Accruals ratio is -0.0147, indicating acceptable earnings quality", "CFO/Net Income ratio is 1.55 — healthy"], "cons": ["Aggregate metrics can mask segment-level issues — a single profitable segment may subsidize losses elsewhere", "Cross-standard differences in revenue recognition, R&D treatment, and government subsidy classification may affect metric comparability"]}, {"role": "业务分析师", "name": "产能利用率与资产错配", "stance": "neutral", "score": 3.0, "thesis": "Business shows weak economic moat indicators — commodity-like returns", "pros": ["Gross margin is 18.88%", "ROIC is 5.56%, indicating marginal capital allocation"], "cons": ["Low margins may reflect deliberate growth investment rather than poor business quality — unit economics at scale could differ materially"]}, {"role": "管理层分析师", "name": "资本配置与战略纪律", "stance": "neutral", "score": 3.0, "thesis": "Management's capital allocation track record is poor — ROIC suggests value destruction", "pros": ["ROIC is 5.56% — reflects capital allocation effectiveness", "ROE is 5.95%"], "cons": ["Low ROIC may reflect deliberate growth-phase reinvestment that will generate returns over a longer horizon", "Quantitative track record alone cannot capture management quality — communication transparency and strategic consistency also matter"]}, {"role": "估值分析师", "name": "DCF 与多组估值三角", "stance": "neutral", "score": 3.3, "thesis": "Market implies 50% revenue growth — aggressive; risk skewed to downside if growth disappoints", "pros": ["P/E (FY static): 22.6x", "EV/EBITDA: 10.1x"], "cons": ["High implied growth may be warranted if company has secular growth tailwinds (e.g., AI monetization) that sustain above-market rates", "DCF valuation is highly sensitive to terminal growth and WACC assumptions — small changes drive large value swings"]}, {"role": "变体分析师", "name": "市场共识与错价机制", "stance": "neutral", "score": 3.4, "thesis": "Consensus momentum: flat (mixed) — variant depends on new information or catalyst to break stasis", "pros": ["Market-implied revenue growth: 50.00%", "Consensus revision momentum: flat, breadth=mixed"], "cons": ["Variant thesis without near-term catalyst may fail to converge within horizon — 'the market can stay irrational longer than you can stay solvent'"]}, {"role": "风险分析师", "name": "客户集中度与偿付能力", "stance": "neutral", "score": 3.0, "thesis": "Net Debt/EBITDA: 1.0x — leverage is manageable", "pros": ["Net Debt/EBITDA: 1.0x — leverage is manageable", "Current ratio: 1.15x"], "cons": ["Risk assessment may be overly conservative — tail risks by definition have low probability"]}, {"role": "宏观分析师", "name": "行业周期与政策环境", "stance": "neutral", "score": 3.0, "thesis": "Entity classified under sector: General (pack: sp_generic)", "pros": ["Entity classified under sector: General (pack: sp_generic)", "Sector cyclicality: moderate, primary driver: unknown"], "cons": ["Sector pack benchmarks are general — company-specific factors may justify deviation from sector norms"]}], "critics": [{"name": "逻辑批评员", "issues": 0}, {"name": "财务批评员", "issues": 0}, {"name": "证据批评员", "issues": 3}, {"name": "行业批评员", "issues": 0}, {"name": "认知偏差批评员", "issues": 2}, {"name": "宏观一致性批评员", "issues": 2}, {"name": "市场批评员", "issues": 0}, {"name": "数值一致性批评员", "issues": 0}, {"name": "叙述事实核查员", "issues": 0}, {"name": "LLM 数值审核员", "issues": 1}], "thesis": {"core": "", "variant": "", "whyNow": "", "marketStory": "", "divergence": "", "counter": ""}, "sensitivity": {"paragraphs": ["下表为每个单因子 ±1σ 冲击对基准每股价值的弹性。"], "rows": [8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0], "cols": [2.0, 2.5, 3.0, 3.5, 4.0], "matrix": [[36.89, 39.64, 42.93, 46.95, 51.98], [33.09, 35.31, 37.95, 41.11, 44.97], [29.84, 31.67, 33.8, 36.33, 39.36], [27.03, 28.55, 30.31, 32.36, 34.78], [24.58, 25.86, 27.32, 29.01, 30.97], [22.42, 23.51, 24.74, 26.14, 27.76], [20.52, 21.44, 22.48, 23.66, 25.01]], "baseValue": 30.30764799525841, "footnote": "红色表示高于基准（更乐观），绿色反之。"}, "driverSensitivity": [{"k": "加权资本成本 WACC", "delta": -17.6, "shock": 25}, {"k": "营业利润率", "delta": 10.4, "shock": 33}, {"k": "资本开支 / 营收", "delta": -4.9, "shock": 29}, {"k": "永续增长率", "delta": 3.9, "shock": 31}, {"k": "有效税率", "delta": -2.8, "shock": 29}, {"k": "收入增速", "delta": 2.4, "shock": 31}], "conclusion": {"title": "等待关键催化剂验证", "subtitle": "首席分析师 · 终稿", "paragraphs": [], "catalystsTitle": "未来 6 个月催化剂"}, "catalysts": [{"date": "2026-08-31", "title": "半年报披露截止", "impact": "中", "note": "报告期 2026-06-30，证监会披露截止日"}, {"date": "2026-10-31", "title": "三季报披露截止", "impact": "中", "note": "报告期 2026-09-30，证监会披露截止日"}, {"date": "2027-04-30", "title": "年报披露截止", "impact": "中", "note": "报告期 2026-12-31，证监会披露截止日"}], "rail": {"priceHistory": [28.06, 27.7, 27.2, 28.35, 29.3, 29.1, 27.63, 27.55, 28.07, 27.84, 27.75, 28.92, 28.75, 29.88, 30.22, 30.58, 30.34, 31.49, 29.68, 30.87, 32.78, 32.23, 32.76, 31.86, 31.04, 30.84, 30.32, 29.3, 28.59, 29.11, 28.14, 28.01, 28.15, 28.51, 29.08, 28.32, 28.25, 27.77, 26.5, 26.78, 26.17, 25.5, 25.35, 26.92, 26.73, 27.09, 26.92, 27.48, 28.22, 27.95, 27.32, 27.89, 27.55, 27.49, 27.68, 26.96, 26.52, 26.84, 27.25, 26.82], "marketKvs": [{"k": "市值", "v": "¥1,355.2 亿"}, {"k": "营收 (TTM)", "v": "¥973.2 亿"}, {"k": "现金及等价物", "v": "¥256.9 亿"}, {"k": "有息负债", "v": "¥408.4 亿"}, {"k": "净负债", "v": "¥151.5 亿", "tone": "down"}, {"k": "52 周区间", "v": "¥11.18–¥33.28"}, {"k": "Beta", "v": "0.97"}, {"k": "股息率", "v": "2.01%"}, {"k": "日均成交量", "v": "1.9亿"}], "openQuestions": [], "biasStatus": "warned"}};</script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo } = React;
+
+// ---------- Data ----------
+// REPORT is either injected via window.REPORT (production pipeline output)
+// or falls back to the 湖南裕能 301358 mock (offline preview / standalone open).
+
+const MOCK_REPORT = {
+  company: "湖南裕能",
+  code: "301358",
+  exchange: "SZ",
+  sector: "新能源 · 磷酸铁锂正极材料",
+  reportDate: "2026-04-16 15:18 UTC",
+  runId: "run_20260416_144312",
+  period: "FY2024 年报",
+  tickerMark: "裕",
+  confidence: "高",
+  bias: "告警",
+  pipelineDuration: "24m 37s",
+  model: "Kimi k2.6",
+  staleBanner: "最新可得财报为 FY2024（截至 2024-12-31），距今约 16 个月；本分析的价格动态基于实时行情，但财务基数落后约 1 个财年。",
+
+  price: { last: 85.22, change: -1.34, changePct: -1.55, currency: "¥", asOf: "15:00 CST · 4/18", market: "CN" },
+  rating: { word: "回避", tone: "avoid", target: 46.02, weighted: "概率加权", timeHorizon: "12 个月", riskLevel: "中高" },
+
+  headline: "122 倍市盈率定价极端乐观复苏，但产能过剩与折旧刚性将利润率锁死在 3%–4%",
+  lede: "一家 2024 年收入暴跌 45.4%、经营利润率压缩至 3.2%、自由现金流为 −23.4 亿元的周期型制造业公司，正在以 122 倍市盈率被市场交易。当前 ¥85.22 对应的估值，需要 2025–2026 年营收连续两年维持 46% 以上的高增长，并要求营业利润率从谷底 V 型反弹至 8% 以上——然而 DCF 概率加权价值仅 ¥46.02。",
+
+  executiveParagraphs: [
+    "公司当前估值隐含三个同时需要成立的极端假设：2025–2026 两年营收连续 45%+ 高增长、营业利润率从 3.2% 跃升至 8%+、资本成本显著下行。",
+    "然而 2022–2024 年逆周期扩产导致非流动资产两年激增 78%、营收同期腰斩 45.4%，产能利用率显著低于 75%，<strong>¥16.1 亿年折旧摊销</strong>是压制利润率修复的结构性原因，而非短期周期变量。",
+  ],
+  coreCalloutHtml: "<strong>核心判断：</strong>即便在最乐观（bull）情景下，模型内在价值上限也仅 ¥56.32；概率加权 DCF 为 ¥46.02，较现价存在约 <strong>−46%</strong> 估值回归空间。市场定价已推至模型分布尾部之外。",
+
+  quick: [
+    { lbl: "市值", val: "¥518 亿", sub: "流通 ¥346 亿" },
+    { lbl: "市盈率 (TTM)", val: "121.8×", sub: "行业中位 32×" },
+    { lbl: "EV / EBITDA", val: "33.0×", sub: "历史均值 18×" },
+    { lbl: "营业利润率", val: "3.2%", sub: "较周期高点 −680 bp" },
+    { lbl: "自由现金流", val: "¥−23.4 亿", sub: "CFO / NI = −1.77" },
+  ],
+
+  scenarios: [
+    { key: "bear", tag: "悲观情景", prob: 0.30, px: 40, narrative: "产能过剩恶化，宁德、比亚迪去库周期延长，价格战加剧；产能利用率长期低于 60%，Y1 营收负增长，¥45 亿债务的偿付与再融资压力上升。" },
+    { key: "base", tag: "基准情景", prob: 0.45, px: 45, narrative: "国内新能源车与储能需求稳健，2025 年复苏；Y1 营收 +35%，产能利用率回升至 75%–80%，毛利率在 7%–8% 企稳，营业利润率缓慢修复至 3.5%–3.8%。" },
+    { key: "bull", tag: "乐观情景", prob: 0.25, px: 56, narrative: "15–20 万车型对 LFP 需求旺盛，落后产能加速出清；公司凭头部客户绑定与规模成本优势份额提升，高压实密度产品拉动均价，营业利润率回升至 4.0%–4.5%。" },
+  ],
+
+  valuationPullquote: {
+    text: "市场在押注 margin 修复，而非营收增长。即便输入共识预期 50% 营收增速，标准 DCF 乐观情景上限也仅 ¥56.32。",
+    attrib: "变体分析师 · 估值缺口分解",
+  },
+
+  macro: {
+    title: "LFP 正极：需求 α 化，供给仍在出清",
+    subtitle: "Macro Analyst",
+    paragraphs: [
+      "中国新能源车渗透率已突破 50%，行业由 β 驱动转为 α 驱动——增量空间收窄，结构分化加剧。储能装机仍高增，但车用/储能毛利率存在结构差。",
+      "LFP 正极材料行业名义产能规划已超 <strong>400 万吨/年</strong>，2026 年名义供给过剩率预计仍 &gt;35%。落后产能出清节奏由两个变量决定：锂源价格中枢、下游客户的价格条款传导窗口。",
+    ],
+    kpisTitle: "关键宏观变量",
+    kpis: [
+      { label: "10Y 国债收益率", value: "2.34%" },
+      { label: "1Y LPR", value: "3.10%" },
+      { label: "LFP 正极均价 (吨)", value: "¥3.88 万" },
+      { label: "电池级碳酸锂", value: "¥7.5 万/吨" },
+      { label: "行业产能利用率 (3 月)", value: "62%" },
+    ],
+    sharesTitle: "行业格局 · 份额",
+    shares: [
+      { name: "湖南裕能", value: 31, highlighted: true },
+      { name: "德方纳米", value: 18 },
+      { name: "万润新能", value: 12 },
+      { name: "龙蟠科技", value: 9 },
+      { name: "富临精工", value: 7 },
+      { name: "其他", value: 23 },
+    ],
+  },
+
+  financials: {
+    title: "周期之上的失衡：利润表 vs 现金流表",
+    subtitle: "Accounting Analyst · Business Analyst",
+    paragraphs: [
+      "2021–2022 年营收同比 +639% 和 +505%——典型锂电超级周期。2024 年同比 −45.4%，呈现大宗化工品过山车走势。",
+    ],
+    revTitle: "年度营收 · 亿元人民币",
+    revHistory: [
+      { y: "2020", v: 9.55 }, { y: "2021", v: 70.68 }, { y: "2022", v: 427.9 }, { y: "2023", v: 413.6 }, { y: "2024", v: 225.97 },
+    ],
+    revHighlightYear: "2024",
+    revFootnote: "峰值 FY2022 ¥427.9 亿 · 谷底 FY2024 ¥226.0 亿 · 峰谷回撤 −47.2%",
+    kpisTitle: "FY2024 关键指标",
+    kpis: [
+      { label: "营收", value: "¥226.0 亿" },
+      { label: "净利润", value: "¥5.9 亿" },
+      { label: "EBITDA", value: "¥23.2 亿" },
+      { label: "经营现金流", value: "¥−10.4 亿", tone: "down" },
+      { label: "自由现金流", value: "¥−23.4 亿", tone: "down" },
+      { label: "毛利率", value: "7.8%", total: true },
+      { label: "营业利润率", value: "3.2%" },
+      { label: "ROIC", value: "3.5%" },
+      { label: "ROE", value: "5.1%" },
+      { label: "市盈率 (静态)", value: "121.8×" },
+      { label: "EV / EBITDA", value: "33.0×" },
+    ],
+    calloutHtml: "<strong>会计分析师提示 · </strong>CFO / NI = <span class='mono'>−1.77</span>，应收账款 ¥60.5 亿叠加存货 ¥28.0 亿，\"有利润无现金\"的状态已持续两个报告期，盈利质量需以谨慎方式折现。",
+  },
+
+  dcf: {
+    title: "十年现金流桥接与企业价值拆解",
+    subtitle: "DCF Engine · FCFF 两阶段模型",
+    unit: "亿元人民币",
+    waccBase: 9.0,
+    gBase: 2.5,
+    sharesBase: 8.43,
+    paragraphHtml: "FCFF 两阶段模型：Y1–Y10 明细期 + 永续期（g = 2.5%, WACC = 9.0%）。下表为基准情景的十年现金流投影与折现值。",
+    projection: [
+      [1, 305.1, 9.7, 16.1, 7.6, -17.6, 0.8, 5.3, 4.9],
+      [2, 390.5, 12.6, 19.6, 10.0, -22.5, 0.9, 6.2, 5.3],
+      [3, 499.8, 16.5, 24.1, 13.0, -28.8, 1.1, 7.2, 5.7],
+      [4, 619.4, 20.9, 29.8, 16.5, -35.7, 1.2, 9.4, 6.8],
+      [5, 742.2, 25.5, 37.0, 20.1, -42.8, 1.2, 13.1, 8.7],
+      [6, 859.1, 30.1, 45.5, 23.8, -49.5, 1.2, 18.6, 11.4],
+      [7, 959.4, 34.3, 51.9, 27.1, -55.3, 1.0, 22.7, 12.8],
+      [8, 1032.1, 37.5, 58.5, 29.6, -59.5, 0.7, 27.9, 14.5],
+      [9, 1068.2, 39.5, 64.6, 31.2, -61.5, 0.4, 33.9, 16.3],
+      [10, 1105.6, 41.7, 69.8, 32.9, -63.7, 0.4, 38.6, 17.1],
+    ],
+    summary: {
+      pvCashflows: 103.4, pvTerminal: 319.9, ev: 423.4, netDebt: 47.2, equity: 376.2, shares: 8.43, perShare: 44.61,
+    },
+  },
+
+  agents: [
+    { role: "会计分析师", name: "财报质量与现金流真实性", stance: "bear", score: 3.2, thesis: "尽管账面净利润 ¥5.9 亿，<strong>经营现金流为 −10.4 亿</strong>，CFO/NI = −1.77，呈现典型的\"有利润无现金\"特征；应收账款 ¥60.5 亿叠加存货 ¥28.0 亿吞噬了绝大多数账面利润。", pros: ["存货跌价准备计提可能不足", "收入确认时点与回款节奏脱节"], cons: ["2025 Q1 预计税费预缴下降可改善现金流", "客户结构稳定使坏账率保守"] },
+    { role: "业务分析师", name: "产能利用率与资产错配", stance: "bear", score: 2.9, thesis: "<strong>非流动资产两年增幅 +78%，同期 2024 年营收暴跌 45.4%</strong>，资产周转率急剧恶化。¥16.1 亿年折旧摊销在产能利用率 <75% 时将持续压制毛利率与营业利润率修复空间。", pros: ["高压实密度等高端 LFP 产品占比提升预期", "与宁德、比亚迪长期合作关系稳固"], cons: ["行业产能出清节奏慢于预期", "逆周期扩产负反馈持续"] },
+    { role: "估值分析师", name: "DCF 与多组估值三角", stance: "bear", score: 3.5, thesis: "基准 DCF 公允价值 ¥44.61；十年折现现金流 ¥103.4 亿 + 永续价值 ¥319.9 亿 = EV ¥423.4 亿。<strong>¥85.22 股价需营业利润率反弹至 8%+ 才能自洽</strong>，而模型显示此情景概率不足 25%。", pros: ["可比公司 PE 中位数 32×，本公司溢价 280%", "EV/EBITDA 33× 为 A 股 LFP 板块最高"], cons: ["永续增长率若上调 50bp，公允价值升至 ¥47", "WACC 下行 100bp 可贡献约 ¥18/股"] },
+    { role: "宏观分析师", name: "行业周期与政策环境", stance: "neutral", score: 3.0, thesis: "新能源车渗透率已逾 50%，增速由 β 转入 α；储能装机虽高增但毛利率远低于车用。LFP 行业产能规划超 400 万吨/年，<strong>2026 年名义供给过剩率预计仍 >35%</strong>。", pros: ["国家以旧换新政策对 A00–A0 级车 LFP 渗透利好", "电化学储能容量电价机制逐步明朗"], cons: ["海外需求存在地缘摩擦不确定性", "锂源价格 2025 年企稳但 2026 年方向未定"] },
+    { role: "风险分析师", name: "客户集中度与偿付能力", stance: "bear", score: 2.7, thesis: "<strong>前五大客户收入占比预计 >80%</strong>，宁德时代、比亚迪任一客户订单价格条款调整即可左右全年毛利率。有息负债 ¥45 亿，短期债务占比需验证。", pros: ["大客户长期框架合同提供下限保护", "有息负债加权利率低于行业"], cons: ["客户议价权极强", "再融资成本随估值回归上升"] },
+    { role: "管理层分析师", name: "资本配置与战略纪律", stance: "bear", score: 3.1, thesis: "2022–2024 年密集扩产，资本开支 / 营收一度超 25%；当前估值水位下管理层未披露明确的 2025–2026 年 capex 节奏指引，<strong>资本配置与行业周期的逆向程度高于可比公司</strong>。", pros: ["核心团队在 LFP 技术路径上具长期积累", "股权激励方案未采用激进业绩条件"], cons: ["缺乏回购与减资信号", "高管薪酬结构信息披露有限"] },
+    { role: "变体分析师", name: "市场共识与错价机制", stance: "bear", score: 3.8, thesis: "股价 ¥85.22 与基准 ¥44.61 之间约 ¥40.6 偏差中，<strong>营业利润率溢价占 ¥15–20，WACC/终值溢价占 ¥15–18，营收增长溢价仅占 ¥4–6</strong>。市场讨论的是\"V 型收入\"，真正在赌的是 margin 修复。", pros: ["margin 修复叙事在卖方研报中高度一致", "散户情绪指标处于 90 分位"], cons: ["一季报可能先行验证 margin 预期", "境外对冲基金近期净空头仓位上升"] },
+  ],
+
+  critics: [
+    { name: "逻辑批评员", issues: 0 },
+    { name: "财务批评员", issues: 0 },
+    { name: "证据批评员", issues: 0 },
+    { name: "行业批评员", issues: 0 },
+    { name: "认知偏差批评员", issues: 1 },
+    { name: "宏观一致性批评员", issues: 3 },
+    { name: "市场批评员", issues: 1 },
+    { name: "数值一致性批评员", issues: 0 },
+    { name: "叙述事实核查员", issues: 0 },
+    { name: "LLM 数值审核员", issues: 2 },
+  ],
+
+  thesis: {
+    core: "公司当前股价 ¥85.22 对应 122× 市盈率和 33× EV/EBITDA，已将 2025–2026 年营收 V 型反弹与营业利润率从 3.2% 修复至 8% 以上的极端乐观情景充分定价；在行业结构性产能过剩、¥16.1 亿年折旧摊销刚性与负 FCF 背景下，DCF 概率加权价值仅 ¥46.02，股价存在约 45% 的估值回归空间。",
+    variant: "市场定价隐含营业利润率将快速修复至 6%–8%（约 ¥15–20/股 估值贡献），但我们认为行业产能尚未出清，2025–2026 年营业利润率大概率徘徊在 3.5%–4.5%。",
+    whyNow: "2026 年一季报将于 5 月 10 日披露，若营收恢复但毛利率/营业利润率仍低位，市场将被迫修正 margin 双击的极端乐观假设。",
+    marketStory: "当前股价隐含：2025–2026 两年营收维持 45%+ 高增长 + 营业利润率跃升至 8%+ + 资本成本显著下行。三者需同时成立。",
+    divergence: "我们认为营业利润率不会在销量回升后 V 型反弹至 8%+，而是因产能利用率长期 <75%、价格战持续与 ¥16.1 亿折旧刚性，结构性压缩在 3.5%–4.5%。",
+    counter: "若 2025 H2 落后产能加速出清，LFP 价格企稳回升，公司产能利用率快速提升至 80%+，高压实密度产品占比提高，营业利润率反弹至 6%–8%，则 50%+ 营收高增长将快速稀释 122× 估值。",
+  },
+
+  sensitivity: {
+    paragraphs: ["下表为每个单因子 ±1σ 冲击对基准每股价值的弹性。WACC 与营业利润率为估值主导变量，对应模型分布的尾部风险。"],
+    driverTitle: "驱动因子弹性（冲击后每股值 vs 基准 ¥44.61）",
+    baseValue: 44.61,
+    rows: [8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0],
+    cols: [2.0, 2.5, 3.0, 3.5, 4.0],
+    matrix: [
+      [43, 47, 51, 56, 62],
+      [38, 41, 45, 49, 53],
+      [34, 37, 40, 43, 47],
+      [31, 33, 35, 38, 41],
+      [28, 30, 32, 34, 36],
+      [26, 27, 28, 30, 32],
+      [23, 24, 26, 27, 29],
+    ],
+    footnote: "红色表示高于基准（更乐观），绿色反之。",
+  },
+
+  driverSensitivity: [
+    { k: "加权资本成本 WACC", delta: -18.3, shock: 36 },
+    { k: "营业利润率", delta: +10.6, shock: 49 },
+    { k: "资本开支率", delta: -5.4, shock: 42 },
+    { k: "永续增长率", delta: +5.2, shock: 47 },
+    { k: "收入增速", delta: +4.7, shock: 47 },
+    { k: "有效税率", delta: -2.8, shock: 43 },
+  ],
+
+  conclusion: {
+    title: "等待行业产能出清与盈利质量改善的信号",
+    subtitle: "Chief Analyst · 终稿",
+    paragraphs: [
+      "湖南裕能的看空逻辑建立在相互印证的证据链之上：周期型制造业公司被按照超级成长股定价，而支撑这一高估值的核心假设——<strong>营业利润率 V 型反弹至 8% 以上</strong>——与行业产能过剩、¥16.1 亿折旧刚性以及持续为负的自由现金流直接矛盾。",
+      "DCF 概率加权价值 ¥46.02 为股价提供了下行锚点；即便最乐观情景下内在价值上限也仅 ¥56.32。随着 2026 年一季报将验证营收恢复与 margin 修复的真实力度，<strong>市场几乎没有容错空间的 122 倍市盈率将面临严峻考验</strong>。",
+      "建议：<strong>回避当前估值</strong>，等待行业产能出清与盈利质量改善的信号明确后再做评估。",
+    ],
+    catalystsTitle: "未来 6 个月催化剂",
+  },
+
+  catalysts: [
+    { date: "2026-05-10", title: "FY2026 Q1 业绩公告", impact: "高", note: "验证营收恢复节奏与 margin 修复初步信号" },
+    { date: "2026-05-25", title: "股东大会 / 分红方案", impact: "中", note: "资本开支指引与产能投放计划问询窗口" },
+    { date: "2026-07-15", title: "中报预告", impact: "高", note: "Q2 毛利率环比趋势将决定共识是否下修" },
+    { date: "2026-09-30", title: "行业产能利用率高频数据", impact: "中", note: "LFP 产能利用率 75% 为关键门槛" },
+  ],
+
+  rail: {
+    priceHistory: [82.1, 83.4, 84.0, 83.9, 85.2, 86.7, 87.1, 86.3, 85.8, 86.2, 85.9, 85.22],
+    marketKvs: [
+      { k: "今开", v: "85.90" },
+      { k: "最高", v: "87.12" },
+      { k: "最低", v: "85.04" },
+      { k: "成交额", v: "8.72 亿" },
+      { k: "换手率", v: "2.52%" },
+      { k: "北向持股", v: "+0.14%", tone: "up" },
+    ],
+    openQuestions: [
+      "各生产基地当前产能利用率",
+      "2025 前五大客户价格条款",
+      "有息负债期限结构与加权利率",
+    ],
+    biasStatus: "告警",
+  },
+};
+
+const REPORT = (typeof window !== "undefined" && window.REPORT) ? window.REPORT : MOCK_REPORT;
+
+const SECTIONS_ZH = [
+  { id: "sec-summary",     num: "01", title: "执行摘要" },
+  { id: "sec-valuation",   num: "02", title: "估值情景与结论" },
+  { id: "sec-macro",       num: "03", title: "宏观与行业语境" },
+  { id: "sec-financial",   num: "04", title: "财务解剖" },
+  { id: "sec-dcf",         num: "05", title: "DCF 推导" },
+  { id: "sec-agents",      num: "06", title: "七位专家观点" },
+  { id: "sec-sensitivity", num: "07", title: "敏感性分析" },
+  { id: "sec-conclusion",  num: "08", title: "结论与催化剂" },
+];
+const SECTIONS_EN = [
+  { id: "sec-summary",     num: "01", title: "Executive summary" },
+  { id: "sec-valuation",   num: "02", title: "Scenarios & fair value" },
+  { id: "sec-macro",       num: "03", title: "Macro & industry context" },
+  { id: "sec-financial",   num: "04", title: "Financial dissection" },
+  { id: "sec-dcf",         num: "05", title: "DCF derivation" },
+  { id: "sec-agents",      num: "06", title: "Seven-agent views" },
+  { id: "sec-sensitivity", num: "07", title: "Sensitivity analysis" },
+  { id: "sec-conclusion",  num: "08", title: "Conclusion & catalysts" },
+];
+
+// ---------- Helpers ----------
+
+const CURR = () => REPORT.price.currency || "$";
+const isCN = () => (REPORT.price && REPORT.price.market === "CN") || REPORT.exchange === "SH" || REPORT.exchange === "SZ";
+// i18n shorthand: pick Chinese for A-share reports, English otherwise.
+const L = (zh, en) => isCN() ? zh : en;
+
+// Section definitions are a full catalog; the rendered TOC filters down
+// to sections whose underlying data block exists in REPORT. Prevents
+// "dead" TOC links (e.g. `03 · Macro` when REPORT.macro is null).
+const _SECTIONS_FULL = isCN() ? SECTIONS_ZH : SECTIONS_EN;
+const _SECTION_DATA_GUARD = {
+  "sec-summary":     () => REPORT.headline || REPORT.thesis,
+  "sec-valuation":   () => Array.isArray(REPORT.scenarios) && REPORT.scenarios.length > 0,
+  "sec-macro":       () => REPORT.macro && (REPORT.macro.paragraphs?.length || REPORT.macro.kpis?.length),
+  "sec-financial":   () => REPORT.financials && (REPORT.financials.revHistory?.length || REPORT.financials.kpis?.length),
+  "sec-dcf":         () => REPORT.dcf && REPORT.dcf.projection?.length,
+  "sec-agents":      () => Array.isArray(REPORT.agents) && REPORT.agents.length > 0,
+  "sec-sensitivity": () => REPORT.sensitivity && REPORT.sensitivity.matrix?.length,
+  "sec-conclusion":  () => REPORT.conclusion && REPORT.conclusion.paragraphs?.length,
+};
+const SECTIONS = _SECTIONS_FULL.filter(s => {
+  const guard = _SECTION_DATA_GUARD[s.id];
+  return guard ? guard() : true;
+});
+
+const pct = (n, d = 1) => `${n > 0 ? "+" : ""}${n.toFixed(d)}%`;
+const fmtNum = (n, digits = 2) => n.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const fmtPx = (n) => `${CURR()}${fmtNum(n, n < 100 ? 2 : 2)}`;
+
+// ---------- Small building blocks ----------
+
+function StaleBanner() {
+  if (!REPORT.staleBanner) return null;
+  return (
+    <div className="stale-banner" role="note">
+      <div className="icon">!</div>
+      <div>
+        <div className="title">{L("数据时效提醒", "Data timeliness notice")}</div>
+        <div className="body">{REPORT.staleBanner}</div>
+      </div>
+    </div>
+  );
+}
+
+function TopBar() {
+  return (
+    <div className="topbar">
+      <a href="search.html" className="brand" style={{textDecoration:"none", color:"inherit"}}>Aegis <span className="dim">{L("投研 OS", "Research OS")}</span></a>
+      <div className="path">{L("研究 · 深度 · ", "Research · Deep · ")}{REPORT.company} · {REPORT.period}</div>
+      <div className="right">
+        <span>{L("运行", "Run")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.runId}</span></span>
+        <span>{L("置信度", "Confidence")} · {REPORT.confidence}</span>
+        <span className="kbd">⌘ K</span>
+      </div>
+    </div>
+  );
+}
+
+function TableOfContents({ active }) {
+  return (
+    <nav className="toc" aria-label={L("目录", "Contents")}>
+      <div className="toc-label">{L("报告目录", "Contents")}</div>
+      {SECTIONS.map(s => (
+        <a key={s.id} href={`#${s.id}`} className={active === s.id ? "active" : ""}>
+          <span className="num">{s.num}</span><span>{s.title}</span>
+        </a>
+      ))}
+
+      <div className="toc-label" style={{marginTop: 32}}>{L("元信息", "Meta")}</div>
+      <div className="meta">
+        {L("生成时间", "Generated")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.reportDate}</span><br/>
+        {L("数据期", "Period")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.period}</span><br/>
+        {L("Pipeline 用时", "Pipeline runtime")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.pipelineDuration || "—"}</span><br/>
+        {L("模型", "Model")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.model || "—"}</span>
+      </div>
+
+      <div className="toc-label" style={{marginTop: 32}}>{L("免责声明", "Disclaimer")}</div>
+      <div className="meta">
+        {L(`本报告由 Aegis 自动生成，不构成投资建议。数据源 akshare，模型输出经 10 位 critic 审核。`, `Auto-generated by Aegis. Not investment advice. Data source: EDGAR. Outputs reviewed by the critic panel.`)}
+      </div>
+    </nav>
+  );
+}
+
+function RightRail() {
+  const rail = REPORT.rail || {};
+  const priceHistory = rail.priceHistory || [REPORT.price.last];
+  const max = Math.max(...priceHistory), min = Math.min(...priceHistory);
+  const chg = REPORT.price.change;
+  const chgPct = REPORT.price.changePct;
+  const hasChange = (chg !== 0 || chgPct !== 0);
+  const up = chg > 0;
+  // Prefer trend color when we have a real multi-point history (first vs last).
+  // Fall back to intraday-change color, then neutral.
+  const trendUp = priceHistory.length >= 2
+    ? priceHistory[priceHistory.length - 1] > priceHistory[0]
+    : null;
+  const sparkColor = trendUp === null
+    ? (hasChange ? (up ? "var(--up)" : "var(--down)") : "var(--text-3)")
+    : (trendUp ? "var(--up)" : "var(--down)");
+  const pts = priceHistory.map((p, i) => [i / Math.max(1, priceHistory.length - 1) * 100, (1 - (p - min) / Math.max(0.0001, max - min)) * 100]);
+  const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0]} ${p[1]}`).join(" ");
+
+  return (
+    <aside className="rail">
+      <div className="rail-block">
+        <div className="lbl">{L("实时行情", "Live quote")}</div>
+        <div style={{display:"flex", alignItems:"baseline", justifyContent:"space-between", marginBottom: 4}}>
+          <span className="mono" style={{fontSize: 22, color:"var(--text)"}}>{CURR()}{fmtNum(REPORT.price.last)}</span>
+          {hasChange && (
+            <span className="mono" style={{fontSize: 12, color: up ? "var(--up)" : "var(--down)"}}>
+              {up ? "+" : ""}{chg.toFixed(2)} {up ? "+" : ""}{chgPct.toFixed(2)}%
+            </span>
+          )}
+        </div>
+        <div style={{fontSize: 11.5, color:"var(--text-4)", fontFamily:"var(--mono)", marginBottom: 10}}>{REPORT.price.asOf || "—"} · {L("延迟", "Delay")} &lt;3s</div>
+        <svg viewBox="0 0 100 36" preserveAspectRatio="none" style={{width:"100%", height: 52}}>
+          <defs>
+            <linearGradient id="spark" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={sparkColor} stopOpacity="0.28"/>
+              <stop offset="100%" stopColor={sparkColor} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d={`${pathD} L 100 36 L 0 36 Z`} fill="url(#spark)"/>
+          <path d={pathD} fill="none" stroke={sparkColor} strokeWidth="0.9"/>
+        </svg>
+        {(rail.marketKvs || []).map(kv => (
+          <div className="rail-kv" key={kv.k}>
+            <span className="k">{kv.k}</span>
+            <span className={`v ${kv.tone || ""}`}>{kv.v}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="rail-block">
+        <div className="lbl">{L("批评审核委员会", "Critic review panel")}</div>
+        {REPORT.critics.map(c => {
+          const dot = c.issues === 0 ? "ok" : c.issues <= 1 ? "warn" : "err";
+          return (
+            <div className="critic-row" key={c.name}>
+              <span className={`dot ${dot}`}></span>
+              <span className="cn">{c.name}</span>
+              <span className="cc">{c.issues === 0 ? L("通过", "Pass") : `${c.issues} ${L("项", "issues")}`}</span>
+            </div>
+          );
+        })}
+        {rail.biasStatus && (
+          <div style={{fontSize: 11, color: "var(--text-4)", fontFamily:"var(--mono)", marginTop: 8}}>{L("总体偏差检查", "Bias check")} · {rail.biasStatus}</div>
+        )}
+      </div>
+
+      {(rail.openQuestions && rail.openQuestions.length > 0) && (
+        <div className="rail-block">
+          <div className="lbl">{L("待研究缺口", "Open questions")} · {L("前", "top")} {rail.openQuestions.length}</div>
+          <div style={{fontSize: 12.5, color:"var(--text-2)", lineHeight: 1.6}}>
+            {rail.openQuestions.map((q, i) => (
+              <div key={i} style={{marginBottom: i === rail.openQuestions.length - 1 ? 0 : 8}}>· {q}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function Verdict() {
+  const wordClass = REPORT.rating.tone;
+  const spread = ((REPORT.rating.target / REPORT.price.last - 1) * 100);
+  const spreadColor = spread >= 0 ? "var(--up)" : "var(--down)";
+  return (
+    <div className="verdict">
+      <div className="rating">
+        <span className="tag">{L("评级", "Rating")}</span>
+        <span className={`word ${wordClass}`}>{REPORT.rating.word}</span>
+      </div>
+      <div style={{display:"flex", gap: 36, flexWrap:"wrap", alignItems:"center"}}>
+        <div className="tgt">
+          <span className="lbl">{L("目标价", "Target")} · {REPORT.rating.weighted || L("概率加权", "Probability-weighted")}</span>
+          <span className="val">{CURR()}{fmtNum(REPORT.rating.target)}</span>
+        </div>
+        <div className="tgt">
+          <span className="lbl">{L("隐含回报", "Implied return")}</span>
+          <span className="val" style={{color: spreadColor}}>{spread > 0 ? "+" : ""}{spread.toFixed(1)}%</span>
+        </div>
+        <div className="tgt">
+          <span className="lbl">{L("时间跨度", "Time horizon")}</span>
+          <span className="val">{REPORT.rating.timeHorizon || L("12 个月", "12 months")}</span>
+        </div>
+        <div className="tgt">
+          <span className="lbl">{L("风险等级", "Risk level")}</span>
+          <span className="val">{REPORT.rating.riskLevel || L("中", "Medium")}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Hero() {
+  // Only render a colored day-change pill when we actually have tick data.
+  // Cached snapshots from replay don't carry day_change/day_change_pct, so
+  // both fall back to 0 — showing "0.00 +0.00%" in red (false downside).
+  const chg = REPORT.price.change;
+  const chgPct = REPORT.price.changePct;
+  const hasChange = (chg !== 0 || chgPct !== 0);
+  const up = chg > 0;
+  return (
+    <header className="hero">
+      <div className="ticker-row">
+        <div className="ticker-mark">{REPORT.tickerMark || (REPORT.company || "·").slice(0, 1)}</div>
+        <div className="ticker-meta">
+          <div className="eyebrow">Aegis · {L("深度研究", "Deep Research")}</div>
+          <div className="code">
+            <span>{REPORT.code}{REPORT.exchange ? `.${REPORT.exchange}` : ""}</span>
+            <span className="dot">·</span>
+            <span>{REPORT.sector}</span>
+            <span className="dot">·</span>
+            <span>{REPORT.period}</span>
+          </div>
+        </div>
+      </div>
+      <h1 className="h-display" style={{maxWidth: 880, marginBottom: 18}}>
+        {REPORT.company}
+      </h1>
+      <div className="price-row">
+        <div className="price"><span className="curr">{CURR()}</span>{fmtNum(REPORT.price.last)}</div>
+        {hasChange && (
+          <div className={`price-change ${up ? "up" : "down"}`}>
+            {up ? "+" : ""}{chg.toFixed(2)} &nbsp; {pct(chgPct, 2)}
+          </div>
+        )}
+        <div className="price-meta mono">{REPORT.price.asOf}</div>
+      </div>
+      <StaleBanner/>
+
+      <div className="stat-strip">
+        {REPORT.quick.map(s => (
+          <div className="stat" key={s.lbl}>
+            <div className="lbl">{s.lbl}</div>
+            <div className="val">{s.val}</div>
+            <div className="sub">{s.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <Verdict/>
+    </header>
+  );
+}
+
+function SectionHead({ idx, title, subtitle }) {
+  return (
+    <div className="section-head">
+      <span className="idx">{idx}</span>
+      <div>
+        <h2 className="h-section">{title}</h2>
+        {subtitle && <p style={{margin: "4px 0 0", color:"var(--text-3)", fontSize: 14}}>{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+function ExecutiveSummary() {
+  return (
+    <section id="sec-summary">
+      <SectionHead idx={L("01 · 执行摘要", "01 · Executive summary")} title={REPORT.headline} subtitle={L("首席分析师编辑层 · 合成器 → 编辑器", "Chief analyst · Synthesizer → Editor")} />
+      <div className="reading wide">
+        <p className="lede" style={{marginBottom: 28}}>{REPORT.lede}</p>
+
+        <div className="prose">
+          {(REPORT.executiveParagraphs || []).map((html, i) => (
+            <p key={i} dangerouslySetInnerHTML={{__html: html}}/>
+          ))}
+        </div>
+
+        {REPORT.coreCalloutHtml && (
+          <div className="callout" dangerouslySetInnerHTML={{__html: REPORT.coreCalloutHtml}}/>
+        )}
+
+        <div className="thesis-grid">
+          {(() => {
+            const t = REPORT.thesis || {};
+            return [
+              ["core", L("核心论点", "Core thesis"), t.core],
+              ["variant", L("我们的变体", "Our variant view"), t.variant],
+              ["whyNow", L("为何是现在", "Why now"), t.whyNow],
+              ["divergence", L("关键分歧", "Key divergence"), t.divergence],
+              ["marketStory", L("市场正在讲的故事", "What the market is pricing"), t.marketStory],
+              ["counter", L("反向论点", "Counter-thesis"), t.counter],
+            ].filter(([_k, _h, v]) => v && v.trim()).map(([k, h, v]) => (
+              <div className="thesis-item" key={k}><h5>{h}</h5><p>{v}</p></div>
+            ));
+          })()}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ValuationBand() {
+  const segs = REPORT.scenarios || [];
+  const pq = REPORT.valuationPullquote;
+  const curr = CURR();
+  if (segs.length === 0) return null;
+  return (
+    <section id="sec-valuation">
+      <SectionHead idx={L("02 · 估值情景与结论", "02 · Scenarios & fair value")} title={L("三情景分布与概率加权公允价值", "Three-scenario distribution & probability-weighted fair value")} subtitle={L("情景架构师 → 估值分析师", "Scenario Architect → Valuation Analyst")}/>
+      <div className="scen-grid">
+        {segs.map(s => (
+          <div key={s.key} className={`scen-cell ${s.key}`}>
+            <div className="hd">
+              <span className="tag">{s.tag}</span>
+              <span className="prob">{(s.prob * 100).toFixed(0)}%</span>
+            </div>
+            <div className="px">{curr}{(s.px || 0).toFixed(2)}</div>
+            <div className="delta">{L("vs 现价", "vs spot")} {(((s.px / REPORT.price.last) - 1) * 100).toFixed(1)}%</div>
+            <p>{s.narrative}</p>
+          </div>
+        ))}
+      </div>
+      <div className="prob-bar">
+        {segs.map(s => <div key={s.key} className={`seg ${s.key}`} style={{width: `${s.prob * 100}%`}}/>)}
+      </div>
+      <div className="prob-legend">
+        {segs.map(s => <span key={s.key}>{s.tag} · {(s.prob*100).toFixed(0)}%</span>)}
+      </div>
+
+      <div className="weighted">
+        <div>
+          <div className="k">{L("概率加权公允价值", "Probability-weighted fair value")}</div>
+          <div className="v">{curr}{REPORT.rating.target.toFixed(2)}</div>
+        </div>
+        <div>
+          <div className="k">{L("当前股价", "Current price")}</div>
+          <div className="v" style={{color:"var(--text-3)"}}>{curr}{REPORT.price.last.toFixed(2)}</div>
+        </div>
+        {(() => {
+          const gap = (REPORT.rating.target / REPORT.price.last - 1) * 100;
+          return (
+            <div className="delta" style={{color: gap >= 0 ? "var(--up)" : "var(--down)"}}>
+              {L("估值回归空间", "Valuation gap")} · {gap >= 0 ? "+" : ""}{gap.toFixed(1)}%
+            </div>
+          );
+        })()}
+      </div>
+
+      {pq && (
+        <div className="pullquote">
+          {pq.text}
+          <span className="attrib">{pq.attrib}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Macro() {
+  const m = REPORT.macro;
+  if (!m) return null;
+  const sharesMax = Math.max(...(m.shares || []).map(s => s.value), 1);
+
+  return (
+    <section id="sec-macro">
+      <SectionHead idx={L("03 · 宏观与行业", "03 · Macro & industry")} title={m.title} subtitle={m.subtitle}/>
+      <div className="reading wide prose">
+        {(m.paragraphs || []).map((html, i) => (
+          <p key={i} dangerouslySetInnerHTML={{__html: html}}/>
+        ))}
+      </div>
+
+      <div style={{display:"grid", gridTemplateColumns: (m.shares && m.shares.length) ? "1fr 1fr" : "1fr", gap: 24, marginTop: 24}}>
+        {(m.kpis && m.kpis.length > 0) && (
+          <div style={{padding: "20px 22px", background: "var(--bg-elev)", border: "1px solid var(--hairline)", borderRadius: 8}}>
+            <div className="eyebrow" style={{marginBottom: 10}}>{m.kpisTitle || L("关键宏观变量", "Key macro variables")}</div>
+            <table className="data">
+              <tbody>
+                {m.kpis.map(k => (
+                  <tr key={k.label}><td>{k.label}</td><td className="num">{k.value}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {(m.shares && m.shares.length > 0) && (
+          <div style={{padding: "20px 22px", background: "var(--bg-elev)", border: "1px solid var(--hairline)", borderRadius: 8}}>
+            <div className="eyebrow" style={{marginBottom: 10}}>{m.sharesTitle || L("行业格局 · 份额", "Industry share")}</div>
+            <div className="barlist">
+              {m.shares.map((r) => (
+                <div className="barlist-row" key={r.name} style={{gridTemplateColumns: "110px 1fr 50px"}}>
+                  <span className="label">{r.name}</span>
+                  <div className="track" style={{position:"relative"}}>
+                    <div style={{position:"absolute", left: 0, top: 0, height:"100%", width: `${r.value/sharesMax*100}%`, background: r.highlighted ? "var(--accent)" : "var(--surface-2)"}}/>
+                  </div>
+                  <span className="v" style={{textAlign:"right", fontFamily:"var(--mono)", color:"var(--text-2)"}}>{r.value}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Financials() {
+  const f = REPORT.financials;
+  if (!f) return null;
+  const rev = f.revHistory || [];
+  // Y-axis baseline: when the series is tightly clustered (min/max > 0.5,
+  // e.g. mature companies like AAPL where revenue varies within a narrow
+  // band), a zero-based axis crushes all bars to roughly equal heights.
+  // Use a compressed baseline padded 25 % below min so relative differences
+  // are legible. For wide-range hockey-stick series (NVDA, 301358) keep
+  // the zero baseline.
+  const values = rev.map(r => r.v);
+  const maxV = values.length ? Math.max(...values) : 1;
+  const minV = values.length ? Math.min(...values) : 0;
+  const useCompressed = maxV > 0 && minV / maxV > 0.5;
+  const baseline = useCompressed ? Math.max(0, minV - 0.25 * (maxV - minV)) : 0;
+  const span = (maxV - baseline) || 1;
+
+  return (
+    <section id="sec-financial">
+      <SectionHead idx={L("04 · 财务解剖", "04 · Financial dissection")} title={f.title || L("财务解剖", "Financial dissection")} subtitle={f.subtitle}/>
+      {(f.paragraphs && f.paragraphs.length > 0) && (
+        <div className="reading wide prose">
+          {f.paragraphs.map((html, i) => (
+            <p key={i} dangerouslySetInnerHTML={{__html: html}}/>
+          ))}
+        </div>
+      )}
+
+      <div style={{display:"grid", gridTemplateColumns: rev.length > 0 ? "1.4fr 1fr" : "1fr", gap: 24, marginTop: 24, alignItems: "start"}}>
+        {rev.length > 0 && (
+          <div style={{padding: "24px 24px 28px", background: "var(--bg-elev)", border: "1px solid var(--hairline)", borderRadius: 8}}>
+            <div className="eyebrow" style={{marginBottom: 18}}>{f.revTitle || L("年度营收", "Annual revenue")}</div>
+            <div style={{display:"flex", alignItems:"flex-end", gap: 14, height: 180, borderBottom: "1px solid var(--hairline)", paddingBottom: 8}}>
+              {rev.map(r => {
+                const h = Math.max(2, (r.v - baseline) / span * 100);
+                const highlight = r.y === f.revHighlightYear;
+                return (
+                  <div key={r.y} style={{flex: 1, height: "100%", display:"flex", flexDirection: "column", justifyContent: "flex-end", alignItems:"center", gap: 6}}>
+                    <span style={{fontFamily:"var(--mono)", fontSize: 11, color: "var(--text-3)"}}>{r.v}</span>
+                    <div style={{width: "100%", height: `${h}%`, background: highlight ? "var(--accent-bg)" : "var(--surface-2)", borderTop: `1px solid ${highlight ? "var(--accent)" : "var(--hairline-strong)"}`, borderRadius: "2px 2px 0 0"}}/>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex", gap: 14, marginTop: 6}}>
+              {rev.map(r => <div key={r.y} style={{flex: 1, textAlign:"center", fontFamily:"var(--mono)", fontSize: 11, color: "var(--text-4)"}}>{r.y}</div>)}
+            </div>
+            {f.revFootnote && <p className="footnote" style={{marginTop: 14}}>{f.revFootnote}</p>}
+          </div>
+        )}
+
+        {(f.kpis && f.kpis.length > 0) && (
+          <div style={{padding: "18px 22px", background: "var(--bg-elev)", border: "1px solid var(--hairline)", borderRadius: 8}}>
+            <div className="eyebrow" style={{marginBottom: 10}}>{f.kpisTitle || L("关键指标", "Key metrics")}</div>
+            <table className="data">
+              <tbody>
+                {f.kpis.map((k, i) => {
+                  const toneStyle = k.tone === "down" ? {color: "var(--down)"} : k.tone === "up" ? {color: "var(--up)"} : {};
+                  return (
+                    <tr key={i} className={k.total ? "total" : ""}>
+                      <td style={k.tone ? {color:"var(--text-2)"} : {}}>{k.label}</td>
+                      <td className="num" style={toneStyle}>{k.value}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {f.calloutHtml && (
+        <div className="callout" style={{marginTop: 24}} dangerouslySetInnerHTML={{__html: f.calloutHtml}}/>
+      )}
+    </section>
+  );
+}
+
+function DcfSection() {
+  const d = REPORT.dcf;
+  if (!d) return null;
+  const rows = d.projection || [];
+  const s = d.summary || {};
+  const curr = CURR();
+  return (
+    <section id="sec-dcf">
+      <SectionHead idx={L("05 · DCF 推导", "05 · DCF derivation")} title={d.title || L("DCF 推导", "DCF derivation")} subtitle={d.subtitle}/>
+      {d.paragraphHtml && (
+        <div className="reading wide prose">
+          <p dangerouslySetInnerHTML={{__html: d.paragraphHtml}}/>
+        </div>
+      )}
+      <div style={{marginTop: 20, overflowX:"auto"}}>
+        <table className="data">
+          <thead>
+            <tr>
+              <th>{L("年份", "Year")}</th>
+              <th className="num">{L("营收", "Revenue")}</th>
+              <th className="num">EBIT</th>
+              <th className="num">D&A</th>
+              <th className="num">{L("税后营业利润", "NOPAT")}</th>
+              <th className="num">{L("资本开支", "Capex")}</th>
+              <th className="num">ΔNWC</th>
+              <th className="num">FCFF</th>
+              <th className="num">{L("现值", "PV")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r[0]}>
+                <td style={{color: "var(--text-3)"}}>Y{r[0]}</td>
+                <td className="num">{r[1].toFixed(1)}</td>
+                <td className="num">{r[2].toFixed(1)}</td>
+                <td className="num">{r[3].toFixed(1)}</td>
+                <td className="num">{r[4].toFixed(1)}</td>
+                <td className="num" style={{color:"var(--text-3)"}}>{r[5].toFixed(1)}</td>
+                <td className="num" style={{color:"var(--text-3)"}}>{r[6].toFixed(1)}</td>
+                <td className="num">{r[7].toFixed(1)}</td>
+                <td className="num" style={{color:"var(--accent)"}}>{r[8].toFixed(1)}</td>
+              </tr>
+            ))}
+            <tr className="total">
+              <td>{L("合计", "Total")}</td>
+              <td className="num">—</td><td className="num">—</td><td className="num">—</td>
+              <td className="num">—</td><td className="num">—</td><td className="num">—</td>
+              <td className="num">—</td>
+              <td className="num">{(s.pvCashflows || 0).toFixed(1)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="footnote">
+          {isCN()
+            ? `单位：${d.unit || "亿元人民币"}。基准情景 · WACC = ${d.waccBase}% · g∞ = ${d.gBase}% · ${d.sharesBase || s.shares} 亿股`
+            : `Unit: ${d.unit || "USD billions"}. Base case · WACC = ${d.waccBase}% · g∞ = ${d.gBase}% · ${(d.sharesBase || s.shares || 0).toFixed(2)}B shares`}
+        </p>
+      </div>
+
+      <div style={{marginTop: 32, display:"grid", gridTemplateColumns:"1fr", gap: 0, padding: "24px 28px", background:"var(--bg-elev)", border:"1px solid var(--hairline)", borderRadius: 8}}>
+        <div className="eyebrow" style={{marginBottom: 16}}>{L("企业价值推导", "Enterprise value bridge")}</div>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap: 0, fontFamily:"var(--mono)"}}>
+          {(() => {
+            const unit = isCN() ? "亿" : "B";
+            return [
+              [L("PV 明细期", "PV Explicit"),   `${curr}${(s.pvCashflows || 0).toFixed(1)}${unit}`],
+              [L("＋", "+"),                      ""],
+              [L("PV 永续价值", "PV Terminal"), `${curr}${(s.pvTerminal || 0).toFixed(1)}${unit}`],
+              [L("＝ 企业价值", "= EV"),          `${curr}${(s.ev || 0).toFixed(1)}${unit}`],
+              [L("− 净负债", "− Net Debt"),      `${curr}${(s.netDebt || 0).toFixed(1)}${unit}`],
+              [L("÷ 股本 → 每股", "÷ Shares → per share"), `${curr}${(s.perShare || 0).toFixed(2)}`],
+            ];
+          })().map((kv, i) => (
+            <div key={i} style={{padding: "14px 0", borderRight: i < 5 ? "1px solid var(--hairline)" : "none", paddingLeft: i === 0 ? 0 : 18}}>
+              <div style={{fontSize: 11, color:"var(--text-4)", letterSpacing: "0.1em", textTransform:"uppercase", marginBottom: 6, fontFamily:"var(--mono)"}}>{kv[0]}</div>
+              <div style={{fontSize: 17, color: i === 5 ? "var(--accent)" : "var(--text)"}}>{kv[1]}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AgentsSection() {
+  return (
+    <section id="sec-agents">
+      <SectionHead idx={L("06 · 专家观点", "06 · Expert views")} title={L("七位 Agent 的独立分析与分歧", "Seven independent agents — analyses & disagreements")} subtitle={L("Agent 小组 · 经 Critic 审核", "Agent Panel · Critic-Reviewed")}/>
+      <div className="reading wide prose">
+        <p>
+          {(() => {
+            const n = (REPORT.critics || []).length || 10;
+            return isCN()
+              ? `七位独立 LLM agent 从不同专业视角并行分析，每条输出经 ${n} 位 critic 审核后方可入库。下方 thesis 段为经合成器编辑层后的摘要。`
+              : `Seven independent LLM agents analyze in parallel from distinct professional angles; every output is reviewed by ${n} critics before being admitted. Theses below are post-synthesizer summaries.`;
+          })()}
+        </p>
+      </div>
+      <div className="agent-list" style={{marginTop: 24}}>
+        {REPORT.agents.map((a, i) => (
+          <div className="agent" key={a.role + i}>
+            <div className="hd">
+              <span className="role">Agent · {String(i+1).padStart(2,"0")}</span>
+              <span className="name">{a.role} — <span style={{color:"var(--text-3)", fontWeight: 400}}>{a.name}</span></span>
+              <span className={`stance ${a.stance}`}>{a.stance === "bear" ? L("看空", "Bear") : a.stance === "bull" ? L("看多", "Bull") : L("中性", "Neutral")} · {a.score.toFixed(1)}</span>
+            </div>
+            <p className="thesis" dangerouslySetInnerHTML={{__html: a.thesis}}/>
+            <div className="agent-points">
+              <div className="col">
+                <h5>{L("支持证据", "Supporting evidence")}</h5>
+                <ul>{(a.pros || []).map((p, j) => <li key={j}>{p}</li>)}</ul>
+              </div>
+              <div className="col">
+                <h5>{L("反向信号 / 可能反转", "Counter-signals / reversal risks")}</h5>
+                <ul>{(a.cons || []).map((p, j) => <li key={j}>{p}</li>)}</ul>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SensitivitySection() {
+  const s = REPORT.sensitivity;
+  if (!s) return null;
+  const flat = (s.matrix || []).flat();
+  const hi = Math.max(...flat, 1), lo = Math.min(...flat, 0);
+  const base = s.baseValue || (REPORT.dcf && REPORT.dcf.summary ? REPORT.dcf.summary.perShare : 0);
+  const curr = CURR();
+
+  const heatColor = (v) => {
+    if (v >= base) {
+      const k = Math.min(1, (v - base) / Math.max(0.0001, hi - base));
+      return `color-mix(in oklab, var(--up) ${Math.round(k*42)}%, transparent)`;
+    } else {
+      const k = Math.min(1, (base - v) / Math.max(0.0001, base - lo));
+      return `color-mix(in oklab, var(--down) ${Math.round(k*42)}%, transparent)`;
+    }
+  };
+
+  return (
+    <section id="sec-sensitivity">
+      <SectionHead idx={L("07 · 敏感性", "07 · Sensitivity")} title={L("驱动因子弹性与 WACC × g 热力矩阵", "Driver elasticities & WACC × g heat-map")} subtitle={L("敏感性分析器", "Sensitivity Analyzer")}/>
+      {(s.paragraphs || []).length > 0 && (
+        <div className="reading wide prose">
+          {s.paragraphs.map((html, i) => (
+            <p key={i} dangerouslySetInnerHTML={{__html: html}}/>
+          ))}
+        </div>
+      )}
+
+      {(REPORT.driverSensitivity && REPORT.driverSensitivity.length > 0) && (
+        <div style={{padding: "22px 24px", background: "var(--bg-elev)", border:"1px solid var(--hairline)", borderRadius: 8, marginTop: 20}}>
+          <div className="eyebrow" style={{marginBottom: 14}}>{s.driverTitle || (isCN() ? `驱动因子弹性（冲击后每股值 vs 基准 ${curr}${base.toFixed(2)}）` : `Driver elasticity (per-share value after shock vs base ${curr}${base.toFixed(2)})`)}</div>
+          <div className="barlist">
+            {REPORT.driverSensitivity.map(d => {
+              const w = Math.min(25, Math.abs(d.delta)) / 25 * 50;
+              const pos = d.delta >= 0;
+              return (
+                <div className="barlist-row" key={d.k}>
+                  <span className="label">{d.k}</span>
+                  <div className="track">
+                    <div className="midline"/>
+                    {pos
+                      ? <div className="fill pos" style={{left: "50%", width: `${w}%`}}/>
+                      : <div className="fill neg" style={{right: "50%", width: `${w}%`}}/>
+                    }
+                  </div>
+                  <span className={`v ${pos ? "up" : "down"}`}>
+                    {pct(d.delta)} · {curr}{d.shock}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {(s.matrix && s.matrix.length > 0) && (
+        <div style={{marginTop: 28}}>
+          <div className="eyebrow" style={{marginBottom: 12}}>{L("WACC (行) × 永续增长率 g (列) · 每股公允价值", "WACC (rows) × terminal growth g (cols) · per-share fair value")}</div>
+          <table className="heat">
+            <thead>
+              <tr>
+                <th></th>
+                {s.cols.map(c => <th key={c}>g = {c.toFixed(1)}%</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {s.matrix.map((row, i) => (
+                <tr key={i}>
+                  <td className="rh">WACC {s.rows[i].toFixed(1)}%</td>
+                  {row.map((v, j) => (
+                    <td key={j} className="hot" style={{background: heatColor(v), color: "var(--text)"}}>
+                      {curr}{v}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="footnote">{s.footnote || (isCN() ? `基准每股 ${curr}${base.toFixed(2)}；红色表示高于基准（更乐观），绿色反之。` : `Base per-share ${curr}${base.toFixed(2)}; shading intensity = deviation from base.`)}</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Conclusion() {
+  const c = REPORT.conclusion || {};
+  return (
+    <section id="sec-conclusion">
+      <SectionHead idx={L("08 · 结论", "08 · Conclusion")} title={c.title || L("结论", "Conclusion")} subtitle={c.subtitle || L("首席分析师 · 终稿", "Chief Analyst · Final")}/>
+      {(c.paragraphs && c.paragraphs.length > 0) && (
+        <div className="reading wide prose">
+          {c.paragraphs.map((html, i) => (
+            <p key={i} dangerouslySetInnerHTML={{__html: html}}/>
+          ))}
+        </div>
+      )}
+
+      {(REPORT.catalysts && REPORT.catalysts.length > 0) && (
+        <div style={{marginTop: 40}}>
+          <div className="eyebrow" style={{marginBottom: 14}}>{c.catalystsTitle || L("未来催化剂", "Upcoming catalysts")}</div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr", gap: 1, background:"var(--hairline)", border:"1px solid var(--hairline)", borderRadius: 8, overflow:"hidden"}}>
+            {REPORT.catalysts.map(ev => {
+              const impactColor = (ev.impact === "高" || ev.impact === "High") ? "var(--up)" : "var(--warn)";
+              const impactBg = (ev.impact === "高" || ev.impact === "High") ? "var(--up-soft)" : "var(--warn-soft)";
+              return (
+                <div key={ev.date + ev.title} style={{background:"var(--bg-elev)", padding: "16px 22px", display:"grid", gridTemplateColumns:"130px 1fr auto", gap: 24, alignItems:"center"}}>
+                  <div className="mono" style={{color:"var(--text-3)", fontSize: 13}}>{ev.date}</div>
+                  <div>
+                    <div style={{fontFamily:"var(--serif)", fontSize: 16, color:"var(--text)", marginBottom: 2}}>{ev.title}</div>
+                    <div style={{fontSize: 12.5, color:"var(--text-3)"}}>{ev.note}</div>
+                  </div>
+                  <div className="mono" style={{fontSize: 11, color: impactColor, padding: "3px 9px", background: impactBg, borderRadius: 3, letterSpacing: "0.06em"}}>
+                    {L("影响", "Impact")} · {ev.impact}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div style={{marginTop: 56, paddingTop: 28, borderTop: "1px solid var(--hairline)", display:"flex", justifyContent:"space-between", gap: 20, fontFamily:"var(--mono)", fontSize: 11.5, color: "var(--text-4)", flexWrap:"wrap"}}>
+        <span>Aegis · {L("投研 OS", "Research OS")} · v0.9.3</span>
+        <span>{L("生成于", "Generated on")} {REPORT.reportDate}</span>
+        <span>{L("Pipeline: 数据抓取 → 归一化 → DCF → 7 Agent → Critic → 合成 → 编辑", "Pipeline: Fetch → Normalize → DCF → 7 Agents → Critics → Synthesize → Edit")}</span>
+        <span>{L("本报告不构成投资建议", "Not investment advice")}</span>
+      </div>
+    </section>
+  );
+}
+
+function Dock({ onToggleTweaks }) {
+  // Kick off a fresh pipeline run for this ticker via the local server.
+  // Falls back to alert + no-op when the page is opened from file:// and
+  // no server is reachable.
+  const onRegenerate = async () => {
+    const ticker = (REPORT.code || "").toString();
+    if (!ticker) return;
+    try {
+      const r = await fetch("/api/run", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ticker}),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const state = await r.json();
+      window.location.href = `/progress?run_id=${encodeURIComponent(state.run_id)}&ticker=${encodeURIComponent(ticker)}`;
+    } catch (e) {
+      alert(L(`无法启动重新生成：${e.message}。请确认本地服务已启动。`,
+              `Unable to start regeneration: ${e.message}. Local server must be running.`));
+    }
+  };
+  const onShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      // Minimal feedback via button title toggle (avoid heavy toast UI)
+      const btn = event?.currentTarget;
+      if (btn) { const old = btn.title; btn.title = L("已复制链接", "Link copied"); setTimeout(() => { btn.title = old; }, 1500); }
+    } catch {
+      alert(L("复制失败，请手动复制浏览器地址栏", "Copy failed; please copy the URL manually"));
+    }
+  };
+  return (
+    <div className="dock">
+      <button onClick={onRegenerate} title={L("重新生成报告", "Regenerate")}><Icon path="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/>{L("重新生成", "Regenerate")}</button>
+      <button onClick={onShare} title={L("分享", "Share")}><Icon path="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7 M16 6l-4-4-4 4 M12 2v14"/>{L("分享", "Share")}</button>
+      <button onClick={onToggleTweaks} title="Tweaks"><Icon path="M3 6h18 M3 12h18 M3 18h18 M7 3v6 M12 9v6 M17 15v6"/>Tweaks</button>
+      <button className="primary" title={L("导出 PDF", "Export PDF")} onClick={() => window.print()}><Icon path="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M9 14l3 3 3-3 M12 17V9"/>{L("导出 PDF", "Export PDF")}</button>
+    </div>
+  );
+}
+function Icon({ path }) {
+  return <svg viewBox="0 0 24 24"><path d={path}/></svg>;
+}
+
+function TweaksPanel({ state, setState, on }) {
+  const hues = [210, 175, 260, 45, 0];
+  return (
+    <div className={`tweaks ${on ? "on" : ""}`}>
+      <h4>Tweaks</h4>
+      <div className="tweak-row">
+        <span>{L("强调色", "Accent")}</span>
+        <div className="swatches">
+          {hues.map(h => (
+            <div key={h} className={`swatch ${state.accentHue === h ? "on" : ""}`}
+                 style={{background: `oklch(0.72 0.075 ${h})`}}
+                 onClick={() => setState({...state, accentHue: h})}/>
+          ))}
+        </div>
+      </div>
+      <div className="tweak-row">
+        <span>{L("正文宽度", "Reading width")}</span>
+        <div className="seg-ctl">
+          {["tight", "comfortable", "wide"].map(w => (
+            <button key={w} className={state.readingWidth === w ? "on" : ""}
+                    onClick={() => setState({...state, readingWidth: w})}>
+              {w === "tight" ? L("紧凑", "Tight") : w === "comfortable" ? L("舒适", "Comfortable") : L("宽松", "Wide")}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="tweak-row">
+        <span>{L("右侧信息栏", "Right rail")}</span>
+        <div className="seg-ctl">
+          <button className={state.showRail ? "on" : ""} onClick={() => setState({...state, showRail: true})}>{L("显示", "Show")}</button>
+          <button className={!state.showRail ? "on" : ""} onClick={() => setState({...state, showRail: false})}>{L("隐藏", "Hide")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [active, setActive] = useState("sec-summary");
+  const [tweakState, setTweakState] = useState(typeof TWEAK_DEFAULTS !== "undefined" ? TWEAK_DEFAULTS : {accentHue: 210, readingWidth: "comfortable", showRail: false});
+  const [tweaksVisible, setTweaksVisible] = useState(false);
+
+  // Drive market-specific color semantics (涨跌颜色) from CSS.
+  // US/global defaults: green = up, red = down. A-share flips them.
+  useEffect(() => {
+    document.body.dataset.market = isCN() ? "CN" : "US";
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const p = document.getElementById("scroll-progress");
+      const h = document.documentElement;
+      const pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+      if (p) p.style.width = `${pct}%`;
+
+      const pos = window.scrollY + 140;
+      let cur = SECTIONS[0].id;
+      for (const s of SECTIONS) {
+        const el = document.getElementById(s.id);
+        if (el && el.offsetTop <= pos) cur = s.id;
+      }
+      setActive(cur);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--accent", `oklch(0.72 0.075 ${tweakState.accentHue})`);
+    document.documentElement.style.setProperty("--accent-dim", `oklch(0.52 0.055 ${tweakState.accentHue})`);
+    document.documentElement.style.setProperty("--accent-bg", `oklch(0.28 0.04 ${tweakState.accentHue} / 0.35)`);
+  }, [tweakState]);
+
+  const mainWidthStyle = {
+    padding: tweakState.readingWidth === "tight" ? "36px 40px 160px" :
+             tweakState.readingWidth === "wide"  ? "36px 72px 160px" : "36px 56px 160px"
+  };
+
+  return (
+    <>
+      <TopBar/>
+      <div className="layout" style={{gridTemplateColumns: tweakState.showRail ? "260px minmax(0,1fr) 280px" : "260px minmax(0,1fr)"}}>
+        <TableOfContents active={active}/>
+        <main className="main" style={mainWidthStyle}>
+          <Hero/>
+          <ExecutiveSummary/>
+          <ValuationBand/>
+          <Macro/>
+          <Financials/>
+          <DcfSection/>
+          <AgentsSection/>
+          <SensitivitySection/>
+          <Conclusion/>
+        </main>
+        {tweakState.showRail && <RightRail/>}
+      </div>
+      <Dock onToggleTweaks={() => setTweaksVisible(v => !v)}/>
+      <TweaksPanel state={tweakState} setState={setTweakState} on={tweaksVisible}/>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+
+</script>
+</body>
+</html>
