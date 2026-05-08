@@ -85,6 +85,19 @@
   - **修复**：加 try/except (YAMLError + OSError)，验证 loaded 是 dict，否则 fall back to generic pack
 - 已修但合并到 Y39: 旧的 `Y7 implied_exit_multiple inf → None` 是 Y39 的特例，现在所有 inf/nan 通用兜底
 
+### Synthesizer scrub keyword 扩展 + 实证
+- ✅ **BUG-Y48** Synthesizer scrub up/down keyword sets 中文太薄
+  - 原 `_DOWNSIDE_KEYWORDS` 仅 3 中文，`_UPSIDE_KEYWORDS` 仅 1 中文（Y28 移除"上涨"后）
+  - **影响**：CN narrative 用 重估/估值修复/估值回归/价值发现/反弹/修复 等表达 — scrub 无法分辨方向 → false negative on real return claims
+  - **修复**：扩展到 13 ZH downside + 14 ZH upside 词
+  - 同步加 `valuation re-rating` EN 词
+
+### Y34 smoke 实证（NVDA smoke 真跑）
+- ✅ **Y34 Headline**: `"NVIDIA Corporation: rule-based DCF implies 23.8% downside"` ←（之前空字符串）
+- ✅ **Y30 CAGR warning** 文本扩展实证：`exceeds the cap most companies sustain. Possible drivers: early-stage scaling, one-off boom (cyclical / policy / single-customer), or genuine product-cycle demand shock`
+- ✅ **Y22 Rating**: `Avoid + Probability-weighted target $161.2`（rule-based 模式正确反映 DCF 偏离）
+- 注：production LLM run 因 DEEPSEEK_API_KEY 被清空无法验证 (会话外环境变更)，待用户重设 key
+
 ### Decision Engine fallback 路径中文化
 - ✅ **BUG-Y47** `decision_engine` keyword fallback 4 层 EN-only
   - **症状**：当 synthesized_thesis 缺失（synthesizer LLM fail）时，decision_engine 走 keyword fallback 路径检测 cross-agent 矛盾。整套 4 层关键词 (topics / pos / neg / negation prefixes) 全英文 → A 股 fallback 路径**完全沉默**
