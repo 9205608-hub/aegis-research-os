@@ -1,0 +1,79 @@
+sector_pack_id: sp_biotech_pharma_v1
+sector_name: "Biotech / Pharma"
+version: "1.0"
+
+key_kpis:
+  - "Pipeline Value (rNPV)"
+  - "Revenue per Drug"
+  - "R&D as % of Revenue"
+  - "Patent Cliff Exposure"
+  - "Gross Margin"
+
+cycle_characteristics:
+  cyclicality: low
+  leading_indicators:
+    - "FDA approval pipeline"
+    - "Phase 3 trial readouts"
+    - "Patent expiration schedule"
+  typical_cycle_length_years: 10
+
+competitive_dynamics:
+  moat_sources:
+    - "Patent protection (20-year exclusivity)"
+    - "Regulatory approval barriers"
+    - "Clinical trial data moats"
+  disruption_risks:
+    - "Biosimilar/generic entry post-patent"
+    - "Drug pricing regulation"
+    - "Clinical trial failures"
+
+valuation_framework:
+  primary_method: "Sum-of-Parts (rNPV pipeline + existing drugs)"
+  typical_operating_margin_range: [0.25, 0.40]
+  typical_revenue_growth_range: [0.03, 0.12]
+  key_multiples:
+    - "P/E"
+    - "EV/EBITDA"
+    - "EV/Revenue"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.65, 0.85]
+    operating_margin: [0.25, 0.40]
+  variable_cost_drivers:
+    - "Cost of goods (API sourcing)"
+    - "Royalty payments"
+  fixed_cost_drivers:
+    - "R&D (15-25% of revenue)"
+    - "Sales force (oncology, specialty)"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Sum(Drug_Revenue) = Sum(Patients x Share x Price)"
+    tree:
+      - name: "Key_Drug_Revenue"
+        unit: "billions"
+        base_value: 25
+        near_growth: 0.06
+        long_growth: 0.02
+        growth_driver: "Volume growth + price increases on existing portfolio"
+
+      - name: "Pipeline_Launches"
+        unit: "billions"
+        base_value: 5
+        near_growth: 0.25
+        long_growth: 0.08
+        growth_driver: "New drug launches from late-stage pipeline"
+
+      - name: "Biosimilar_Erosion"
+        unit: "ratio"
+        base_value: 1.0
+        near_growth: -0.02
+        long_growth: -0.03
+        growth_driver: "Patent cliff erosion on mature drugs"
+
+accounting_considerations:
+  - "R&D expense vs capitalization (all expensed under US GAAP)"
+  - "Collaboration/licensing revenue recognition complexity"
+  - "Inventory write-downs for failed drugs"
+  - "Contingent consideration from M&A (fair value remeasurement)"

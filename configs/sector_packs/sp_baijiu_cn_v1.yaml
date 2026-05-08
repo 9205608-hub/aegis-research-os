@@ -1,0 +1,104 @@
+sector_pack_id: sp_baijiu_cn_v1
+sector_name: "白酒 / Chinese Baijiu & Spirits"
+version: "1.0"
+
+key_kpis:
+  - "吨酒出厂价 (Ex-factory price per ton)"
+  - "吨酒毛利 (Gross profit per ton)"
+  - "合同负债/预收款 (Contract liabilities / advance receipts)"
+  - "批价-出厂价价差 (Wholesale-to-factory price spread)"
+  - "经销商数量变化 (Dealer network change)"
+  - "直销占比 (Direct sales ratio)"
+
+cycle_characteristics:
+  cyclicality: low_to_moderate
+  leading_indicators:
+    - "High-end consumer confidence index"
+    - "Government anti-corruption policy signals"
+    - "Banquet and business entertainment spending trends"
+    - "Contract liabilities growth (leading indicator of next-quarter revenue)"
+  typical_cycle_length_years: 8
+
+competitive_dynamics:
+  moat_sources:
+    - "Brand heritage and cultural prestige (centuries-old brands)"
+    - "Geographic origin and water source exclusivity (terroir)"
+    - "Aging inventory as appreciating asset (base liquor reserves)"
+    - "Pricing power from scarcity and collectible value"
+  disruption_risks:
+    - "Government anti-corruption campaigns reducing banquet demand"
+    - "Younger generation shifting to wine, whisky, craft beer"
+    - "Counterfeit products eroding brand trust"
+    - "Health-consciousness reducing alcohol consumption"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.35, 0.70]
+  typical_revenue_growth_range: [0.08, 0.18]
+  key_multiples:
+    - "P/E Forward"
+    - "EV/EBITDA"
+    - "Price/Sales"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.60, 0.94]
+    operating_margin: [0.35, 0.70]
+  variable_cost_drivers:
+    - "Grain (sorghum, wheat) and water costs"
+    - "Packaging materials (bottles, boxes)"
+    - "Consumption tax (ad valorem + specific)"
+  fixed_cost_drivers:
+    - "Sales and marketing (dealer conferences, brand building)"
+    - "Production facility depreciation"
+    - "R&D and quality control"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Premium Volume × Premium Price + Mid-range Volume × Mid-range Price + Series/Sub-brand Revenue"
+    tree:
+      - name: "Premium_Volume"
+        unit: "thousand tons"
+        base_value: 4.2
+        near_growth: 0.06
+        long_growth: 0.03
+        growth_driver: "Banquet, gifting, collection demand; supply constrained by aging cycle"
+        note: "Moutai飞天 ~4.2万吨/年, 五粮液普五 ~3万吨; volume growth limited by production capacity"
+
+      - name: "Premium_ASP"
+        unit: "CNY/ton"
+        base_value: 2800000
+        near_growth: 0.05
+        long_growth: 0.03
+        growth_driver: "Annual ex-factory price increases, product mix upgrade, direct sales expansion"
+        note: "Moutai飞天出厂价1169元/瓶→~234万元/吨; 批价~2500元/瓶 = 500万/吨"
+
+      - name: "Mid_Range_Volume"
+        unit: "thousand tons"
+        base_value: 8.0
+        near_growth: 0.08
+        long_growth: 0.05
+        growth_driver: "Consumer upgrade from local brands, urbanization-driven demand"
+        note: "系列酒/中端产品(茅台1935, 五粮春等) growing faster than premium"
+
+      - name: "Mid_Range_ASP"
+        unit: "CNY/ton"
+        base_value: 400000
+        near_growth: 0.04
+        long_growth: 0.02
+        growth_driver: "Price increases, premiumization within mid-range tier"
+
+accounting_considerations:
+  - "合同负债(Contract liabilities): advance payments from dealers are a key leading indicator — rising signals strong demand, falling signals channel destocking"
+  - "消费税(Consumption tax): 20% ad valorem + 0.5元/斤 specific; paid at production, not sale — timing differences between tax expense and revenue recognition"
+  - "经销商压货(Channel stuffing): revenue recognized at shipment to dealers, not end-consumer sale — watch for inventory buildup at dealer level"
+  - "直销占比(Direct sales ratio): higher direct sales → higher ASP but also higher operating costs; Moutai i茅台 platform is shifting this mix"
+  - "基酒库存(Base liquor inventory): aging inventory is an asset that appreciates over time — not impaired like typical inventory"
+
+special_risk_factors:
+  policy_sensitivity:
+    description: "Government anti-corruption campaigns (2012-2014 cycle) can cut high-end demand 30-50% overnight"
+    severity: high
+  consumption_tax_reform:
+    description: "Potential shift from production-stage to consumption-stage taxation would change cash flow timing"
+    severity: medium

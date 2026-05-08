@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Aegis — 正在分析 NVDA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --bg:       oklch(0.155 0.012 255);
+    --bg-elev:  oklch(0.185 0.013 255);
+    --surface:  oklch(0.205 0.014 255);
+    --surface-2: oklch(0.235 0.015 255);
+    --hairline: oklch(0.28 0.015 255 / 0.7);
+    --hairline-strong: oklch(0.34 0.018 255 / 0.9);
+
+    --text:     oklch(0.94 0.005 255);
+    --text-2:   oklch(0.72 0.008 255);
+    --text-3:   oklch(0.54 0.009 255);
+    --text-4:   oklch(0.40 0.010 255);
+
+    --accent:     oklch(0.72 0.075 210);
+    --accent-dim: oklch(0.52 0.055 210);
+    --accent-bg:  oklch(0.28 0.04 210 / 0.35);
+
+    /* US convention */
+    --up:       oklch(0.72 0.13 155);
+    --down:     oklch(0.68 0.17 25);
+    --warn:     oklch(0.78 0.12 72);
+    --warn-soft: oklch(0.28 0.06 72 / 0.5);
+
+    --serif: "Source Serif 4", "Songti SC", "Noto Serif SC", Georgia, serif;
+    --sans:  "Inter", "PingFang SC", "HarmonyOS Sans SC", system-ui, sans-serif;
+    --mono:  "JetBrains Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; -webkit-font-smoothing: antialiased; font-feature-settings: "cv11","ss01"; height: 100%; }
+
+  /* Top bar */
+  .topbar { position: sticky; top:0; z-index: 30; height: 56px; display:flex; align-items: center; padding: 0 32px; border-bottom: 1px solid var(--hairline); background: color-mix(in oklab, var(--bg) 85%, transparent); backdrop-filter: blur(14px); }
+  .brand { font-family: var(--serif); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+  .brand .dim { color: var(--text-3); font-weight: 400; margin-left: 10px; }
+  .topbar .crumbs { color: var(--text-3); font-size: 13px; margin-left: 22px; }
+  .topbar .crumbs .sep { color: var(--text-4); margin: 0 8px; }
+  .topbar .right { margin-left: auto; display: flex; gap: 18px; align-items: center; }
+  .btn-ghost { appearance: none; background: transparent; border: 1px solid var(--hairline); color: var(--text-3); padding: 6px 12px; border-radius: 6px; font-family: var(--sans); font-size: 12.5px; cursor: pointer; display:flex; align-items:center; gap: 6px; }
+  .btn-ghost:hover { color: var(--text); border-color: var(--hairline-strong); }
+  .btn-ghost svg { width: 12px; height: 12px; stroke: currentColor; stroke-width: 1.5; fill: none; }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: 1fr 1fr; height: calc(100vh - 56px); min-height: 700px; }
+  .left { border-right: 1px solid var(--hairline); overflow-y: auto; padding: 48px 56px 80px; }
+  .right { background: oklch(0.13 0.012 255); display: flex; flex-direction: column; min-width: 0; }
+
+  /* Header block */
+  .subject { margin-bottom: 40px; }
+  .subject .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-4); margin-bottom: 14px; }
+  .subject h1 { font-family: var(--serif); font-size: 40px; font-weight: 500; letter-spacing: -0.022em; margin: 0 0 8px; color: var(--text); }
+  .subject .code { font-family: var(--mono); font-size: 13px; color: var(--text-3); letter-spacing: 0.04em; }
+  .subject .code .sep { color: var(--text-4); margin: 0 8px; }
+
+  /* Overall progress */
+  .overall { display:flex; align-items: baseline; gap: 20px; margin: 24px 0 36px; padding: 22px 0; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .overall .pct { font-family: var(--mono); font-size: 44px; font-weight: 500; letter-spacing: -0.02em; color: var(--text); line-height: 1; }
+  .overall .lbl { font-size: 12px; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.12em; font-family: var(--mono); margin-bottom: 4px; }
+  .overall .meta { font-family: var(--mono); font-size: 12.5px; color: var(--text-3); margin-top: 4px; }
+  .overall .eta { margin-left: auto; text-align: right; }
+
+  /* Stage list */
+  .stages { display:flex; flex-direction: column; }
+  .stage-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: var(--text-4); text-transform: uppercase; margin-bottom: 12px; }
+
+  .stage { display: grid; grid-template-columns: 40px 1fr auto; gap: 16px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--hairline); position: relative; }
+  .stage:last-child { border-bottom: none; }
+
+  .stage-indicator { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--hairline-strong); display:flex; align-items:center; justify-content: center; margin-top: 2px; position: relative; }
+  .stage.done .stage-indicator { background: var(--accent); border-color: var(--accent); }
+  .stage.running .stage-indicator { border-color: var(--accent); background: transparent; }
+  .stage.running .stage-indicator::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid var(--accent); border-right-color: transparent; animation: spin 1s linear infinite;
+  }
+  .stage.pending .stage-indicator { border-color: var(--hairline); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .stage.done .tick { color: oklch(0.12 0.02 210); font-family: var(--mono); font-size: 12px; font-weight: 600; }
+
+  .stage .name { font-family: var(--serif); font-size: 17px; font-weight: 500; color: var(--text); letter-spacing: -0.01em; }
+  .stage.pending .name { color: var(--text-3); }
+  .stage.done .name { color: var(--text-2); }
+  .stage .desc { font-family: var(--serif); font-size: 13.5px; color: var(--text-3); line-height: 1.55; margin-top: 4px; font-weight: 300; }
+  .stage .sub { font-family: var(--mono); font-size: 11.5px; color: var(--text-4); margin-top: 8px; }
+  .stage.running .sub { color: var(--accent); }
+
+  .stage-time { font-family: var(--mono); font-size: 12px; color: var(--text-4); text-align: right; padding-top: 4px; }
+  .stage.running .stage-time { color: var(--accent); }
+
+  /* Sub-progress bar inside running stage */
+  .microbar { margin-top: 10px; height: 2px; background: var(--surface-2); overflow: hidden; border-radius: 1px; }
+  .microbar .fill { height: 100%; background: var(--accent); transition: width .25s linear; }
+
+  /* Agent sub-grid inside the agents stage */
+  .agent-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+  .agent-chip { display:flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg-elev); border: 1px solid var(--hairline); border-radius: 6px; font-size: 12px; }
+  .agent-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .agent-chip.done .dot { background: var(--up); }
+  .agent-chip.running .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .agent-chip.pending .dot { background: var(--text-4); opacity: 0.5; }
+  .agent-chip .nm { color: var(--text-2); flex: 1; }
+  .agent-chip.pending .nm { color: var(--text-4); }
+  .agent-chip .tm { font-family: var(--mono); font-size: 10.5px; color: var(--text-4); }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* Cancel */
+  .action-row { margin-top: 40px; display:flex; gap: 12px; }
+  .btn-outline { appearance: none; background: transparent; border: 1px solid var(--hairline-strong); color: var(--text-2); padding: 10px 18px; border-radius: 8px; font-family: var(--sans); font-size: 13px; cursor: pointer; }
+  .btn-outline:hover { color: var(--text); border-color: var(--text-3); }
+  .btn-outline.danger:hover { color: var(--down); border-color: var(--down); }
+
+  /* Right pane — agent stream */
+  .stream-head { padding: 18px 28px; display:flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--hairline); }
+  .stream-head .title { font-family: var(--serif); font-size: 16px; font-weight: 500; color: var(--text); }
+  .stream-head .sub { font-family: var(--mono); font-size: 11.5px; color: var(--text-4); letter-spacing: 0.08em; }
+  .stream-head .right { margin-left: auto; display:flex; gap: 10px; align-items: center; color: var(--text-4); font-family: var(--mono); font-size: 11px; }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--up); animation: pulse 1.4s ease-in-out infinite; }
+
+  .stream-body { flex: 1; overflow-y: auto; padding: 20px 28px 60px; font-family: var(--mono); font-size: 12.5px; color: var(--text-2); line-height: 1.7; }
+  .stream-body::-webkit-scrollbar { width: 6px; } .stream-body::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
+
+  .log-line { margin-bottom: 10px; }
+  .log-line .ts { color: var(--text-4); margin-right: 12px; font-size: 11.5px; }
+  .log-line .tag { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 10.5px; letter-spacing: 0.06em; margin-right: 8px; }
+  .log-line .tag.fetch { color: var(--accent); background: var(--accent-bg); }
+  .log-line .tag.norm  { color: var(--text-2); background: var(--surface-2); }
+  .log-line .tag.dcf   { color: var(--warn); background: var(--warn-soft); }
+  .log-line .tag.agent { color: var(--up); background: color-mix(in oklab, var(--up) 20%, transparent); }
+  .log-line .tag.critic { color: var(--down); background: color-mix(in oklab, var(--down) 20%, transparent); }
+  .log-line .tag.synth  { color: var(--text); background: var(--surface-2); }
+
+  .log-line .msg { color: var(--text-2); }
+  .log-line .msg.dim { color: var(--text-3); }
+  .log-line .msg.warn { color: var(--warn); }
+  .log-line .msg.ok { color: var(--up); }
+  .log-line .msg.err { color: var(--down); }
+
+  /* Streaming thought block */
+  .thought { margin: 14px 0; padding: 14px 16px; background: var(--bg-elev); border-left: 2px solid var(--accent); border-radius: 0 6px 6px 0; font-family: var(--serif); font-size: 14px; color: var(--text); line-height: 1.7; font-weight: 300; }
+  .thought .head { display:flex; justify-content: space-between; font-family: var(--mono); font-size: 10.5px; color: var(--text-4); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+  .thought .head .who { color: var(--accent); }
+  .cursor { display: inline-block; width: 7px; height: 15px; background: var(--accent); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Section dividers in log */
+  .log-divider { margin: 22px 0 12px; padding-top: 14px; border-top: 1px solid var(--hairline); font-family: var(--mono); font-size: 10.5px; color: var(--text-4); letter-spacing: 0.14em; text-transform: uppercase; }
+
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; height: auto; }
+    .right { height: 500px; border-top: 1px solid var(--hairline); }
+    .left { padding: 32px; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar" id="topbar">
+    <a href="/search" class="brand" style="text-decoration:none;color:inherit">Aegis <span class="dim">投研 OS</span></a>
+    <div class="crumbs" id="crumbs">报告 <span class="sep">›</span> 生成中 <span class="sep">·</span> <span id="topTicker">—</span> <span class="sep">·</span> <span id="topRun" style="font-family:var(--mono);font-size:12px">—</span></div>
+    <div class="right">
+      <a href="/search" class="btn-ghost" style="text-decoration:none">
+        <svg viewBox="0 0 24 24"><path d="M19 12H5 M12 19l-7-7 7-7"/></svg>
+        返回搜索
+      </a>
+    </div>
+  </div>
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // ========= Pipeline stages (expected timings ~25 min total) =========
+    const STAGES = [
+      { id: "fetch",   name: "数据抓取",         desc: "拉取 EDGAR / akshare 申报、宏观序列与实时行情。缓存优先，失败切换至在线拉取。", eta: 45 },
+      { id: "norm",    name: "归一化",           desc: "将 XBRL / CAS 概念映射至统一字段；派生 FCFF、营业利润率、ROIC 与跨期比率。", eta: 35 },
+      { id: "dcf",     name: "DCF 引擎",         desc: "两阶段 FCFF 模型；Monte Carlo 在 WACC × g × margin 区间扰动；情景建模。", eta: 60 },
+      { id: "agents",  name: "七位 Agent 审议",  desc: "会计、业务、估值、宏观、风险、治理、变异视角七位专家基于事实集并行推理。", eta: 780 },
+      { id: "critics", name: "Critic 审核",      desc: "多位 Critic 审查：逻辑、证据、偏差、宏观一致性、市场、数字、叙事事实核查。", eta: 120 },
+      { id: "synth",   name: "论点合成",         desc: "首席分析师协调 Agent 分歧、解决数字冲突、撰写变异视角 vs 市场共识。", eta: 90 },
+      { id: "edit",    name: "报告编辑",         desc: "标题、开篇段、首页关键数字。语气润色。最终 HTML 渲染。", eta: 55 },
+    ];
+    const TOTAL_ETA = STAGES.reduce((s, x) => s + x.eta, 0);
+
+    // Seven agents keyed by the English tokens emitted by the pipeline log.
+    const AGENT_ROSTER = [
+      { key: "accounting_analyst", name: "会计" },
+      { key: "business_analyst",   name: "业务" },
+      { key: "valuation_analyst",  name: "估值" },
+      { key: "management_analyst", name: "治理" },
+      { key: "variant_analyst",    name: "变异" },
+      { key: "risk_analyst",       name: "风险" },
+      { key: "macro_analyst",      name: "宏观" },
+    ];
+
+    // ========= Log → stage classifier =========
+    // Heuristic regexes matched against the real pipeline's stdout. See
+    // HANDOFF "Phase 3" section for the source log patterns.
+    function classifyLine(line) {
+      if (/AEGIS AUTO RESEARCH|Starting research run|LLM Mode:|WACC:.*TG:/.test(line))
+        return { stageId: "fetch", tag: "sys", cls: "dim" };
+      if (/EDGAR|CIK |10-K|XBRL|Fetched .* (facts|financial)|akshare|yfinance|fiscal_year|Auto-fetched market|Sector pack|Consensus:|Earnings history|Catalyst calendar|Historical valuation|宏观序列|Revenue CAGR|TIMELINESS/i.test(line))
+        return { stageId: "fetch", tag: "fetch" };
+      if (/Adapted .* (CAS|GAAP|concepts)|Normalized to .* meta_facts|Computed .* metrics|derived:|shares field|A-share historical/i.test(line))
+        return { stageId: "norm", tag: "norm" };
+      if (/DCF:|ScenarioArchitect|MarketExpectations|Monte Carlo|sensitivity|Revision signal/i.test(line))
+        return { stageId: "dcf", tag: "dcf" };
+      if (/Research Director|Agent execution plan|Batch \d+ \(parallel|\[DEEP\]|Inter-agent flow|Ran \d+ agents|findings passed|Opening angle|Key variables|Red flags/i.test(line))
+        return { stageId: "agents", tag: "agent" };
+      if (/Critic|Ran \d+ critics|Publish Gate/i.test(line))
+        return { stageId: "critics", tag: "critic" };
+      if (/Thesis Synthesizer|Narrative supplements|Variant:|Edge durability|Unresolved tensions|Hypothesis:|Evolution:|Biggest surprise/i.test(line))
+        return { stageId: "synth", tag: "synth" };
+      if (/Report Editor|Decision:|Replay cache saved|auto_report\.html/i.test(line))
+        return { stageId: "edit", tag: "synth" };
+      return { stageId: null, tag: "sys", cls: "dim" };
+    }
+
+    // Extract "who" from an agent log line for richer tag rendering.
+    function extractAgentName(line) {
+      const m = line.match(/([a-z_]+_analyst)/);
+      if (!m) return null;
+      const role = AGENT_ROSTER.find(a => a.key === m[1]);
+      return role ? role.name : m[1];
+    }
+
+    // Derive per-agent status from the log stream.
+    // - `[DEEP]:` or bare `analyst: N obs` → done
+    // - Most recent `Batch N (parallel, K): a, b, c` → running (for members not yet done)
+    function deriveAgentStatuses(lines) {
+      const status = {};
+      for (const entry of lines) {
+        const m = entry.line.match(/([a-z_]+_analyst)(?:\s*\[DEEP\])?:\s*\d+\s*obs/);
+        if (m) status[m[1]] = "done";
+      }
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const m = lines[i].line.match(/Batch \d+ \(parallel, \d+\):\s*(.+)$/);
+        if (m) {
+          m[1].split(/,\s*/).map(s => s.trim()).forEach(mem => {
+            if (!status[mem]) status[mem] = "running";
+          });
+          break;
+        }
+      }
+      return status;
+    }
+
+    // ========= Stage state derivation =========
+    // `currentIdx` = highest stage index seen in logs. Previous stages
+    // are marked done, `currentIdx` is running, later ones pending.
+    function deriveStageStates(lines, terminal) {
+      let currentIdx = -1;
+      for (const l of lines) {
+        const idx = STAGES.findIndex(s => s.id === l.stageId);
+        if (idx > currentIdx) currentIdx = idx;
+      }
+      if (terminal && terminal.status === "finished") currentIdx = STAGES.length - 1;
+      return STAGES.map((s, i) => {
+        if (terminal && terminal.status === "finished") return { status: "done" };
+        if (i < currentIdx) return { status: "done" };
+        if (i === currentIdx) return { status: "running" };
+        return { status: "pending" };
+      });
+    }
+
+    // ========= SSE subscription =========
+    function useRunStream(runId) {
+      const [lines, setLines] = useState([]);
+      const [state, setState] = useState({ status: runId ? "connecting" : "no_run", report: null });
+      const [connected, setConnected] = useState(false);
+      const startRef = useRef(Date.now());
+
+      useEffect(() => {
+        if (!runId) return;
+        const es = new EventSource(`/api/progress/${encodeURIComponent(runId)}`);
+        es.onopen  = () => setConnected(true);
+        es.onerror = () => setConnected(false);
+        es.onmessage = (ev) => {
+          let payload; try { payload = JSON.parse(ev.data); } catch { return; }
+          if (payload.type === "log") {
+            const cls = classifyLine(payload.line);
+            const t = (Date.now() - startRef.current) / 1000;
+            setLines(prev => [...prev, { seq: payload.seq, t, line: payload.line, ...cls }]);
+          } else if (payload.type === "state") {
+            setState({
+              status: payload.status,
+              report: payload.report,
+              exit_code: payload.exit_code,
+              ticker: payload.ticker,
+              run_id: payload.run_id,
+            });
+            if (payload.status !== "running") es.close();
+          }
+        };
+        return () => es.close();
+      }, [runId]);
+
+      return { lines, state, connected };
+    }
+
+    function getParam(k) {
+      return new URL(window.location.href).searchParams.get(k);
+    }
+
+    // Strip "[HH:MM:SS]" prefix from a log line.
+    function stripTimestamp(line) {
+      return line.replace(/^\s*\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/, "");
+    }
+
+    // Format a line's wall-clock offset as MM:SS.
+    function fmtOffset(t) {
+      const m = Math.floor(t / 60);
+      const s = Math.floor(t % 60);
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    // ========= Components =========
+    function Indicator({ status }) {
+      if (status === "done")    return <div className="stage-indicator"><span className="tick">✓</span></div>;
+      return <div className="stage-indicator"></div>;
+    }
+
+    function AgentSubGrid({ agentStatus }) {
+      return (
+        <div className="agent-grid">
+          {AGENT_ROSTER.map((a) => {
+            const st = agentStatus[a.key] || "pending";
+            return (
+              <div className={`agent-chip ${st}`} key={a.key}>
+                <span className="dot"/>
+                <span className="nm">{a.name}</span>
+                <span className="tm">
+                  {st === "done" && "✓"}
+                  {st === "running" && "…"}
+                  {st === "pending" && "—"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function Stage({ stage, status, agentStatus, lastSub }) {
+      return (
+        <div className={`stage ${status}`}>
+          <Indicator status={status}/>
+          <div>
+            <div className="name">{stage.name}</div>
+            <div className="desc">{stage.desc}</div>
+            {status === "running" && stage.id === "agents" && <AgentSubGrid agentStatus={agentStatus}/>}
+            {status === "running" && stage.id !== "agents" && (
+              <>
+                <div className="sub">{lastSub || "…"}</div>
+                <div className="microbar"><div className="fill" style={{width: "45%"}}/></div>
+              </>
+            )}
+            {status === "done" && (
+              <div className="sub" style={{color: "var(--text-4)"}}>已完成</div>
+            )}
+          </div>
+          <div className="stage-time">
+            {status === "done"    && "✓"}
+            {status === "running" && "进行中"}
+            {status === "pending" && `约 ${Math.round(stage.eta)}s`}
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const runId  = getParam("run_id");
+      const ticker = (getParam("ticker") || "").toUpperCase();
+      const { lines, state, connected } = useRunStream(runId);
+      const streamRef = useRef(null);
+
+      // Reflect header breadcrumbs from URL params.
+      useEffect(() => {
+        const t = document.getElementById("topTicker");
+        const r = document.getElementById("topRun");
+        if (t) t.textContent = ticker || "—";
+        if (r) r.textContent = runId ? `run_${runId}` : "—";
+        document.title = ticker ? `Aegis — 正在分析 ${ticker}` : "Aegis — 正在分析";
+      }, [ticker, runId]);
+
+      const terminal = state.status === "finished" || state.status === "failed" ? state : null;
+      const stageStates = useMemo(() => deriveStageStates(lines, terminal), [lines, terminal]);
+      const agentStatus = useMemo(() => deriveAgentStatuses(lines), [lines]);
+
+      const doneCount = stageStates.filter(s => s.status === "done").length;
+      const runningIdx = stageStates.findIndex(s => s.status === "running");
+      const progressPct = terminal && terminal.status === "finished"
+        ? 100
+        : Math.max(2, (doneCount / STAGES.length) * 100 + (runningIdx >= 0 ? 6 : 0));
+
+      // Most recent "sub" hint for the running (non-agent) stage.
+      const lastSubByStage = useMemo(() => {
+        const m = {};
+        for (const l of lines) {
+          if (!l.stageId) continue;
+          m[l.stageId] = stripTimestamp(l.line).slice(0, 72);
+        }
+        return m;
+      }, [lines]);
+
+      // Auto-scroll the log pane on new content.
+      useEffect(() => {
+        if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight;
+      }, [lines.length]);
+
+      // Redirect once the pipeline finishes (with a 2.5 s grace so the user
+      // sees the completion state).
+      useEffect(() => {
+        if (state.status === "finished" && state.report) {
+          const to = setTimeout(() => { window.location.href = state.report; }, 2500);
+          return () => clearTimeout(to);
+        }
+      }, [state.status, state.report]);
+
+      const elapsedSec = lines.length > 0 ? lines[lines.length - 1].t : 0;
+      const etaRemaining = terminal
+        ? 0
+        : Math.max(0, TOTAL_ETA - (doneCount / STAGES.length) * TOTAL_ETA);
+
+      const statusLabel =
+        state.status === "connecting" ? "连接中…" :
+        state.status === "finished"   ? "已完成" :
+        state.status === "failed"     ? "失败" :
+        state.status === "no_run"     ? "未提供 run_id" :
+        connected                     ? "LIVE" : "重连中…";
+
+      const liveColor =
+        state.status === "finished" ? "var(--up)" :
+        state.status === "failed"   ? "var(--down)" :
+        "var(--up)";
+
+      return (
+        <div className="layout">
+          <div className="left">
+            <div className="subject">
+              <div className="eyebrow">
+                {state.status === "finished" ? "报告已完成 · " : "报告生成中 · "}
+                运行 <span style={{color:"var(--text-3)"}}>run_{runId || "—"}</span>
+              </div>
+              <h1>{ticker || "—"}</h1>
+              <div className="code">
+                <span>{ticker || "—"}</span>
+                <span className="sep">·</span>
+                <span>{state.status === "finished" ? "渲染完成，准备跳转" : connected ? "实时日志流" : "等待进程输出"}</span>
+              </div>
+            </div>
+
+            <div className="overall">
+              <div>
+                <div className="lbl">总进度</div>
+                <div className="pct">{progressPct.toFixed(0)}<span style={{fontSize: 24, color: "var(--text-3)", marginLeft: 4}}>%</span></div>
+                <div className="meta">{doneCount} / {STAGES.length} 阶段已完成</div>
+              </div>
+              <div className="eta">
+                <div className="lbl">
+                  {terminal ? "退出状态" : "预计剩余"}
+                </div>
+                <div className="pct" style={{fontSize: 32}}>
+                  {terminal ? (
+                    state.status === "finished" ? "完成" : `失败 · ${state.exit_code}`
+                  ) : (
+                    <>
+                      {Math.floor(etaRemaining/60)}<span style={{fontSize: 18, color: "var(--text-3)"}}>分</span> {Math.round(etaRemaining%60)}<span style={{fontSize: 18, color: "var(--text-3)"}}>秒</span>
+                    </>
+                  )}
+                </div>
+                <div className="meta">
+                  {terminal
+                    ? (state.report ? "即将跳转到报告" : "未找到报告文件")
+                    : `已用 ${fmtOffset(elapsedSec)} · 典型耗时 25:00`}
+                </div>
+              </div>
+            </div>
+
+            <div className="stages">
+              <div className="stage-label">Pipeline 阶段</div>
+              {STAGES.map((s, i) => (
+                <Stage
+                  key={s.id}
+                  stage={s}
+                  status={stageStates[i].status}
+                  agentStatus={agentStatus}
+                  lastSub={lastSubByStage[s.id]}
+                />
+              ))}
+            </div>
+
+            <div className="action-row">
+              {state.status === "finished" && state.report && (
+                <a href={state.report} className="btn-outline" style={{textDecoration:"none"}}>立即查看报告</a>
+              )}
+              {state.status !== "finished" && (
+                <a href="/search" className="btn-outline">返回搜索</a>
+              )}
+            </div>
+          </div>
+
+          <div className="right">
+            <div className="stream-head">
+              <div>
+                <div className="title">Pipeline 实时日志</div>
+                <div className="sub">{runId ? `run_${runId}` : "无 run_id"} · {lines.length} 行</div>
+              </div>
+              <div className="right">
+                <span className="live-dot" style={{background: liveColor}}></span>
+                <span>{statusLabel}</span>
+              </div>
+            </div>
+            <div className="stream-body" ref={streamRef}>
+              {state.status === "no_run" && (
+                <div className="log-line"><span className="msg warn">未提供 run_id — 请从搜索页发起分析</span></div>
+              )}
+
+              {lines.map((l) => {
+                const who = l.stageId === "agents" ? extractAgentName(l.line) : null;
+                const msg = stripTimestamp(l.line);
+                return (
+                  <div className="log-line" key={l.seq}>
+                    <span className="ts">{fmtOffset(l.t)}</span>
+                    <span className={`tag ${l.tag}`}>{l.tag}{who ? ` · ${who}` : ""}</span>
+                    <span className={`msg ${l.cls || ""}`}>{msg}</span>
+                  </div>
+                );
+              })}
+
+              {state.status === "finished" && (
+                <div className="log-divider" style={{color: "var(--up)"}}>
+                  Pipeline 完成 · 报告已渲染{state.report ? " · 正在跳转 …" : ""}
+                </div>
+              )}
+              {state.status === "failed" && (
+                <div className="log-divider" style={{color: "var(--down)"}}>
+                  Pipeline 失败 · 退出码 {state.exit_code} · 查看完整日志 logs/run_{runId}.log
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+
+</html>

@@ -1,0 +1,91 @@
+sector_pack_id: sp_ad_platform_v1
+sector_name: "Digital Advertising Platform"
+version: "1.0"
+
+key_kpis:
+  - "DAU/MAU"
+  - "ARPU"
+  - "Ad impressions"
+  - "CPM/CPC"
+  - "Engagement rate"
+  - "Ad load"
+
+cycle_characteristics:
+  cyclicality: moderate
+  leading_indicators:
+    - "Digital ad spend growth"
+    - "SMB advertiser count"
+    - "Brand vs performance mix"
+  typical_cycle_length_years: 3
+
+competitive_dynamics:
+  moat_sources:
+    - "Network effects (user base attracts advertisers)"
+    - "Data advantage (targeting precision)"
+    - "Platform switching costs"
+  disruption_risks:
+    - "Privacy regulation (ATT, cookie deprecation)"
+    - "AI-driven ad targeting disruption"
+    - "Emerging platform shift (TikTok, etc.)"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.30, 0.45]
+  typical_revenue_growth_range: [0.08, 0.20]
+  key_multiples:
+    - "EV/Revenue"
+    - "P/E Forward"
+    - "EV/EBITDA"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.75, 0.85]
+    operating_margin: [0.30, 0.45]
+  variable_cost_drivers:
+    - "Content moderation costs"
+    - "Infrastructure/hosting"
+  fixed_cost_drivers:
+    - "R&D (AI, platform)"
+    - "Sales & marketing"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = DAU x Sessions/DAU x Ads/Session x CPM/1000"
+    tree:
+      - name: "DAU"
+        unit: "billions"
+        base_value: 3.3
+        near_growth: 0.02
+        long_growth: 0.01
+        growth_driver: "User base growth — mature in developed markets, growth from emerging markets"
+        note: "Daily Active Users across all surfaces (Facebook, Instagram, WhatsApp, Threads)"
+
+      - name: "Sessions_per_DAU"
+        unit: "sessions/day"
+        base_value: 6.5
+        near_growth: 0.01
+        long_growth: 0.005
+        growth_driver: "Engagement depth — Reels, Threads, AI-driven content recommendations"
+        note: "Average daily sessions per active user"
+
+      - name: "Ads_per_Session"
+        unit: "ads"
+        base_value: 4.2
+        near_growth: 0.03
+        long_growth: 0.01
+        growth_driver: "Ad load optimization — AI placement, new ad surfaces (Reels, Threads)"
+        note: "Average ad impressions shown per session"
+
+      - name: "CPM"
+        unit: "$/1000 impressions"
+        base_value: 11.5
+        near_growth: 0.05
+        long_growth: 0.02
+        growth_driver: "Ad targeting efficiency — AI-powered Advantage+ campaigns restoring post-ATT ROI"
+        note: "Effective CPM across all surfaces"
+
+accounting_considerations:
+  - "Stock-based compensation is material (8-10% of revenue)"
+  - "Reality Labs losses distort consolidated margins"
+  - "Capitalized R&D vs expensed — affects margin comparability"
+  - "Deferred revenue from long-term ad commitments"

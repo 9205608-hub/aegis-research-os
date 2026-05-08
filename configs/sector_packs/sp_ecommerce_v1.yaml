@@ -1,0 +1,124 @@
+sector_pack_id: sp_ecommerce_v1
+sector_name: "E-Commerce / Online Retail"
+version: "1.0"
+
+key_kpis:
+  - "GMV (Gross Merchandise Value)"
+  - "Active buyers (annual)"
+  - "AOV (Average Order Value)"
+  - "Take rate (commission + advertising)"
+  - "Fulfillment cost per order"
+  - "Contribution profit per order"
+
+cycle_characteristics:
+  cyclicality: low_to_moderate
+  leading_indicators:
+    - "Consumer spending and retail sales data"
+    - "E-commerce penetration rate trends"
+    - "Digital advertising spend growth"
+    - "Logistics capacity and shipping cost indices"
+  typical_cycle_length_years: 5
+
+competitive_dynamics:
+  moat_sources:
+    - "Network effects (buyers attract sellers, and vice versa)"
+    - "Logistics and fulfillment infrastructure at scale"
+    - "Data advantage powering recommendation and advertising"
+    - "Ecosystem stickiness (Prime, 88VIP, JD Plus membership)"
+  disruption_risks:
+    - "Social commerce (TikTok Shop, live-streaming e-commerce)"
+    - "Regulatory antitrust actions (platform self-preferencing)"
+    - "DTC brands bypassing marketplaces"
+    - "Cross-border competitors (Temu, SHEIN)"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.02, 0.10]
+  typical_revenue_growth_range: [0.08, 0.20]
+  key_multiples:
+    - "EV/Revenue"
+    - "EV/EBITDA"
+    - "P/E Forward"
+    - "EV/GMV (for marketplace-heavy models)"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.35, 0.48]
+    operating_margin: [0.02, 0.10]
+  variable_cost_drivers:
+    - "Fulfillment and shipping costs"
+    - "Payment processing fees"
+    - "Cost of goods sold (1P inventory)"
+    - "Customer acquisition cost (performance marketing)"
+  fixed_cost_drivers:
+    - "Technology and content (AWS/cloud, platform development)"
+    - "Warehouse and fulfillment center network"
+    - "General & administrative"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = GMV x Take Rate + First-Party Product Sales + Cloud/Services Revenue"
+    tree:
+      - name: "GMV_3P_Marketplace"
+        unit: "billions"
+        base_value: 750
+        near_growth: 0.12
+        long_growth: 0.06
+        growth_driver: "Active seller growth, new categories, cross-border trade, live commerce"
+        note: "3P marketplace GMV; Amazon 3P ~$750B, Alibaba Taobao/Tmall ~$900B"
+
+      - name: "Take_Rate"
+        unit: "percentage"
+        base_value: 0.15
+        near_growth: 0.01
+        long_growth: 0.005
+        growth_driver: "Advertising monetization, FBA adoption, logistics services, fintech fees"
+        note: "Amazon all-in take rate ~15%; Alibaba ~4% (China), PDD ~3-4%"
+
+      - name: "Active_Buyers"
+        unit: "millions"
+        base_value: 310
+        near_growth: 0.05
+        long_growth: 0.02
+        growth_driver: "Market penetration, international expansion, social commerce adoption"
+        note: "Amazon ~310M active buyers, Alibaba ~900M (China), JD ~580M"
+
+      - name: "AOV"
+        unit: "$/order"
+        base_value: 52
+        near_growth: 0.02
+        long_growth: 0.01
+        growth_driver: "Category mix (electronics vs essentials), bundling, upsell algorithms"
+        note: "Amazon ~$52, varies by market; Alibaba ~$15 (China), JD ~$45"
+
+      - name: "First_Party_Sales"
+        unit: "billions"
+        base_value: 245
+        near_growth: 0.06
+        long_growth: 0.03
+        growth_driver: "Grocery, private label expansion, inventory-led categories"
+        note: "Amazon 1P online store revenue ~$245B; JD self-operated ~$130B"
+
+      - name: "Cloud_Services_Revenue"
+        unit: "billions"
+        base_value: 105
+        near_growth: 0.18
+        long_growth: 0.12
+        growth_driver: "Enterprise cloud migration, AI workloads, SaaS infrastructure"
+        note: "AWS ~$105B; Alibaba Cloud ~$15B; often valued separately"
+
+      - name: "Advertising_Revenue"
+        unit: "billions"
+        base_value: 56
+        near_growth: 0.18
+        long_growth: 0.10
+        growth_driver: "Sponsored products, display ads, video ads, off-platform demand-side platform"
+        note: "Amazon Ads ~$56B; high-margin segment with 60%+ incremental margins"
+
+accounting_considerations:
+  - "Gross vs net revenue recognition (1P recorded gross, 3P recorded net)"
+  - "Fulfillment cost classification (COGS vs operating expense)"
+  - "Stock-based compensation typically 3-8% of revenue"
+  - "Lease accounting for warehouse and fulfillment centers (ASC 842)"
+  - "Segment reporting: marketplace, cloud, advertising often cross-subsidized"
+  - "Customer acquisition cost capitalization and amortization policies"

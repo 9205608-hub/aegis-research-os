@@ -1,0 +1,128 @@
+sector_pack_id: sp_consumer_electronics_v1
+sector_name: "Consumer Electronics"
+version: "1.0"
+
+key_kpis:
+  - "iPhone installed base"
+  - "Services ARPU"
+  - "Units shipped by product category"
+  - "ASP (average selling price) by product"
+  - "Gross margin by segment"
+  - "Wearables attach rate"
+
+cycle_characteristics:
+  cyclicality: moderate
+  leading_indicators:
+    - "Smartphone replacement cycle length"
+    - "Consumer confidence index"
+    - "Component pricing (DRAM, NAND, display panels)"
+  typical_cycle_length_years: 3
+
+competitive_dynamics:
+  moat_sources:
+    - "Ecosystem lock-in (iOS/Android, services, accessories)"
+    - "Brand loyalty and pricing power"
+    - "Vertical integration (custom silicon, OS, retail)"
+    - "Installed base enabling high-margin services revenue"
+  disruption_risks:
+    - "Commoditization of hardware features"
+    - "Emerging market low-cost competitors"
+    - "Regulatory pressure (app store fees, right-to-repair)"
+    - "Platform shift (AR/VR replacing smartphone as primary device)"
+
+valuation_framework:
+  primary_method: "DCF-FCFF"
+  typical_operating_margin_range: [0.25, 0.35]
+  typical_revenue_growth_range: [0.02, 0.10]
+  key_multiples:
+    - "P/E Forward"
+    - "EV/EBITDA"
+    - "FCF Yield"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.38, 0.46]
+    operating_margin: [0.25, 0.35]
+  variable_cost_drivers:
+    - "Component costs (processors, memory, displays)"
+    - "Assembly and logistics"
+    - "Warranty and repair costs"
+  fixed_cost_drivers:
+    - "R&D (silicon design, software, new product categories)"
+    - "Retail operations (Apple Stores, direct channels)"
+    - "Marketing and brand investment"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Units x ASP across product categories + Services Revenue"
+    tree:
+      - name: "Smartphone_Units"
+        unit: "millions"
+        base_value: 230
+        near_growth: 0.02
+        long_growth: 0.01
+        growth_driver: "Replacement cycle driven by 5G, AI features, and camera upgrades"
+        note: "Annual smartphone units shipped (e.g., iPhone ~230M, Samsung ~250M at peak)"
+
+      - name: "Smartphone_ASP"
+        unit: "$/unit"
+        base_value: 925
+        near_growth: 0.03
+        long_growth: 0.02
+        growth_driver: "Mix shift toward Pro/Ultra SKUs, storage upsell, emerging market pricing"
+        note: "Blended ASP across all models; Apple ~$925, Samsung ~$260, Sony ~$650"
+
+      - name: "PC_Laptop_Units"
+        unit: "millions"
+        base_value: 25
+        near_growth: 0.03
+        long_growth: 0.01
+        growth_driver: "AI PC refresh cycle, enterprise fleet upgrades, education demand"
+        note: "Annual notebook/desktop units (e.g., Apple Mac ~25M, Dell ~45M)"
+
+      - name: "PC_Laptop_ASP"
+        unit: "$/unit"
+        base_value: 1550
+        near_growth: 0.02
+        long_growth: 0.01
+        growth_driver: "M-series silicon premium, config upgrades, commercial mix"
+        note: "Blended ASP; Apple Mac ~$1550, Dell ~$950"
+
+      - name: "Wearables_Audio_Units"
+        unit: "millions"
+        base_value: 95
+        near_growth: 0.05
+        long_growth: 0.03
+        growth_driver: "Health monitoring features, AirPods upgrade cycle, emerging markets"
+        note: "Watch + AirPods + accessories; Apple ~95M units combined"
+
+      - name: "Wearables_Audio_ASP"
+        unit: "$/unit"
+        base_value: 220
+        near_growth: 0.03
+        long_growth: 0.02
+        growth_driver: "Ultra watch tier, AirPods Pro mix, health sensor premiums"
+        note: "Blended across Watch, AirPods, Beats; Apple ~$220"
+
+      - name: "Services_Revenue"
+        unit: "billions"
+        base_value: 96
+        near_growth: 0.14
+        long_growth: 0.10
+        growth_driver: "Installed base monetization: App Store, iCloud, Apple TV+, advertising, AppleCare"
+        note: "Apple Services ~$96B run-rate; high-margin recurring stream"
+
+      - name: "Gaming_TV_Revenue"
+        unit: "billions"
+        base_value: 28
+        near_growth: 0.02
+        long_growth: 0.01
+        growth_driver: "Console cycle (PS5 Pro), TV panel innovation, gaming subscription services"
+        note: "Sony Game & Network Services + TV segment; Dell monitors"
+
+accounting_considerations:
+  - "Revenue recognition on bundled hardware + services (ASC 606 multi-element)"
+  - "Deferred revenue from gift cards, AppleCare, and subscription services"
+  - "Inventory valuation risk from rapid product obsolescence"
+  - "Foreign currency exposure (60%+ revenue from international markets)"
+  - "Channel inventory management and sell-in vs sell-through distinction"

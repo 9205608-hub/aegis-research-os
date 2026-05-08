@@ -1,0 +1,117 @@
+sector_pack_id: sp_reits_v1
+sector_name: "Real Estate Investment Trusts (REITs)"
+version: "1.0"
+
+key_kpis:
+  - "FFO per share (Funds from Operations)"
+  - "AFFO per share (Adjusted FFO)"
+  - "Same-store NOI growth"
+  - "Occupancy rate"
+  - "Cap rate (capitalization rate)"
+  - "Weighted average lease term (WALT)"
+  - "Debt-to-EBITDA ratio"
+
+cycle_characteristics:
+  cyclicality: moderate
+  leading_indicators:
+    - "10-year Treasury yield (interest rate sensitivity)"
+    - "Commercial real estate transaction volumes"
+    - "New supply pipeline (construction starts by property type)"
+    - "Leasing spreads on new and renewal leases"
+  typical_cycle_length_years: 7
+
+competitive_dynamics:
+  moat_sources:
+    - "Irreplaceable location portfolios (urban infill, tier-1 markets)"
+    - "Scale advantages in property management and leasing"
+    - "Balance sheet access to low-cost capital"
+    - "Specialized asset expertise (data centers, cell towers, logistics)"
+  disruption_risks:
+    - "Remote work reducing office demand"
+    - "E-commerce disrupting retail REITs"
+    - "Rising interest rates compressing valuations"
+    - "Alternative capital (private equity, sovereign wealth funds)"
+
+valuation_framework:
+  primary_method: "FFO/AFFO-based"
+  typical_operating_margin_range: [0.30, 0.55]
+  typical_revenue_growth_range: [0.03, 0.08]
+  key_multiples:
+    - "P/FFO"
+    - "P/AFFO"
+    - "EV/EBITDA"
+    - "NAV premium/discount"
+    - "Implied cap rate"
+
+cost_structure:
+  typical_margins:
+    gross_margin: [0.60, 0.75]
+    operating_margin: [0.30, 0.55]
+  variable_cost_drivers:
+    - "Property operating expenses (utilities, insurance, taxes)"
+    - "Tenant improvement allowances"
+    - "Leasing commissions"
+  fixed_cost_drivers:
+    - "Interest expense on mortgage and corporate debt"
+    - "G&A (corporate overhead)"
+    - "Capital maintenance expenditures"
+
+revenue_drivers:
+  decomposition:
+    formula: "Revenue = Occupancy Rate x Rental Rate x Leasable Sq Footage + Other Income"
+    tree:
+      - name: "Occupancy_Rate"
+        unit: "percentage"
+        base_value: 0.955
+        near_growth: 0.005
+        long_growth: 0.002
+        growth_driver: "Leasing velocity, tenant retention, supply-demand balance by market"
+        note: "Portfolio-level occupancy; industrial ~97%, office ~88%, tower ~98%"
+
+      - name: "Avg_Rental_Rate"
+        unit: "$/sqft/year"
+        base_value: 28.5
+        near_growth: 0.035
+        long_growth: 0.025
+        growth_driver: "Mark-to-market on lease renewals, contractual escalators (CPI-linked)"
+        note: "Varies widely: industrial ~$8, office ~$55, tower revenue per site ~$45K"
+
+      - name: "Leasable_Area"
+        unit: "millions sqft"
+        base_value: 1050
+        near_growth: 0.04
+        long_growth: 0.02
+        growth_driver: "Acquisitions, development completions, selective dispositions"
+        note: "Prologis ~1.2B sqft, AMT has ~225K tower sites (not sqft-based)"
+
+      - name: "Same_Store_NOI_Growth"
+        unit: "percentage"
+        base_value: 0.045
+        near_growth: 0.00
+        long_growth: -0.005
+        growth_driver: "Organic rent growth on existing portfolio net of expense inflation"
+        note: "Proxy for internal growth quality; 3-5% is healthy range"
+
+      - name: "Other_Income"
+        unit: "billions"
+        base_value: 1.8
+        near_growth: 0.06
+        long_growth: 0.03
+        growth_driver: "Management fees, development fees, parking, ancillary services"
+        note: "Non-rental income; larger for diversified REITs and tower operators"
+
+      - name: "Development_Pipeline"
+        unit: "billions"
+        base_value: 5.5
+        near_growth: 0.05
+        long_growth: 0.03
+        growth_driver: "New development starts at 6-8% yield-on-cost vs 4-5% cap rates"
+        note: "Prologis development pipeline ~$5.5B; value creation through build-to-core"
+
+accounting_considerations:
+  - "FFO excludes depreciation and gains on sale — use AFFO for true cash flow"
+  - "Straight-line rent adjustments inflate GAAP revenue above cash rent"
+  - "Capitalized leasing costs and tenant improvements reduce AFFO"
+  - "Joint venture and unconsolidated entity proportionate share reporting"
+  - "REIT distribution requirement (90% of taxable income) constrains retained earnings"
+  - "Impairment charges on long-lived assets and goodwill from acquisitions"
