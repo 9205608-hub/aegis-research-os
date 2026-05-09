@@ -153,32 +153,7 @@ _CASHFLOW_MAP = {
 }
 
 
-def _safe_float(val: Any) -> float | None:
-    """Coerce to float, returning None for any non-finite or invalid value.
-
-    BUG-Y40 (2026-05-06): previously rejected only ``None`` / ``""`` / the
-    literal string ``"nan"``. Python ``float('inf')`` (and the strings
-    ``'inf'`` / ``'-inf'``) coerced cleanly through and propagated to the
-    DCF engine + JSON serializers — emitting ``Infinity`` in the HTML
-    REPORT JSON would break browser ``JSON.parse``. Reject all non-finite
-    values at the parse boundary.
-    """
-    if val is None or val == "":
-        return None
-    s = str(val).lower().strip()
-    if s in ("nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"):
-        return None
-    try:
-        f = float(val)
-    except (TypeError, ValueError):
-        return None
-    # Belt-and-braces: even after the string filter above, an actual
-    # `float('inf')` Python object still slips through unless we check
-    # `isfinite`. NaN is also caught here.
-    import math as _math
-    if not _math.isfinite(f):
-        return None
-    return f
+from aegis.core.acquisition.connectors._utils import safe_float as _safe_float
 
 
 class AkShareConnector:

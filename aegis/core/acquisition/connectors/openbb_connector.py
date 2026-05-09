@@ -1084,21 +1084,4 @@ class OpenBBConnector:
             return {}
 
 
-def _safe_float(val: Any) -> float | None:
-    """Safely convert to float, returning None on failure or non-finite.
-
-    BUG-Y40 (2026-05-06): previously caught NaN via the ``f != f`` trick
-    but allowed ``inf`` / ``-inf`` through, which then leaked to the DCF
-    engine and HTML JSON. Reject all non-finite values at the parse
-    boundary.
-    """
-    if val is None:
-        return None
-    try:
-        f = float(val)
-    except (ValueError, TypeError):
-        return None
-    import math as _math
-    if not _math.isfinite(f):
-        return None
-    return f
+from aegis.core.acquisition.connectors._utils import safe_float as _safe_float  # noqa: E402,F401

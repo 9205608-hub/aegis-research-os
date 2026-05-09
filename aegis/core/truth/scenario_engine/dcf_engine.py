@@ -500,12 +500,12 @@ class DCFEngine:
         # Use current shares — cleanest FCFF-to-equity conversion
         per_share_value = equity_value / inputs.shares_outstanding if inputs.shares_outstanding > 0 else 0
 
-        # Implied exit multiple
-        terminal_ebitda = projections[-1].operating_income  # Approximation
-        # TODO-Y7 (2026-05-06): use None as the sentinel rather than
-        # float("inf"). inf serializes to invalid JSON (`Infinity`) and
-        # breaks any downstream React/JSON consumer; None is portable and
-        # the html_report layer already handles it as "n/m".
+        # Implied exit multiple — TV / terminal EBITDA. operating_income is
+        # EBIT (D&A already subtracted, see FCFF formula above), so add
+        # depreciation back to get EBITDA. Previously used operating_income
+        # directly which systematically inflated implied exit multiples
+        # by ~5–15% depending on D&A intensity.
+        terminal_ebitda = projections[-1].operating_income + projections[-1].depreciation
         implied_exit_multiple = (
             terminal_value / terminal_ebitda if terminal_ebitda > 0 else None
         )
@@ -692,8 +692,11 @@ class DCFEngine:
         # BUG-29/30: use current shares (see main compute_dcf for rationale)
         per_share_value = equity_value / inputs.shares_outstanding if inputs.shares_outstanding > 0 else 0
 
-        terminal_ebitda = consolidated_projections[-1].operating_income
-        # TODO-Y7: None instead of float("inf") for JSON serialisability.
+        # Add D&A back to EBIT to get EBITDA (consistent with main compute_dcf).
+        terminal_ebitda = (
+            consolidated_projections[-1].operating_income
+            + consolidated_projections[-1].depreciation
+        )
         implied_exit_multiple = (
             terminal_value / terminal_ebitda if terminal_ebitda > 0 else None
         )

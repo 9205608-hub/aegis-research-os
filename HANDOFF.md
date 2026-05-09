@@ -1,5 +1,74 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
+> 最新更新: 2026-05-09 (会话8 — 全系统审计 + 大清扫，净 −4134 行 / 549 测试绿)
+> 本次工作: 4 个并行 Explore 子代理全系统排查 → 误报筛除 → 删 legacy renderer / 死 Streamlit dashboard / stale HANDOFF 副本 → 修 sensitivity_analyzer inf 泄漏 + fact_bridge ebit 死条目
+
+## 🧹 2026-05-09 会话8 — 系统级冗余清扫 + 2 个 latent bug
+
+**Net diff: −4134 lines / +27 lines / 549 tests pass / 4 skipped**
+
+### 实修 bug
+
+- ✅ **BUG-Y49** [sensitivity_analyzer.py:80-89](aegis/core/truth/scenario_engine/sensitivity_analyzer.py:80) `base_price=0` 时返 `float("inf")` 给 `impact_pct` 和 `signed_impact_pct`
+  - **症状**：`inf` 进 `rank_assumptions` 排序会霸占榜首，且序列化为 `Infinity` 不是合法 JSON（与 BUG-Y39 同类，但 dcf_engine 那边已修，这里漏掉）
+  - **修复**：base_price=0 时直接抛 `ZeroDivisionError`，已被 `rank_assumptions` 现有 try/except 吞下并跳过该 assumption（更干净的语义：base 为 0 时该 assumption 的 % impact 数学上未定义）
+  - 同步消化掉 dcf_engine.py:505 的 TODO-Y7 注释（虽然 dcf_engine 自己已经返 None）
+
+- ✅ **BUG-Y50** [fact_bridge.py:45-55](aegis/core/acquisition/fact_bridge.py:45) `DERIVABLE_FIELDS["ebit"]` 死条目
+  - **症状**：HANDOFF Y38 修了 `derived.append` 时机，但根因（错误的 formula `("revenue", "cost_of_revenue")` + Step 4 没有 elif 分支接 ebit）仍在。注释说"intentionally left unset"实际是用注释掩盖配置错误
+  - **修复**：直接从 DERIVABLE_FIELDS 删 `ebit` 条目。Step 5c alias from operating_income 才是 ebit 的真实赋值路径。Y38 + Y50 现在彻底闭合
+
+### 系统级删除（净 −4 122 行）
+
+- ✅ **DEL-1** `.claude/HANDOFF.md`（814 行，stale 副本，CLAUDE.md L18 明令忽略）
+- ✅ **DEL-2** `dashboard/` 顶级目录（398 行 Streamlit playground）
+  - 无任何 importer，pyproject.toml 也没列 streamlit 依赖。文件内含硬编码 META FY2024 测试数据，明显是早期阶段产物
+  - 注意：`aegis/dashboard/` 不能删——`aegis/api/rest/app.py:49` 的 `/dashboard` 路由按文件路径引用 `index.html`（误删过一次，触发 test_p3_components.py::test_dashboard_endpoint 失败，已 git checkout 还原）
+- ✅ **DEL-3** `aegis/core/reports/html_report_legacy.py`（2711 行）
+  - 被 `html_report_v2.py` 完全取代（v2 走 React 模板注入路线）
+  - 唯一的入口是 `AEGIS_LEGACY_REPORT=1` 环境变量，用 `grep -rn "AEGIS_LEGACY_REPORT"` 全代码 + 测试 + 文档 = **0 处使用**
+  - v2 不调用任何 `_build_*_card` helper（v2 的 React 端自己渲染 insider/sentiment/historical-valuation）
+- ✅ **DEL-4** 三个 test class 同步删除（共 ~210 行）：
+  - `tests/unit/test_news_sentiment.py::TestNewsSentimentCard`
+  - `tests/unit/test_form4_connector.py::TestInsiderTradingCard`
+  - `tests/unit/test_historical_valuation.py::TestValuationChartJS`
+  - 它们测的渲染产物 v2 已经不输出；数据采集/解析层 tests 全保留（依然有效，因为 catalyst_calendar 仍消费 earnings_call_insights 等）
+- ✅ **DEL-5** `html_report.py` shim（57 → 11 行）—— 折叠为 v2 直接 alias，删除 env-flag 路由 + 三个 helper 转发函数
+
+### 子代理误报留底（备忘，下次别再追）
+
+4 个并行 Explore 子代理共报 ~120 项发现，**核实后多数是误报或已修**：
+- `thesis_synthesizer._scrub_fair_value_claims:150` "P0 文件被截断" → 实为多行 docstring 续行，文件完整
+- `tencent_sina_quote.py` / `sec_entity_registry.py` / `scenario_architect.py` 声称"无 importer 死代码" → grep 后 3 个都有真实 importer（auto_research / connectors __init__ / chief_analyst __init__），子代理搜得不够全
+- `dangerouslySetInnerHTML` 标 P0 XSS → 内容来自自家 LLM pipeline 而非外部输入，理论隐患但当前不构成攻击面
+- 多个 critic 中文路径 dead code 投诉 → HANDOFF Y28/Y43-Y48 多数已修，剩下零星没复现
+
+教训：Explore 子代理的"读取窗口有限"会漏看 importer，"P0/P1 严重度"会过分悲观。**子代理报告必须逐条核实再动手**。
+
+### 故意未做（待用户决策）
+
+- **两套 FastAPI 并存**：[`server/app.py`](server/app.py)（`run_server.sh` 实用）vs [`aegis/api/rest/`](aegis/api/rest)（5 个 routers + storage 集成 + dashboard 路由，唯一外部用户是 `tests/unit/test_p3_components.py`）。后者 610 行有架构投入（不是草稿），砍它等于回退一个产品方向
+- **`aegis/core/evidence/` 整个包是死代码**（~543 行）：`extraction.py` (357) / `claim_graph/claim_graph.py` (113) / `retrieval/structured_retrieval.py` (73) — 0 个生产 importer，仅 `tests/unit/test_segment_evidence.py` 测试 extraction.py。文件注释说"Section 12.1/12.4/12.5"+"in production this would be backed by PostgreSQL"，是设计但未上线的 evidence 子系统。砍它等于放弃一个明确的架构方向，留给用户拍板
+- **`fmt_money_*` 四处实现散落**（`_display.py` / `templates/engine.py` / `narrative_fact_critic/critic.py`）：抽公共 utils 是好事但跨模块协调
+
+## 🧹 2026-05-09 会话8 续 — 第二轮：DCF EBITDA 修正 + connector utils 抽公共
+
+### 实修 bug
+
+- ✅ **BUG-Y51** [dcf_engine.py:504, 695](aegis/core/truth/scenario_engine/dcf_engine.py:504) 两个 implied exit multiple 计算都用 `operating_income`（即 EBIT）当 EBITDA 分母
+  - **症状**：`operating_income` 已减去 D&A（FCFF 公式 NOPAT + D&A - CapEx 已反映），用它当 EBITDA 系统性偏高 → terminal_value / smaller_denom = inflated 退出倍数
+  - **影响**：所有 DCF 报告的 implied exit multiple 偏高 5–15%（D&A 占比越高偏差越大），误导 valuation sanity check（"15x EBITDA 退出"实际是 17x EBIT 等价物）
+  - **修复**：两处都改成 `operating_income + depreciation`（与同函数 FCFF 公式一致的 EBITDA 复原）；同步删去过时的 TODO-Y7 注释（dcf_engine 这边已早就返 None，BUG-Y49 又在 sensitivity_analyzer 那边补完）
+  - 662 tests pass
+
+### 重构
+
+- ✅ **REF-1** [aegis/core/acquisition/connectors/_utils.py](aegis/core/acquisition/connectors/_utils.py) 新建公共模块抽 `safe_float()`
+  - 把 akshare_connector + openbb_connector 各自实现的 `_safe_float`（功能基本一致，只是 openbb 版漏了 `""` 与字符串 `inf` 检查）合并到一处。两个 connector 现在 `from .._utils import safe_float as _safe_float` 引入，行为统一并自动获得 akshare 版的更严格防御
+  - sec_form4_connector 的 `_safe_float` **不合并**：签名不同（接收 `ET.Element`，返回 `float` 而非 `Optional[float]`，默认 0.0），属于不同语义
+
+---
+
 > 最新更新: 2026-05-06 (会话7 续 — TODO-Y1-Y20 18 项修复 + 寒武纪 v1/v2/v3 端到端实证)
 > 本次工作: 系统隐患审计 (Y1-Y9) → 寒武纪 baseline 跑通 → v2 暴露 4 个 P0 显示 bug (Y12/Y14/Y16/Y17) + sector inference 翻车 (Y18) + 5 个隐藏 currency 漏修 (Y15/Y19/Y20) → v3 全部实证 0 mock / 55% cache hit / 正确 blocked
 
