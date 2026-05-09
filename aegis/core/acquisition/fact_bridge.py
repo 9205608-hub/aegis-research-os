@@ -49,7 +49,10 @@ DERIVABLE_FIELDS = {
     "net_debt": ("total_debt", "cash_and_equivalents"),  # debt - cash
     "nwc": ("current_assets", "current_liabilities"),  # ca - cl
     "total_equity": ("total_assets", "total_liabilities"),  # assets - liabilities
-    "ebit": ("revenue", "cost_of_revenue"),  # revenue - cogs - opex (computed separately)
+    # ebit is intentionally NOT derived here — Step 5c aliases it directly
+    # from operating_income, which is the correct source. Listing a wrong
+    # formula here previously caused BUG-Y38 (derived list claiming "ebit"
+    # but meta_facts never set).
 }
 
 # Alias map: adapter output key → meta_facts key used by demo/engine
@@ -192,9 +195,6 @@ class FactNormalizationBridge:
                     elif target in ("total_equity",):
                         meta_facts[target] = va - vb
                         derived.append(target)
-                    # Targets without a branch (e.g. "ebit" — handled by
-                    # Step 5c alias from operating_income) are intentionally
-                    # left unset here. Step 5c will fill them.
 
         # Step 5: Compute dilution_rate if both share counts available
         diluted = meta_facts.get("diluted_shares")

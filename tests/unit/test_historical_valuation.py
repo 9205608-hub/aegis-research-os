@@ -90,38 +90,7 @@ class TestGetHistoricalValuation:
         assert pe_stats["min"] <= pe_stats["median"] <= pe_stats["max"]
 
 
-class TestValuationChartJS:
-    """Test chart JS generation."""
-
-    def test_empty_returns_empty_string(self):
-        from aegis.core.reports.html_report import _build_valuation_chart_js
-        assert _build_valuation_chart_js(None) == ""
-        assert _build_valuation_chart_js({}) == ""
-        assert _build_valuation_chart_js({"dates": []}) == ""
-
-    def test_valid_data_returns_js(self):
-        from aegis.core.reports.html_report import _build_valuation_chart_js
-        data = {
-            "dates": ["2023-01", "2023-02", "2023-03"],
-            "pe_ratio": [25.0, 26.0, 27.0],
-            "ev_ebitda": [18.0, 19.0, 20.0],
-            "pe_stats": {"min": 20, "max": 35, "median": 27, "p25": 23, "p75": 31, "current": 27},
-            "ev_ebitda_stats": {"min": 15, "max": 25, "median": 19, "p25": 17, "p75": 22, "current": 20},
-        }
-        js = _build_valuation_chart_js(data)
-        assert "peChart" in js
-        assert "evChart" in js
-        assert "new Chart" in js
-        assert "Median" in js
-
-    def test_pe_only_no_ev(self):
-        from aegis.core.reports.html_report import _build_valuation_chart_js
-        data = {
-            "dates": ["2023-01", "2023-02"],
-            "pe_ratio": [25.0, 26.0],
-            "ev_ebitda": [],
-            "pe_stats": {"min": 20, "max": 30, "median": 25, "p25": 22, "p75": 28, "current": 26},
-            "ev_ebitda_stats": {},
-        }
-        js = _build_valuation_chart_js(data)
-        assert "peChart" in js
+# Legacy `_build_valuation_chart_js` Chart.js helper tests removed: the v2
+# renderer (production) renders historical-valuation charts in React, not
+# via inline Chart.js, and the legacy helper was deleted with the legacy
+# renderer.

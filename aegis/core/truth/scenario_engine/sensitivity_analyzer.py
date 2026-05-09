@@ -81,8 +81,13 @@ class SensitivityAnalyzer:
             signed = (shocked_price - base_price) / abs(base_price)
             impact = abs(signed)
         else:
-            signed = float("inf")
-            impact = float("inf")
+            # TODO-Y7 (2026-05-06): when base price is zero, % impact is
+            # undefined. Previously stored float('inf') which serializes as
+            # invalid JSON ('Infinity') and pollutes ranking. Raise so
+            # rank_assumptions() skips this assumption via its try/except.
+            raise ZeroDivisionError(
+                f"Cannot compute sensitivity for {assumption_name!r}: base price is zero"
+            )
 
         base_val = self._get_assumption_value(base_inputs, assumption_name)
         shocked_val = self._get_assumption_value(shocked_inputs, assumption_name)
