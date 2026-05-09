@@ -207,18 +207,16 @@ def _parse_dollar(num_str: str, unit_str: str) -> float | None:
 
 
 def _format_money(amount: float, meta_facts: dict | None) -> str:
-    """BUG-Y12 (2026-05-06): format an absolute monetary amount in the
-    currency implied by `meta_facts.__display`. Default `$X.XB`; CNY uses
-    `¥X.X亿`. Used in critic warning text so an A-share LLM that quotes
-    `总营收 65亿` doesn't get a confusing `$6.5B` mismatch warning that
-    mixes US sigil with Chinese keyword.
+    """Critic warning helper: format absolute monetary amount in the
+    currency implied by ``meta_facts["__display"]`` (BUG-Y12).
+
+    Thin wrapper over ``aegis.core._display.fmt_money_big`` so the
+    formatting stays identical to what agent inputs use — preventing
+    ``$6.5B`` vs ``¥65亿`` sigil/keyword mismatches in warnings on
+    A-share narratives.
     """
-    display = (meta_facts or {}).get("__display") or {}
-    currency = (display.get("currency") or (meta_facts or {}).get("__currency") or "USD").upper()
-    is_cny = currency in ("CNY", "RMB", "¥") or display.get("symbol") == "¥"
-    if is_cny:
-        return f"¥{amount/1e8:.1f}亿"
-    return f"${amount/1e9:.1f}B"
+    from aegis.core._display import fmt_money_big, resolve_display
+    return fmt_money_big(amount, resolve_display(meta_facts))
 
 
 class NarrativeFactCritic(CriticBase):

@@ -51,6 +51,42 @@
 - **`aegis/core/evidence/` 整个包是死代码**（~543 行）：`extraction.py` (357) / `claim_graph/claim_graph.py` (113) / `retrieval/structured_retrieval.py` (73) — 0 个生产 importer，仅 `tests/unit/test_segment_evidence.py` 测试 extraction.py。文件注释说"Section 12.1/12.4/12.5"+"in production this would be backed by PostgreSQL"，是设计但未上线的 evidence 子系统。砍它等于放弃一个明确的架构方向，留给用户拍板
 - **`fmt_money_*` 四处实现散落**（`_display.py` / `templates/engine.py` / `narrative_fact_critic/critic.py`）：抽公共 utils 是好事但跨模块协调
 
+## 🧹 2026-05-09 会话8 续 — 第三轮：删 evidence 死包 + fmt_money 收敛
+
+### 大块删除
+
+- ✅ **DEL-6** `aegis/core/evidence/` 整个包（543 行）+ `tests/unit/test_segment_evidence.py`（232 行）= **−775 行**
+  - **核实**：grep 全代码 + 测试，9 个核心 symbol（SegmentDetector / EvidenceExtractor / Claim / EvidenceStore / SourceChunk / ExtractedAssertion / EvidencePacketBuilder / KeywordExtractor / SegmentPattern）**0 个生产 importer**，仅 test_segment_evidence.py 存在测试该死包
+  - 注释里的 "Section 12.1/12.4/12.5" + "in production this would be backed by PostgreSQL" 表明这是设计但**从未上线**的 evidence 子系统
+  - 645 tests pass（之前 662，少 17 条 evidence 测试，符合预期）
+
+### "Section 28.x" 死代码警觉（暂留，待用户拍板）
+
+发现**整组未上线的基础设施**：所有都有 P3-P6 integration test 证明它们能跑，但**没有任何代码路径**调用它们：
+
+| 模块 | 行数 | 唯一调用者 |
+|---|---|---|
+| `aegis/api/cli/` | 99 | P6 integration test only |
+| `aegis/api/rest/` | 610 | test_p3_components only |
+| `aegis/core/storage/` | 559 | aegis/api/rest + test_consensus_store |
+| `aegis/core/events/` | 280 | aegis/api/rest + P4 test |
+| `aegis/core/thesis_manager/` | 253 | aegis/api/rest + P3 test |
+| `aegis/core/evals/` | 739 | aegis/api/cli + P5 test |
+| **合计** | **~2540** | 仅 integration tests + 互相内部 |
+
+`aegis/core/planner/`（261 行）也类似，但被 aegis/api/cli 引用 → 与 cli 同进退。
+
+`aegis/core/portfolio/` (435) 是**真活的**（orchestrator + replay 都用），不在此列。
+
+**判断**：这是"已设计 + 已测试但未上线"基础设施。砍它要同时砍 P3/P4/P5/P6 integration tests。是产品方向问题，不是技术债 — **留给用户决定是上线还是放弃**。
+
+### 重构
+
+- ✅ **REF-2** [narrative_fact_critic/critic.py:209](aegis/core/critics/narrative_fact_critic/critic.py:209) `_format_money` 改为 `aegis.core._display.fmt_money_big` 的薄包装
+  - **意义**：critic warning 文本的格式现在与 agent input message 完全一致（同一个 `fmt_money_big` 函数生成）。CNY 千亿/万亿正确触发，`__display` 字段缺失时优雅 fallback 到 USD
+  - 实测：`¥65亿` / `¥1.2万亿` / `$6.5B` / `$3.0T` / fallback 5 种情况均符合预期
+  - `templates/engine.py._format_currency` 不动（Jinja filter，不带 scale，是 atomic 单元，与 fmt_money_big 语义不同）
+
 ## 🧹 2026-05-09 会话8 续 — 第二轮：DCF EBITDA 修正 + connector utils 抽公共
 
 ### 实修 bug
