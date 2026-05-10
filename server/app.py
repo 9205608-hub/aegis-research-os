@@ -42,6 +42,41 @@ DEMOS_DIR = PROJECT_ROOT / "demos"
 
 app = FastAPI(title="Aegis Research OS", version="0.2.0")
 
+# Mount the v1 REST API (research/thesis/events/portfolio/admin) at /api/v1/*.
+# These routers were previously only reachable via the standalone
+# aegis/api/rest/app.py — never started by run_server.sh — so the routes
+# existed but no production caller could hit them. Including them here
+# keeps a single uvicorn process while exposing the v1 surface alongside
+# the existing local-dev /api/* endpoints. No prefix collision: server
+# uses /api/<noun>, the v1 routers use /api/v1/<noun>.
+from aegis.api.rest.routers.research import router as _research_router
+from aegis.api.rest.routers.thesis import router as _thesis_router
+from aegis.api.rest.routers.events import router as _events_router
+from aegis.api.rest.routers.portfolio import router as _portfolio_router
+from aegis.api.rest.routers.admin import router as _admin_router
+
+app.include_router(_research_router, prefix="/api/v1/research", tags=["research"])
+app.include_router(_thesis_router,   prefix="/api/v1/thesis",   tags=["thesis"])
+app.include_router(_events_router,   prefix="/api/v1/events",   tags=["events"])
+app.include_router(_portfolio_router, prefix="/api/v1/portfolio", tags=["portfolio"])
+app.include_router(_admin_router,    prefix="/api/v1/admin",    tags=["admin"])
+
+
+@app.get("/health", tags=["meta"])
+def health() -> dict[str, str]:
+    """Liveness probe used by load balancers / monitoring."""
+    return {"status": "ok", "version": app.version}
+
+
+@app.get("/dashboard", response_class=HTMLResponse, tags=["meta"])
+def dashboard() -> HTMLResponse:
+    """Serve the static Aegis dashboard (aegis/dashboard/index.html)."""
+    html_path = PROJECT_ROOT / "aegis" / "dashboard" / "index.html"
+    if html_path.exists():
+        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>Dashboard not found</h1>", status_code=404)
+
+
 _runner = RunnerRegistry(PROJECT_ROOT)
 
 

@@ -51,6 +51,43 @@
 - **`aegis/core/evidence/` 整个包是死代码**（~543 行）：`extraction.py` (357) / `claim_graph/claim_graph.py` (113) / `retrieval/structured_retrieval.py` (73) — 0 个生产 importer，仅 `tests/unit/test_segment_evidence.py` 测试 extraction.py。文件注释说"Section 12.1/12.4/12.5"+"in production this would be backed by PostgreSQL"，是设计但未上线的 evidence 子系统。砍它等于放弃一个明确的架构方向，留给用户拍板
 - **`fmt_money_*` 四处实现散落**（`_display.py` / `templates/engine.py` / `narrative_fact_critic/critic.py`）：抽公共 utils 是好事但跨模块协调
 
+## 🚀 2026-05-10 会话9 — Section 28.x 基础设施实测 + 上线
+
+### 实测结论
+
+跑通 P3/P4/P5/P6 共 108 个 integration tests，全过。再用 TestClient 真起 `aegis/api/rest`，逐个 endpoint 实测：
+- ✅ `/api/v1/research/run` 计划单实体 run，返回 phases
+- ✅ `/api/v1/research/plan` 计划 pair_trade，返回 2 phases (per_entity_full + pair_comparison)
+- ✅ `/api/v1/thesis/create` 创建带版本（version=1, status='draft'）
+- ✅ `/api/v1/events/emit` 触发 category=A 自动绑定 `full_rerun` action
+- ✅ `/api/v1/admin/status` operational
+- ✅ `/api/v1/portfolio/signals` 200 OK
+- ✅ `aegis/api/cli/main` Typer CLI 三个命令（research/metrics/health）全跑通（需 `pip install typer`，已在 pyproject 但用户 env 实际未装 — 说明从未跑过）
+
+**判定：基础设施完全 functional，仅缺一座桥 — 没人启动它**。
+
+### 上线方案：把 v1 routers 挂进现有 `server/app.py`
+
+零冲突合并：
+- `server/app.py` 已用 `/api/<noun>` 前缀（universe / recent / run / runs / progress）
+- `aegis/api/rest` 的 5 个 router 用 `/api/v1/<noun>` 前缀
+- 单 uvicorn 进程同时托管，`run_server.sh` 不变
+
+补丁 [server/app.py](server/app.py) 加 5 个 `include_router` + `/health` + `/dashboard` 端点。
+Endpoint 总数 6 → 29（21 个 v1 + 6 legacy + 2 meta）。
+
+### 验证
+
+- ✅ 645 unit tests pass
+- ✅ uvicorn 启停干净
+- ✅ TestClient 实测：legacy `/api/recent` + `/api/universe` 不变；新 `/health`、`/dashboard`、`/api/v1/*` 全部 200
+- ✅ OpenAPI doc 自动收录所有 21 个 v1 routes（访问 `/docs` 可见）
+- README 更新：endpoint 表格 + 可选 CLI 用法
+
+### 留下的 `aegis/api/rest/app.py`（52 行 standalone 入口）
+
+不删 — `tests/unit/test_p3_components.py` 的 `TestAPIApp` 直接 import 它做隔离单测。功能上现在与 `server.app` 重叠（同一组 routers），但作为"独立测试目标 + 备用入口"保留无害。
+
 ## 🧹 2026-05-09 会话8 续 — 第三轮：删 evidence 死包 + fmt_money 收敛
 
 ### 大块删除
