@@ -4682,7 +4682,8 @@ class AutoResearchOrchestrator:
         (("电池", "锂电", "动力电池", "新能源", "光伏", "风电"), "sp_new_energy_cn_v1"),
         (("汽车", "整车", "乘用车"), "sp_new_energy_cn_v1"),
         (("医药", "生物", "制药", "中药", "医疗"), "sp_pharma_cn_v1"),
-        (("半导体", "集成电路", "芯片"), "sp_semiconductor_v1"),
+        (("半导体", "集成电路", "芯片", "电子元件", "被动元件",
+          "MLCC", "PCB", "光刻"), "sp_semiconductor_v1"),
         (("软件", "互联网", "云计算", "SaaS"), "sp_saas_v1"),
         (("石油", "石化", "天然气", "煤炭", "煤化工"), "sp_energy_v1"),
         (("房地产", "REIT", "物业"), "sp_reits_v1"),
@@ -4718,6 +4719,14 @@ class AutoResearchOrchestrator:
         (("寒武纪",), "半导体"),
         (("中芯国际", "韦尔股份", "兆易创新", "卓胜微", "北方华创",
           "中微公司", "拓荆科技", "海光信息", "澜起科技"), "半导体"),
+        # MLCC / 被动元件 / 模拟与功率 IC / 材料 — closest fit is the
+        # semiconductor pack (high-margin, R&D + capex heavy, cyclical
+        # demand tied to the chip supply chain). No dedicated passive-
+        # components pack exists; mapping these to General gave wildly
+        # wrong DCF assumptions (BUG-Y18 class).
+        (("达利凯普", "风华高科", "三环集团",
+          "圣邦股份", "思瑞浦", "中颖电子",
+          "江丰电子", "沪硅产业", "立讯精密"), "半导体"),
         (("贵州茅台", "五粮液", "山西汾酒", "泸州老窖", "洋河股份",
           "古井贡酒", "今世缘"), "白酒"),
         (("宁德时代", "比亚迪", "亿纬锂能", "天齐锂业", "赣锋锂业",
