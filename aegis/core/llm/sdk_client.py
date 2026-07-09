@@ -137,6 +137,7 @@ class SDKClient:
 
                 # TODO-Y1: detect truncation via stop_reason and grow budget.
                 _stop = getattr(response, "stop_reason", None)
+                _salvage_partial = False
                 if _stop == "max_tokens":
                     truncated_attempts += 1
                     if truncated_attempts < len(BUDGET_TRUNCATED):
@@ -149,6 +150,7 @@ class SDKClient:
                         continue
                     # Exhausted grow budget — try to salvage whatever partial
                     # tool_use input came back rather than raise outright.
+                    _salvage_partial = True
 
                 # Extract tool_use response
                 for block in response.content:
@@ -158,7 +160,13 @@ class SDKClient:
                         # the SDK may return a partial dict that's missing
                         # required fields; the orchestrator's quality gate
                         # handles that downstream.
-                        return block.input
+                        result = block.input
+                        if _salvage_partial and isinstance(result, dict):
+                            # AUDIT-B2: tag the truncation salvage so the
+                            # cache layer refuses to persist it — a partial
+                            # dict must never become a permanent cache hit.
+                            result = {**result, "__partial": True}
+                        return result
 
                 raise ValueError(
                     f"No tool_use block found in response (stop={_stop})"

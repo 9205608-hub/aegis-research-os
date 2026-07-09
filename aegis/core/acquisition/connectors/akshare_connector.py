@@ -122,6 +122,9 @@ _BALANCE_MAP = {
     "TOTAL_ASSETS": "资产总计",
     "SHORT_LOAN": "短期借款",
     "ACCOUNTS_PAYABLE": "应付账款",
+    # AUDIT-A6: current portion of long-term borrowings/bonds — without this
+    # the total_debt fallback misses reclassified debt (万科A 2024: ¥146B).
+    "NONCURRENT_LIAB_1YEAR": "一年内到期的非流动负债",
     "TOTAL_CURRENT_LIAB": "流动负债合计",
     "LONG_LOAN": "长期借款",
     "BOND_PAYABLE": "应付债券",

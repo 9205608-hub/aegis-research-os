@@ -882,12 +882,28 @@ def build_report_dict(
     # neutral tone, and we still surface the DCF-implied return as context
     # below so the analytical signal isn't lost.
     _ps = (_g(decision, "publishing_status", "") or "").lower()
+    _rating_downgraded = False
     if _ps == "blocked":
         rating_word = "暂不评级" if is_zh else "Not Rated"
         rating_tone = "hold"  # neutral colour — neither buy nor avoid
     elif _ps == "needs_review":
         rating_word = "审核中" if is_zh else "Under Review"
         rating_tone = "hold"
+    elif _ps == "downgraded":
+        # AUDIT-C2 (2026-07): the decision engine's third status — unresolved
+        # cross-agent conflicts downgrade the report instead of blocking it
+        # (decision_engine/engine.py). The Y22 fix only covered blocked /
+        # needs_review, so downgraded fell through and rendered as a clean
+        # "买入" with zero caveat. Keep the derived rating (the engine chose
+        # to downgrade, not withhold) but flag it so the rating block reads
+        # "评级已降级 · 存在未解决分歧" instead of "概率加权".
+        _rating_downgraded = True
+        if _dcf_meaningful:
+            rating_word, rating_tone = _derive_rating(target, price_last, is_zh)
+        elif book_per_share > 0 and price_last > 0:
+            rating_word, rating_tone = _derive_rating(book_per_share, price_last, is_zh)
+        else:
+            rating_word, rating_tone = ("持有", "hold") if is_zh else ("Hold", "hold")
     elif not _dcf_meaningful:
         # When DCF is n/m, use book value per share as the implied-return
         # anchor (book is a hard asset floor for distressed equities).
@@ -976,7 +992,10 @@ def build_report_dict(
         if implied is not None:
             verdict = "上行空间" if implied > 0 else ("下行空间" if implied < 0 else "公允区间")
             if is_zh:
-                headline = f"{company}：DCF 基准 {price_last and (str(round(implied, 1)) + '%') or 'n/a'}{verdict}（rule-based 摘要）"
+                # AUDIT (2026-07): mirror the English branch's abs() — a signed
+                # negative here rendered "-23.8%下行空间", a double negative
+                # that reads like upside. Direction lives in `verdict` alone.
+                headline = f"{company}：DCF 基准隐含 {abs(implied):.1f}% {verdict}（rule-based 摘要）"
             else:
                 direction = "upside" if implied > 0 else ("downside" if implied < 0 else "fairly valued")
                 headline = f"{company}: rule-based DCF implies {abs(implied):.1f}% {direction}"
@@ -1136,13 +1155,37 @@ def build_report_dict(
         px = _f(sc.get(f"{key}_value"))
         prob = _f(sc.get(f"{key}_probability"))
         narr = sc.get(f"{key}_narrative", "")
-        scen_cells.append({
+        # AUDIT-A10: when the orchestrator mechanically rewrote this
+        # scenario value (0.5×/2× envelope clamp or inversion guard), it
+        # sets `{key}_clamped` + the raw pre-clamp value. Disclose it —
+        # BUG-Y37 only logged to stderr, so readers saw a bespoke narrative
+        # paired with a number that was actually a clamp artifact.
+        clamped = bool(sc.get(f"{key}_clamped"))
+        raw_val = _f(sc.get(f"{key}_raw_value")) if clamped else 0.0
+        footnote = ""
+        if clamped:
+            raw_txt = f"{curr_sym}{raw_val:.2f}" if raw_val else ""
+            if is_zh:
+                footnote = ("⚠ 该情景值超出合理区间已保守夹逼"
+                            + (f"（模型原始输出 {raw_txt}）" if raw_txt else "（引擎保守修正）"))
+            else:
+                footnote = ("⚠ Value clamped to a conservative bound"
+                            + (f" (raw model output {raw_txt})" if raw_txt else " (engine correction)"))
+        cell = {
             "key": key,
             "tag": label_zh if is_zh else label_en,
             "prob": prob,
             "px": round(px, 2),
-            "narrative": narr,
-        })
+            # Append the disclosure to the narrative so the current JSX
+            # template renders it without needing a new field; `clamped` /
+            # `footnote` / `rawPx` stay structured for future templates.
+            "narrative": (f"{narr}\n{footnote}".strip() if footnote else narr),
+            "clamped": clamped,
+        }
+        if clamped:
+            cell["footnote"] = footnote
+            cell["rawPx"] = round(raw_val, 2) if raw_val else None
+        scen_cells.append(cell)
 
     # ── Thesis ──
     st = synthesized_thesis
@@ -1255,7 +1298,9 @@ def build_report_dict(
             ],
             "rows": rows,
             "cols": cols,
-            "matrix": [[round(v, 2) for v in row] for row in matrix],
+            # Infeasible cells (wacc − tg gap too small) arrive as None —
+            # keep None so the JSX layer renders "n/m" instead of a number.
+            "matrix": [[None if v is None else round(v, 2) for v in row] for row in matrix],
             "baseValue": _f(_g(dcf_output, "per_share_value")) or _f(sc.get("base_value")),
             # Color semantics follow market convention (US: green=up/red=down,
             # CN: red=up/green=down). Heat-map cell coloring is wired to
@@ -1342,7 +1387,13 @@ def build_report_dict(
     if is_zh:
         unit_suffix = f"{display_ctx.get('unit', '亿')}元人民币"
     else:
-        unit_suffix = f"{currency_code} {display_ctx.get('unit', 'billion')}s".lower()
+        # AUDIT (2026-07): display_ctx["unit"] is the abbreviation ("B"),
+        # not a word — the old f"...{unit}s".lower() rendered "usd bs" in
+        # every US report (NVDA demo, DCF footnote + revenue chart title).
+        # Map abbreviation → word; unknown units pass through unchanged.
+        _UNIT_WORDS = {"B": "billions", "T": "trillions", "M": "millions"}
+        _unit_raw = str(display_ctx.get("unit", "B"))
+        unit_suffix = f"{currency_code} {_UNIT_WORDS.get(_unit_raw.upper(), _unit_raw)}"
 
     dcf_summary = {}
     if dcf_output:
@@ -1402,6 +1453,24 @@ def build_report_dict(
         "projection": dcf_rows,
         "summary": dcf_summary,
     }
+    # AUDIT-A10: disclose the BUG-Y23 30× cumulative-growth cap. Without
+    # this, a hyper-growth name's assumption table showed revenue growth
+    # suddenly dropping to ~terminal (e.g. 3.5% at Y6) with zero
+    # explanation — readers couldn't tell engine intervention from a model
+    # view. Flag written by `_build_dcf_input` into meta_facts.
+    if isinstance(meta_facts, dict) and meta_facts.get("__growth_path_capped"):
+        _cap_yr = meta_facts.get("__growth_path_capped_year")
+        _yr_txt = f"Y{_cap_yr}" if _cap_yr else ""
+        cap_note = (
+            f"⚠ 增长路径自 {_yr_txt} 起触及累计 30× 营收上限，已保守收敛至永续增速"
+            f"（引擎干预，非模型观点）。"
+            if is_zh else
+            f"⚠ Growth path capped from {_yr_txt} at the cumulative 30× revenue "
+            f"bound and converged to terminal growth (engine intervention, not a model view)."
+        )
+        dcf_block["paragraphHtml"] += (" " + cap_note)
+        dcf_block["growthPathCapped"] = True
+        dcf_block["growthPathCappedYear"] = _cap_yr
 
     # ── Financials section ──
     # Revenue history: meta_facts["__historical_revenue"] is {year_int: revenue_raw}
@@ -1633,18 +1702,42 @@ def build_report_dict(
     }
 
     # ── Stale banner ──
+    # AUDIT (2026-07): the gap used to be (cur_year - fy_year) * 12 — whole-
+    # year granularity that ignored the current month AND the real fiscal
+    # period end, so a 15.6-month-old FY2024 report claimed "距今约 24 个月",
+    # and non-calendar fiscal years (NVDA ends late Jan) got a hardcoded
+    # 12-31 period end in the copy. Prefer a real period-end date if the
+    # pipeline surfaced one in meta_facts; otherwise approximate with the
+    # calendar FY end (fy_year-12) at month granularity.
     stale_banner_text = None
     if period_raw and period_raw.startswith("FY"):
         try:
             fy_year = int(period_raw[2:])
-            cur_year = datetime.now().year
-            gap_months = (cur_year - fy_year) * 12
+            _now = datetime.now()
+            pe_year, pe_month = fy_year, 12
+            period_end_label = f"{fy_year}-12-31"
+            _pe_raw = None
+            if isinstance(meta_facts, dict):
+                # No connector writes a canonical period-end key yet; probe
+                # the plausible names tolerantly so this picks it up as soon
+                # as upstream starts propagating one.
+                for _k in ("__fiscal_period_end", "fiscal_period_end",
+                           "__period_end", "period_end", "report_date"):
+                    if meta_facts.get(_k):
+                        _pe_raw = str(meta_facts[_k])
+                        break
+            if _pe_raw:
+                _m = re.match(r"(\d{4})-(\d{2})-(\d{2})", _pe_raw)
+                if _m:
+                    pe_year, pe_month = int(_m.group(1)), int(_m.group(2))
+                    period_end_label = _m.group(0)
+            gap_months = (_now.year * 12 + _now.month) - (pe_year * 12 + pe_month)
             if gap_months >= 15:
                 stale_banner_text = (
-                    f"最新可得财报为 {period_raw}（截至 {fy_year}-12-31），距今约 {gap_months} 个月；"
+                    f"最新可得财报为 {period_raw}（截至 {period_end_label}），距今约 {gap_months} 个月；"
                     f"本分析的价格动态基于实时行情，但财务基数落后约 {gap_months // 12} 个财年。"
                 ) if is_zh else (
-                    f"Latest available filing: {period_raw} (period end {fy_year}-12-31), "
+                    f"Latest available filing: {period_raw} (period end {period_end_label}), "
                     f"~{gap_months} months stale; real-time quote valid, financials lag."
                 )
         except ValueError:
@@ -1699,11 +1792,17 @@ def build_report_dict(
             # `weighted` flips to a qualitative label so any UI showing
             # "概率加权 ¥-0.83" instead reads "DCF n/m".
             "target": (round(target, 2) if _dcf_meaningful else None),
+            # AUDIT-C2: downgraded reports keep their rating but the target
+            # label becomes an explicit caveat (rendered by Verdict in
+            # report.jsx via `rating.weighted`).
             "weighted": (
+                ("评级已降级 · 存在未解决分歧" if is_zh else "Downgraded · unresolved conflicts")
+                if _rating_downgraded else
                 ("概率加权" if is_zh else "Probability-weighted")
                 if _dcf_meaningful else
                 ("DCF 不适用 · 见同业/资产框架" if is_zh else "DCF n/m · see peer/asset framing")
             ),
+            "downgraded": _rating_downgraded,
             "timeHorizon": "12 个月" if is_zh else "12 months",
             "riskLevel": "中高" if is_zh else "Medium-High",
             "dcfMeaningful": _dcf_meaningful,
@@ -1759,6 +1858,28 @@ _JSX_SCRIPT_RE = re.compile(
 )
 
 
+# BUG-Y39 (2026-05-06): Python's json.dumps by default emits `Infinity`
+# / `-Infinity` / `NaN` for non-finite floats, which are NOT valid JSON
+# and break the browser's JSON.parse → entire React tree fails to
+# render. We already fixed one source (DCF implied_exit_multiple → None
+# in Y7) but defense-in-depth: walk the dict and replace any float NaN
+# / inf with None before serialization. allow_nan=False as belt+braces
+# would raise on hit which would also be visible — keep defense-only.
+# (Hoisted to module level 2026-07 so the unit suite can exercise it
+# directly — AUDIT-E3.)
+def _sanitize_floats(o):
+    import math as _math
+    if isinstance(o, float):
+        return None if (_math.isinf(o) or _math.isnan(o)) else o
+    if isinstance(o, dict):
+        return {k: _sanitize_floats(v) for k, v in o.items()}
+    if isinstance(o, list):
+        return [_sanitize_floats(v) for v in o]
+    if isinstance(o, tuple):
+        return tuple(_sanitize_floats(v) for v in o)
+    return o
+
+
 def render_report_html(report_dict: dict,
                        *, template_html: Path | None = None,
                        template_jsx: Path | None = None) -> str:
@@ -1785,27 +1906,18 @@ def render_report_html(report_dict: dict,
     new_title = f"<title>Aegis 投研 — {company}{suffix}</title>"
     html_tpl = re.sub(r"<title>[^<]*</title>", new_title, html_tpl, count=1)
 
-    # Serialize REPORT — ensure_ascii=False to keep Chinese, default=str for dates.
-    # BUG-Y39 (2026-05-06): Python's json.dumps by default emits `Infinity`
-    # / `-Infinity` / `NaN` for non-finite floats, which are NOT valid JSON
-    # and break the browser's JSON.parse → entire React tree fails to
-    # render. We already fixed one source (DCF implied_exit_multiple → None
-    # in Y7) but defense-in-depth: walk the dict and replace any float NaN
-    # / inf with None before serialization. allow_nan=False as belt+braces
-    # would raise on hit which would also be visible — keep defense-only.
-    import math as _math
-    def _sanitize_floats(o):
-        if isinstance(o, float):
-            return None if (_math.isinf(o) or _math.isnan(o)) else o
-        if isinstance(o, dict):
-            return {k: _sanitize_floats(v) for k, v in o.items()}
-        if isinstance(o, list):
-            return [_sanitize_floats(v) for v in o]
-        if isinstance(o, tuple):
-            return tuple(_sanitize_floats(v) for v in o)
-        return o
+    # Serialize REPORT — ensure_ascii=False to keep Chinese, default=str for
+    # dates. Non-finite floats are nulled by _sanitize_floats (BUG-Y39).
     _safe_dict = _sanitize_floats(report_dict)
     report_json = json.dumps(_safe_dict, ensure_ascii=False, default=str, allow_nan=False)
+    # AUDIT (2026-07): the JSON is inlined into a <script> block, where the
+    # HTML parser terminates on the first literal "</script>" — any LLM text
+    # containing that substring (or a "<!--" that swallows a later
+    # "<script>") white-screens the whole report. Escape "/" after "<" as
+    # the JSON-equivalent "\/", and the "!" of "<!--" as a JSON unicode
+    # escape (u+0021); both round-trip to the original characters through
+    # JSON.parse, so legit data is unaffected.
+    report_json = report_json.replace("</", "<\\/").replace("<!--", "<\\u0021--")
 
     inline_block = (
         f'<script>window.REPORT = {report_json};</script>\n'

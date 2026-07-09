@@ -177,6 +177,159 @@ class TestFactNormalizationBridge:
         assert len(result.missing_fields) == len(CRITICAL_FIELDS)
 
 
+class TestTotalDebtComponents:
+    """AUDIT-A6: total_debt fallback must include bonds_payable and the
+    long-term-debt split concepts, without double counting."""
+
+    def test_cn_bonds_payable_included(self, bridge):
+        """CN: 应付债券 + 一年内到期的非流动负债 join the total_debt sum."""
+        data = {
+            "revenue": 100, "net_income": 20, "total_assets": 500,
+            "long_term_debt": 50_000,           # 长期借款
+            "short_term_debt": 10_000,          # 短期借款
+            "bonds_payable": 30_000,            # 应付债券
+            "long_term_debt_current": 5_000,    # 一年内到期的非流动负债
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        # CN: 长期借款 excludes the 1y-due portion → all four are additive
+        assert result.meta_facts["total_debt"] == 95_000
+        assert "total_debt" in result.derived_fields
+
+    def test_us_split_only_filing(self, bridge):
+        """US: filing tags only LongTermDebtCurrent/Noncurrent (no whole)."""
+        data = {
+            "revenue": 100, "net_income": 20, "total_assets": 500,
+            "long_term_debt_noncurrent": 40_000,
+            "long_term_debt_current": 8_000,
+        }
+        result = bridge.normalize(data)
+        # Previously total_debt was never written (ltd=0) — the A6 bug
+        assert result.meta_facts["total_debt"] == 48_000
+
+    def test_us_whole_value_wins_over_split(self, bridge):
+        """US: us-gaap:LongTermDebt includes the current portion — no double count."""
+        data = {
+            "revenue": 100, "net_income": 20, "total_assets": 500,
+            "long_term_debt": 48_000,            # whole (incl. current)
+            "long_term_debt_noncurrent": 40_000,
+            "long_term_debt_current": 8_000,
+            "short_term_debt": 2_000,
+        }
+        result = bridge.normalize(data)
+        assert result.meta_facts["total_debt"] == 50_000  # 48000 + 2000
+
+    def test_dq_flags_total_debt_below_component(self, bridge):
+        """DQ check: provided total_debt smaller than a single component."""
+        data = {
+            "revenue": 100, "net_income": 20, "total_assets": 500,
+            "total_debt": 10_000,
+            "bonds_payable": 30_000,
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        issues = result.meta_facts.get("__data_quality_issues", [])
+        codes = [i["code"] for i in issues]
+        assert "DQ_TOTAL_DEBT_LT_COMPONENT" in codes
+
+    def test_no_dq_flag_when_total_debt_consistent(self, bridge):
+        data = {
+            "revenue": 100, "net_income": 20, "total_assets": 500,
+            "long_term_debt": 50_000,
+            "bonds_payable": 30_000,
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        issues = result.meta_facts.get("__data_quality_issues", [])
+        codes = [i["code"] for i in issues]
+        assert "DQ_TOTAL_DEBT_LT_COMPONENT" not in codes
+
+
+class TestCNNetIncomeParentScope:
+    """AUDIT-A7: A-share net_income must be 归母口径 when available."""
+
+    def test_cn_parent_net_income_overrides(self, bridge):
+        data = {
+            "revenue": 178_576, "total_assets": 320_000,
+            "net_income": 90_027,             # 合并（含少数股东）
+            "net_income_to_parent": 86_228,   # 归母
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        f = result.meta_facts
+        assert f["net_income"] == 86_228
+        assert f["net_income_incl_minority"] == 90_027
+        # 归母 raw key preserved
+        assert f["net_income_to_parent"] == 86_228
+
+    def test_cn_without_parent_figure_unchanged(self, bridge):
+        data = {
+            "revenue": 100, "net_income": 20, "total_assets": 500,
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        assert result.meta_facts["net_income"] == 20
+        assert "net_income_incl_minority" not in result.meta_facts
+
+    def test_us_market_not_affected(self, bridge):
+        data = {
+            "revenue": 100, "net_income": 20, "total_assets": 500,
+            "net_income_to_parent": 18,
+        }
+        result = bridge.normalize(data, market_id="us")
+        assert result.meta_facts["net_income"] == 20
+        assert "net_income_incl_minority" not in result.meta_facts
+
+
+class TestEffectiveTaxRateDerivation:
+    """AUDIT-A8: derive effective_tax_rate = income_tax_expense / profit_before_tax."""
+
+    def test_derived_from_tax_and_pbt(self, bridge):
+        data = {
+            "revenue": 100_000, "net_income": 7_500, "total_assets": 500_000,
+            "income_tax_expense": 2_500,   # 所得税费用
+            "profit_before_tax": 10_000,   # 利润总额
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        assert abs(result.meta_facts["effective_tax_rate"] - 0.25) < 1e-9
+        assert "effective_tax_rate" in result.derived_fields
+
+    def test_clamped_to_upper_bound(self, bridge):
+        data = {
+            "revenue": 100, "net_income": 4, "total_assets": 500,
+            "income_tax_expense": 6_000,
+            "profit_before_tax": 10_000,
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        assert result.meta_facts["effective_tax_rate"] == 0.50
+
+    def test_clamped_to_lower_bound(self, bridge):
+        """Negative tax (credit) clamps to 0.05, not a negative rate."""
+        data = {
+            "revenue": 100, "net_income": 11, "total_assets": 500,
+            "income_tax_expense": -1_000,
+            "profit_before_tax": 10_000,
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        assert result.meta_facts["effective_tax_rate"] == 0.05
+
+    def test_not_derived_when_pbt_nonpositive(self, bridge):
+        data = {
+            "revenue": 100, "net_income": -5, "total_assets": 500,
+            "income_tax_expense": 100,
+            "profit_before_tax": -1_000,
+        }
+        result = bridge.normalize(data, market_id="cn", currency="CNY")
+        assert "effective_tax_rate" not in result.meta_facts
+
+    def test_existing_rate_not_overwritten(self, bridge):
+        """US path: XBRL-reported rate takes precedence over derivation."""
+        data = {
+            "revenue": 100, "net_income": 20, "total_assets": 500,
+            "effective_tax_rate": 0.13,
+            "income_tax_expense": 2_500,
+            "profit_before_tax": 10_000,
+        }
+        result = bridge.normalize(data)
+        assert result.meta_facts["effective_tax_rate"] == 0.13
+        assert "effective_tax_rate" not in result.derived_fields
+
+
 class TestFactBridgeWithFullAdaptedData:
     """Integration-style tests with realistic adapted data."""
 

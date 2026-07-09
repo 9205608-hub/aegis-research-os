@@ -8,7 +8,9 @@ Supports:
 - Segment-level DCF (ConsolidatedDCFInput → ConsolidatedDCFOutput)
 - Driver-based revenue modeling (RevenueDriverTree → revenue_growth_path)
 - Buyback modeling (net share change = SBC dilution - buyback yield)
-- Explicit D&A bridge (informational — D&A is embedded in operating margin)
+- Ratio-based D&A bridge (AUDIT-A1): D&A_t = da_ratio_t × revenue_t, with
+  da_ratio_t converging linearly to the capex/revenue ratio so the terminal
+  year satisfies the steady-state conservation D&A ≈ CapEx
 """
 
 from __future__ import annotations
@@ -48,7 +50,11 @@ class DCFInput:
     sbc_treatment: str = "expense_in_fcf"
     sbc_treatment_justification: str = ""
     buyback_yield_annual: float = 0.0  # Annual share reduction from buybacks
-    base_depreciation: float = 0.0  # Year-0 D&A for display bridge
+    # AUDIT-A1: anchors the ratio-based D&A bridge (da_ratio = base D&A /
+    # base revenue). Enters FCFF via the add-back — not display-only.
+    base_depreciation: float = 0.0  # Year-0 D&A
+    # AUDIT-A1: retained for input-model compatibility (callers/solver pass
+    # it), but no longer drives the D&A bridge since the ratio model.
     capex_useful_life_years: float = 5.0  # Avg useful life for new CapEx
     currency: str = "USD"  # "USD", "CNY", etc.
 
@@ -199,7 +205,7 @@ class DCFProjection:
     operating_income: float
     taxes: float
     nopat: float
-    depreciation: float  # Explicit D&A (informational — already in margin)
+    depreciation: float  # Projected D&A add-back (ratio model — AUDIT-A1)
     capex: float
     change_in_nwc: float
     sbc: float
@@ -393,8 +399,21 @@ class DCFEngine:
 
         projections: list[DCFProjection] = []
         prev_revenue = inputs.base_revenue
-        capex_history: list[float] = []  # per-year capex for D&A retirement
-        life = inputs.capex_useful_life_years
+
+        # AUDIT-A1 (2026-07): ratio-based D&A bridge.
+        # The old bridge (`base_depreciation + active_capex/life`) held the
+        # base D&A constant for all 10 years (base asset pool never retired)
+        # while the GAAP EBIT margin already embeds D&A scaling with revenue
+        # — double-counting that inflated FCFF, the Gordon terminal value,
+        # and per-share value by ~27% for capital-intensive names. New
+        # model: D&A_t = da_ratio_t × revenue_t, where da_ratio_t converges
+        # linearly from base D&A / base revenue to that year's capex/revenue
+        # ratio, so the terminal year satisfies the steady-state
+        # conservation D&A == CapEx. When base_depreciation is missing
+        # upstream (0.0 default), da_ratio ramps from 0 to the capex ratio —
+        # a bounded, mild undervaluation instead of the old D&A cliff.
+        # abs() mirrors the BUG-26 capex sanitize (outflow sign convention).
+        da_ratio_base = abs(inputs.base_depreciation) / inputs.base_revenue
 
         for i in range(n):
             year = i + 1
@@ -407,16 +426,11 @@ class DCFEngine:
             change_in_nwc = revenue_delta * inputs.nwc_to_revenue_delta
             sbc = revenue * effective_sbc
 
-            # D&A projection: base D&A + straight-line amortization of new CapEx.
-            # Each year's capex depreciates over `capex_useful_life_years` and
-            # then retires.  Only capex from the most recent `life` years
-            # contributes — older capex has been fully depreciated.
-            active_capex = sum(capex_history[-int(life):]) if capex_history else 0.0
-            depreciation = (
-                inputs.base_depreciation
-                + active_capex / life
-            )
-            capex_history.append(abs(capex))
+            # AUDIT-A1: blend weight reaches 1.0 in the terminal year, so
+            # terminal D&A == terminal capex (steady-state conservation).
+            w = year / n
+            da_ratio_t = da_ratio_base * (1.0 - w) + capex_ratio_path[i] * w
+            depreciation = revenue * da_ratio_t
 
             # FCFF = NOPAT + D&A - CapEx - ΔNWC. EBIT already subtracted D&A,
             # so NOPAT needs D&A added back as a non-cash item. abs(capex) makes
@@ -601,8 +615,13 @@ class DCFEngine:
         # Step 2: Consolidate year-by-year
         consolidated_projections: list[DCFProjection] = []
         prev_total_revenue = sum(s.base_revenue for s in inputs.segments.values())
-        capex_history: list[float] = []  # per-year capex for D&A retirement
-        life = inputs.capex_useful_life_years
+
+        # AUDIT-A1: ratio-based D&A bridge — same model as the flat DCF
+        # (see compute_dcf for the full rationale).
+        da_ratio_base = (
+            abs(inputs.base_depreciation) / prev_total_revenue
+            if prev_total_revenue > 0 else 0.0
+        )
 
         for i in range(n):
             year = i + 1
@@ -622,13 +641,14 @@ class DCFEngine:
             change_in_nwc = revenue_delta * inputs.nwc_to_revenue_delta
             sbc = total_revenue * effective_sbc
 
-            # D&A projection: base D&A + straight-line of new CapEx with retirement
-            active_capex = sum(capex_history[-int(life):]) if capex_history else 0.0
-            depreciation = (
-                inputs.base_depreciation
-                + active_capex / life
+            # AUDIT-A1: D&A ratio converges to the consolidated capex/revenue
+            # ratio by the terminal year (steady-state D&A == CapEx).
+            capex_ratio_t = (
+                abs(total_capex) / total_revenue if total_revenue > 0 else 0.0
             )
-            capex_history.append(abs(total_capex))
+            w = year / n
+            da_ratio_t = da_ratio_base * (1.0 - w) + capex_ratio_t * w
+            depreciation = total_revenue * da_ratio_t
 
             # FCFF = NOPAT + D&A - CapEx - ΔNWC (see flat-DCF block for rationale)
             fcff = nopat + depreciation - abs(total_capex) - change_in_nwc

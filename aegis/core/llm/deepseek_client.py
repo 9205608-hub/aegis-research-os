@@ -100,9 +100,20 @@ class DeepSeekClient:
         tool_schema: dict[str, Any],
         tool_name: str = "output",
         role: str = "specialist_agent",
+        max_tokens_hint: int | None = None,
         **kwargs,
     ) -> dict[str, Any]:
-        """Call DeepSeek with function calling for structured output."""
+        """Call DeepSeek with function calling for structured output.
+
+        AUDIT-D3: ``max_tokens_hint`` lets callers size the starting output
+        budget by agent depth (light=8K / standard=16K / deep=32K). Without
+        a hint the cold start stays at the historical flat 32768 — and per
+        the BUG-A20 notes below, a bigger budget makes the model think
+        longer, so light calls were paying a long-tail latency tax for
+        headroom they never used. The empty-shrink / truncated-grow ladders
+        derive from the start budget, so the no-hint default reproduces the
+        old [32768,16384] / [32768,65536] behavior exactly.
+        """
         tool_def = {
             "type": "function",
             "function": {
@@ -133,8 +144,11 @@ class DeepSeekClient:
         #       to give the model room to finish.
         # Treating both with the same shrink-budget policy makes (b) worse,
         # not better. Branch by finish_reason on first failure.
-        BUDGET_EMPTY = [32768, 16384]      # thinking too long → shrink
-        BUDGET_TRUNCATED = [32768, 65536]  # output too long → grow
+        # AUDIT-D3: ladders anchored on the (possibly hinted) start budget.
+        # No hint → identical to the historical constants.
+        _start_budget = int(max_tokens_hint) if max_tokens_hint else 32768
+        BUDGET_EMPTY = [_start_budget, max(_start_budget // 2, 4096)]   # thinking too long → shrink
+        BUDGET_TRUNCATED = [_start_budget, min(_start_budget * 2, 65536)]  # output too long → grow
         empty_response_attempts = 0
         truncated_response_attempts = 0
         for attempt in range(self.max_retries):
@@ -147,16 +161,16 @@ class DeepSeekClient:
                     _budget = (
                         BUDGET_TRUNCATED[truncated_response_attempts]
                         if truncated_response_attempts < len(BUDGET_TRUNCATED)
-                        else 65536
+                        else BUDGET_TRUNCATED[-1]
                     )
                 elif empty_response_attempts > 0:
                     _budget = (
                         BUDGET_EMPTY[empty_response_attempts]
                         if empty_response_attempts < len(BUDGET_EMPTY)
-                        else 16384
+                        else BUDGET_EMPTY[-1]
                     )
                 else:
-                    _budget = 32768
+                    _budget = _start_budget
                 create_kwargs = dict(
                     model=self.model,
                     max_tokens=_budget,
