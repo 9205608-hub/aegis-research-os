@@ -205,7 +205,7 @@ INFERENCES_FROM_OBSERVATIONS_SCHEMA_DEEP = {
 
 
 # AUDIT-D3: starting output-token budget by Director depth tier, passed to
-# the LLM client as `max_tokens_hint`. DeepSeek/Kimi honour it (their
+# the LLM client as `max_tokens_hint`. DeepSeek/Grok honour it (their
 # shrink/grow recovery ladders re-anchor on it); other clients ignore it via
 # **kwargs. Bigger budgets make reasoning models think longer (BUG-A20), so
 # light/standard calls should not pay for deep-tier headroom.
@@ -233,7 +233,8 @@ def _client_accepts_max_tokens_hint(client: Any) -> bool:
 
 
 def _strip_sensitive(text: str) -> str:
-    """Remove or soften phrases that commonly trip Kimi's content filter.
+    """Remove or soften phrases that commonly trip LLM API content filters
+    (backend-agnostic defense; originally added for a CN-hosted backend).
     Keeps financial substance, removes geopolitical/regulatory framings.
 
     AUDIT-B6 (2026-07-09): the original 10 rules were EN-only with ``\\b``
@@ -280,12 +281,13 @@ def _is_content_filter_error(e: Exception) -> bool:
     400 — schema-invalid, oversized request body — as content_filter, which
     burned a pointless strip-retry and mislabeled ``_failure_reason`` as
     'content_filter+…' (metadata lying to the operator, bug type #6). Now:
-    the typed KimiContentFilterError and semantic keywords are authoritative;
+    the typed DeepSeekContentFilterError (also raised by GrokClient, which
+    inherits from DeepSeekClient) and semantic keywords are authoritative;
     a bare 400 only counts when the body actually mentions content/risk/filter.
     """
     try:
-        from aegis.core.llm.kimi_client import KimiContentFilterError
-        if isinstance(e, KimiContentFilterError):
+        from aegis.core.llm.deepseek_client import DeepSeekContentFilterError
+        if isinstance(e, DeepSeekContentFilterError):
             return True
     except ImportError:
         pass
@@ -340,7 +342,7 @@ class LLMAgentBase(AgentBase):
             }
 
         # Call LLM with tiered fallback on failure:
-        # 1. primary LLM (Kimi)
+        # 1. primary LLM (DeepSeek by default; Grok as alternate backend)
         # 2. if content_filter: strip geopolitically-sensitive phrases, retry primary
         # 3. last resort: mock fallback (produces thin output, flag as degraded)
         # AUDIT-B6/B7 (2026-07-09): _strip_sensitive / _is_content_filter_error
@@ -545,7 +547,7 @@ class LLMAgentBase(AgentBase):
                 )
 
         # Parse LLM output into typed objects
-        # Strip extra fields that LLMs (especially Kimi) add beyond the schema
+        # Strip extra fields that LLMs (especially reasoning backends) add beyond the schema
         def _strip_extra(data: dict, model_cls: type) -> dict:
             allowed = set(model_cls.model_fields.keys())
             return {k: v for k, v in data.items() if k in allowed}
@@ -609,11 +611,11 @@ class LLMAgentBase(AgentBase):
         obs_count = len(observations)
 
         def _coerce_inference(data: dict) -> dict | None:
-            """Coerce Kimi-style inference data to match schema types.
+            """Coerce LLM-quirk inference data to match schema types.
 
             - Scalar indices → list (AUDIT-B5: `"based_on_observation_indices": 2`
               used to raise `TypeError: 'int' object is not iterable`)
-            - Strings → ints (Kimi sometimes returns "3" instead of 3)
+            - Strings → ints (LLMs sometimes return "3" instead of 3)
             - Out-of-range indices clamped to valid bounds:
               · idx == obs_count (1-indexed LLM) → obs_count - 1
               · idx > obs_count (hallucinated) → dropped
@@ -623,7 +625,7 @@ class LLMAgentBase(AgentBase):
               observation; with zero observations the inference is dropped
               (return None) instead of failing min_length=1 (AUDIT-B5).
 
-            Without this clamping, a Kimi quirk of 1-indexed references
+            Without this clamping, an LLM quirk of 1-indexed references
             produces 3+ false-positive LOGIC_UNGROUNDED_INFERENCE blocks per
             run, eating the cumulative critic block budget and forcing
             otherwise-good reports into 'downgraded' status.
@@ -660,7 +662,7 @@ class LLMAgentBase(AgentBase):
             # BUG-Y24 (2026-05-06): LLM occasionally emits compound
             # confidence values like `medium_high` / `high_medium` /
             # `mediumlow` (DeepSeek V4 was the culprit, but seen on
-            # Kimi too). Pydantic strict pattern `^(low|medium|high)$`
+            # other backends too). Pydantic strict pattern `^(low|medium|high)$`
             # rejects them → whole agent falls back to mock. Coerce to
             # the closest pattern-valid bucket so the LLM's substantive
             # output (text + indices) survives. Missing confidence lands
@@ -711,7 +713,7 @@ class LLMAgentBase(AgentBase):
         # risk fields. Normalize at boundary so a single LLM-side compound
         # value doesn't collapse the whole agent.
         bias_data = raw.get("cognitive_bias_self_check", {})
-        # AUDIT-B5 (2026-07-09): Kimi occasionally serializes the whole bias
+        # AUDIT-B5 (2026-07-09): LLMs occasionally serialize the whole bias
         # object as a JSON STRING — calling .get() on it raised
         # AttributeError. Try json.loads once to rescue it; anything still
         # non-dict falls back to {} (all fields land on safe defaults).

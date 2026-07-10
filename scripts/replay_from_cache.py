@@ -49,7 +49,7 @@ def main() -> int:
     cache_file = Path(args.cache_dir) / f"{args.ticker.lower()}_replay_state.pkl"
     if not cache_file.exists():
         print(f"❌ No cache found at {cache_file}")
-        print(f"   Run full pipeline first: python demos/auto_research_demo.py {args.ticker} --price 110 --llm --backend kimi")
+        print(f"   Run full pipeline first: python demos/auto_research_demo.py {args.ticker} --price 110 --llm --backend deepseek")
         return 1
 
     t0 = time.time()
@@ -650,14 +650,18 @@ def main() -> int:
         try:
             from aegis.core.chief_analyst import ReportEditor
             editor = ReportEditor()
-            # Prefer DeepSeek (current default backend) when its key is set;
-            # fall back to Kimi for legacy caches that were run on Kimi.
-            if os.environ.get("DEEPSEEK_API_KEY") or getattr(state["config"], "deepseek_api_key", None):
-                from aegis.core.llm.deepseek_client import DeepSeekClient
-                editor._llm = DeepSeekClient(model=getattr(state["config"], "deepseek_model", "deepseek-chat"))
-            else:
-                from aegis.core.llm.kimi_client import KimiClient
-                editor._llm = KimiClient(model=state["config"].kimi_model)
+            # Editor 重跑固定走 DeepSeek（当前默认后端）。需要 DEEPSEEK_API_KEY，
+            # 缺失时在此给出明确提示（DeepSeekClient 的报错只说缺 key）。
+            if not (os.environ.get("DEEPSEEK_API_KEY") or getattr(state["config"], "deepseek_api_key", None)):
+                raise RuntimeError(
+                    "--editor 需要 DEEPSEEK_API_KEY（Report Editor 重跑走 DeepSeek 后端）。"
+                    "请先 export DEEPSEEK_API_KEY=... 再重试。"
+                )
+            from aegis.core.llm.deepseek_client import DeepSeekClient
+            editor._llm = DeepSeekClient(
+                model=getattr(state["config"], "deepseek_model", None) or "deepseek-v4-pro",
+                api_key=getattr(state["config"], "deepseek_api_key", None),
+            )
             edited_report = editor.edit(
                 entity_name=state["entity_name"],
                 synthesized_thesis=state["synthesized_thesis"],
@@ -709,12 +713,11 @@ def main() -> int:
         dcf_output=state.get("dcf_output"),
         # Pick the model name from the most likely active backend so HTML
         # metadata reflects the current run, not whatever was cached.
-        # Priority: DeepSeek key set → deepseek_model; else kimi_model;
-        # else llm_model.
+        # Priority: DeepSeek key set → deepseek_model; else llm_model.
         model_name=(
             getattr(state["config"], "deepseek_model", None)
             if (os.environ.get("DEEPSEEK_API_KEY") or getattr(state["config"], "deepseek_api_key", None))
-            else (getattr(state["config"], "kimi_model", None) or getattr(state["config"], "llm_model", None))
+            else getattr(state["config"], "llm_model", None)
         ),
         macro_snapshot=state.get("macro_snapshot"),  # None for old caches
     )

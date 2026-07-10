@@ -28,7 +28,7 @@ from aegis.core.agents.llm_agent_base import (
     _is_content_filter_error,
     _strip_sensitive,
 )
-from aegis.core.llm.kimi_client import KimiContentFilterError
+from aegis.core.llm.deepseek_client import DeepSeekContentFilterError
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +263,7 @@ class TestPerItemDrop:
         ]))
         assert len(out.judgment.counterarguments) == 1
 
-    def test_combined_kimi_quirks_survive(self):
+    def test_combined_llm_quirks_survive(self):
         # 全套 quirk 一起上，agent 仍产出真实内容
         out = _run(_raw(
             observations=[
@@ -369,7 +369,7 @@ class TestStripRetryIntegration:
             def call_structured(self, **kwargs):
                 self.calls.append(kwargs)
                 if len(self.calls) == 1:
-                    raise KimiContentFilterError(
+                    raise DeepSeekContentFilterError(
                         "Error code: 400 - high risk content_filter"
                     )
                 return self.raw
@@ -395,9 +395,10 @@ class TestStripRetryIntegration:
 # ---------------------------------------------------------------------------
 
 class TestContentFilterClassification:
-    def test_typed_kimi_error_is_content_filter(self):
+    def test_typed_deepseek_error_is_content_filter(self):
+        # 也覆盖 Grok：GrokClient 继承 DeepSeekClient，抛同一个类型
         assert _is_content_filter_error(
-            KimiContentFilterError("Error code: 400 - rejected")
+            DeepSeekContentFilterError("Error code: 400 - rejected")
         )
 
     def test_semantic_keywords_match(self):

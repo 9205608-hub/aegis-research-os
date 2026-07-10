@@ -1,6 +1,6 @@
 """LLM-as-Judge Critic — cross-checks agent narrative numbers against source data.
 
-Uses a cheap LLM (kimi-k2.5, ~$0.004/run) to review every agent's
+Uses a cheap LLM (deepseek-v4-flash, ~$0.004/run) to review every agent's
 observations and inferences, comparing cited numbers against the ground-truth
 data tables (meta_facts, computed_metrics, historical revenue/growth).
 
@@ -247,7 +247,10 @@ class LLMJudgeCritic(CriticBase):
 
     CRITIC_TYPE = "llm_judge_critic"
 
-    def __init__(self, model: str = "k2.5"):
+    def __init__(self, model: str = "deepseek-v4-flash"):
+        # Cheap judge tier: fact-checking needs precision, not depth, so the
+        # flash tier is the default. Only consulted on the DeepSeek path;
+        # Grok/SDK fallbacks use their own defaults.
         self._model = model
 
     def review(
@@ -299,7 +302,7 @@ class LLMJudgeCritic(CriticBase):
                     code="LLM_JUDGE_FAILED",
                     severity="warn",
                     message=f"LLM judge critic failed: {e}. Narrative numbers were NOT cross-checked.",
-                    action="Set DEEPSEEK_API_KEY / KIMI_API_KEY / CLAUDE_CODE_OAUTH_TOKEN and check network.",
+                    action="Set DEEPSEEK_API_KEY / GROK_API_KEY / CLAUDE_CODE_OAUTH_TOKEN and check network.",
                 )],
                 block_publish=False,
                 overall_risk="medium",
@@ -351,12 +354,12 @@ class LLMJudgeCritic(CriticBase):
     def _call_llm(self, user_message: str, shared_client: Any = None) -> list[dict]:
         """Call any available structured-output LLM backend for fact-checking.
 
-        BUG-Y31 (2026-05-06): previously hardcoded `KimiClient(model=self._model)`
-        and emitted "LLM judge critic failed: No Kimi API key" warnings on
-        EVERY production run since users default to DeepSeek (run_research.sh
-        leaves KIMI_API_KEY blank). The whole critic was effectively dead —
-        firing one warn per run telling operators it didn't run. Try
-        backends in order of availability: DeepSeek → Kimi → Anthropic SDK.
+        BUG-Y31 (2026-05-06): previously hardcoded one specific backend
+        client and emitted "LLM judge critic failed: no API key" warnings on
+        EVERY production run whenever that backend's key was absent. The
+        whole critic was effectively dead — firing one warn per run telling
+        operators it didn't run. Try backends in order of availability:
+        DeepSeek → Grok → Anthropic SDK.
 
         BUG-Y40 (2026-05-06): when the orchestrator passes its own
         already-configured LLM client via the `shared_client` arg (sourced
@@ -385,13 +388,13 @@ class LLMJudgeCritic(CriticBase):
         last_err: Exception | None = None
         try_order: list[tuple[str, callable]] = [
             ("deepseek", lambda: __import__("aegis.core.llm.deepseek_client",
-                fromlist=["DeepSeekClient"]).DeepSeekClient(model="deepseek-v4-flash")
+                fromlist=["DeepSeekClient"]).DeepSeekClient(model=self._model)
                 if __import__("aegis.core.llm.deepseek_client",
                     fromlist=["DeepSeekClient"]).DeepSeekClient.is_available() else None),
-            ("kimi", lambda: __import__("aegis.core.llm.kimi_client",
-                fromlist=["KimiClient"]).KimiClient(model=self._model)
-                if __import__("aegis.core.llm.kimi_client",
-                    fromlist=["KimiClient"]).KimiClient.is_available() else None),
+            ("grok", lambda: __import__("aegis.core.llm.grok_client",
+                fromlist=["GrokClient"]).GrokClient()
+                if __import__("aegis.core.llm.grok_client",
+                    fromlist=["GrokClient"]).GrokClient.is_available() else None),
             ("sdk", lambda: __import__("aegis.core.llm.sdk_client",
                 fromlist=["SDKClient"]).SDKClient(model="haiku")
                 if __import__("aegis.core.llm.sdk_client",
@@ -410,7 +413,7 @@ class LLMJudgeCritic(CriticBase):
         if client is None:
             raise RuntimeError(
                 f"No LLM backend available for llm_judge_critic. "
-                f"Set DEEPSEEK_API_KEY, KIMI_API_KEY, or CLAUDE_CODE_OAUTH_TOKEN. "
+                f"Set DEEPSEEK_API_KEY, GROK_API_KEY, or CLAUDE_CODE_OAUTH_TOKEN. "
                 f"Last error: {last_err}"
             )
 

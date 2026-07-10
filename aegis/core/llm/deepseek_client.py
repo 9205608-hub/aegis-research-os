@@ -1,11 +1,18 @@
 """DeepSeek LLM Client — uses DeepSeek API (OpenAI-compatible).
 
 Direct access from China, low cost. Supports tool_use/function calling for
-structured output. Mirrors KimiClient surface so the orchestrator can swap
-backends transparently.
+structured output. Exposes the standard client surface (call_structured /
+call_text / is_available) so the orchestrator can swap backends
+transparently.
 
 Models: deepseek-chat (always points to latest GA chat model, currently V4),
 deepseek-reasoner (R-series reasoning model).
+
+The transport (base_url / api_key / model) is injectable so thin wrappers
+for other OpenAI-compatible reasoning backends (e.g. GrokClient in
+grok_client.py) can reuse the whole BUG-A20 recovery chain — empty-retry
+shrink, truncation grow, JSON-mode fallback — and the AUDIT-D3
+max_tokens_hint depth tiers without duplicating them.
 """
 
 from __future__ import annotations
@@ -60,8 +67,9 @@ DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
 
 # TODO-Y1 (2026-05-06): the `_repair_json` and `_repair_truncated_array`
 # helpers used to live here. They were extracted to `aegis.core.llm._recovery`
-# so Kimi/SDK/Subprocess can share the same logic. Kept the names below as
-# thin wrappers / module-level aliases for back-compat.
+# so every backend (SDK / subprocess / other OpenAI-compatible clients) can
+# share the same logic. Kept the names below as thin wrappers / module-level
+# aliases for back-compat.
 _repair_truncated_array = _shared_repair_truncated_array
 
 
@@ -71,27 +79,45 @@ class DeepSeekClient:
     Direct access from China, no proxy needed. Low cost.
     """
 
+    # Subclass injection points (see GrokClient): a wrapper backend swaps
+    # these to reuse the whole recovery chain against a different endpoint.
+    # Defaults reproduce the historical DeepSeek behavior verbatim.
+    _provider: str = "DeepSeek"
+
     def __init__(
         self,
         model: str = "deepseek-v4-pro",
         api_key: str | None = None,
         max_retries: int = 3,
         retry_base_delay: float = 1.0,
+        *,
+        base_url: str | None = None,
     ) -> None:
-        self.model = DEEPSEEK_MODEL_MAP.get(model, model)
+        self.model = self._resolve_model(model)
         self.max_retries = max_retries
         self.retry_base_delay = retry_base_delay
         self.cost_tracker = CostTracker()
 
-        self._api_key = api_key or os.environ.get("DEEPSEEK_API_KEY", "")
+        self._api_key = api_key or self._resolve_env_api_key()
         if not self._api_key:
-            raise RuntimeError("No DeepSeek API key. Set DEEPSEEK_API_KEY env var.")
+            raise RuntimeError(self._missing_key_message())
 
         from openai import OpenAI
         self._client = OpenAI(
             api_key=self._api_key,
-            base_url=DEEPSEEK_BASE_URL,
+            base_url=base_url or DEEPSEEK_BASE_URL,
         )
+
+    # -- injection hooks (overridden by OpenAI-compatible wrapper backends) --
+
+    def _resolve_model(self, model: str) -> str:
+        return DEEPSEEK_MODEL_MAP.get(model, model)
+
+    def _resolve_env_api_key(self) -> str:
+        return os.environ.get("DEEPSEEK_API_KEY", "")
+
+    def _missing_key_message(self) -> str:
+        return "No DeepSeek API key. Set DEEPSEEK_API_KEY env var."
 
     def call_structured(
         self,
@@ -253,7 +279,7 @@ class DeepSeekClient:
                                 # same budget gives same empty result.
                                 empty_response_attempts += 1
                                 if empty_response_attempts < len(BUDGET_EMPTY):
-                                    print(f"    ⏳ DeepSeek empty tool args "
+                                    print(f"    ⏳ {self._provider} empty tool args "
                                           f"(finish={_fr}, attempt {empty_response_attempts}/"
                                           f"{len(BUDGET_EMPTY)}), "
                                           f"retry with max_tokens={BUDGET_EMPTY[empty_response_attempts]}")
@@ -261,7 +287,7 @@ class DeepSeekClient:
                                     continue
                                 # Exhausted empty-retry budget → try JSON-mode
                                 # (no tool_use) as last resort before raising.
-                                print(f"    ⏳ DeepSeek tool_use empty after "
+                                print(f"    ⏳ {self._provider} tool_use empty after "
                                       f"{empty_response_attempts} attempts; "
                                       f"falling through to JSON-mode (no tool_use)")
                                 return self._call_json_mode_fallback(
@@ -292,7 +318,7 @@ class DeepSeekClient:
                                         truncated_response_attempts += 1
                                         if truncated_response_attempts < len(BUDGET_TRUNCATED):
                                             import sys as _sys
-                                            print(f"    ⏳ DeepSeek args truncated "
+                                            print(f"    ⏳ {self._provider} args truncated "
                                                   f"(finish={_fr}, len={len(raw)}, "
                                                   f"attempt {truncated_response_attempts}/"
                                                   f"{len(BUDGET_TRUNCATED)}), "
@@ -301,7 +327,7 @@ class DeepSeekClient:
                                             time.sleep(1)
                                             continue
                                         # Truncated-budget exhausted → JSON-mode
-                                        print(f"    ⏳ DeepSeek args truncated after "
+                                        print(f"    ⏳ {self._provider} args truncated after "
                                               f"{truncated_response_attempts} attempts "
                                               f"at growing budget; falling through to JSON-mode")
                                         return self._call_json_mode_fallback(
@@ -309,7 +335,7 @@ class DeepSeekClient:
                                         )
                                     if attempt < self.max_retries - 1:
                                         import sys as _sys
-                                        print(f"    ⏳ DeepSeek args unparseable (strategy={strategy}, len={len(raw)}, preview={raw[:120]!r}), retry {attempt+1}/{self.max_retries}",
+                                        print(f"    ⏳ {self._provider} args unparseable (strategy={strategy}, len={len(raw)}, preview={raw[:120]!r}), retry {attempt+1}/{self.max_retries}",
                                               file=_sys.stderr)
                                         time.sleep(2 ** attempt)
                                         continue
@@ -341,20 +367,20 @@ class DeepSeekClient:
                 if not msg.tool_calls and not (msg.content or "").strip():
                     empty_response_attempts += 1
                     if empty_response_attempts < len(BUDGET_EMPTY):
-                        print(f"    ⏳ DeepSeek empty response (no tool_calls, "
+                        print(f"    ⏳ {self._provider} empty response (no tool_calls, "
                               f"no content; finish={_fr}, attempt "
                               f"{empty_response_attempts}/{len(BUDGET_EMPTY)}), "
                               f"retry with max_tokens={BUDGET_EMPTY[empty_response_attempts]}")
                         time.sleep(1)
                         continue
-                    print(f"    ⏳ DeepSeek empty response after "
+                    print(f"    ⏳ {self._provider} empty response after "
                           f"{empty_response_attempts} attempts; "
                           f"falling through to JSON-mode")
                     return self._call_json_mode_fallback(
                         system_prompt, user_message, tool_schema,
                     )
 
-                raise ValueError(f"No tool call or parseable JSON in DeepSeek response (strategy={strategy}, finish={_fr}, content_len={len(msg.content or '')})")
+                raise ValueError(f"No tool call or parseable JSON in {self._provider} response (strategy={strategy}, finish={_fr}, content_len={len(msg.content or '')})")
 
             except Exception as e:
                 error_str = str(e).lower()
@@ -376,12 +402,12 @@ class DeepSeekClient:
                     raise DeepSeekContentFilterError(str(e)) from e
                 if is_retryable and attempt < self.max_retries - 1:
                     wait = self.retry_base_delay * (2 ** attempt)
-                    print(f"    ⏳ DeepSeek retry {attempt+1}/{self.max_retries} in {wait:.0f}s")
+                    print(f"    ⏳ {self._provider} retry {attempt+1}/{self.max_retries} in {wait:.0f}s")
                     time.sleep(wait)
                     continue
                 raise
 
-        raise RuntimeError("DeepSeek max retries exceeded")
+        raise RuntimeError(f"{self._provider} max retries exceeded")
 
     def _call_json_mode_fallback(
         self,
@@ -423,7 +449,7 @@ class DeepSeekClient:
             )
         except Exception as e:
             raise ValueError(
-                f"DeepSeek JSON-mode fallback also failed: {e!s}"
+                f"{self._provider} JSON-mode fallback also failed: {e!s}"
             ) from e
 
         if resp.usage:
@@ -437,7 +463,7 @@ class DeepSeekClient:
         text = (msg.content or "").strip()
         if not text:
             raise ValueError(
-                "DeepSeek JSON-mode fallback returned empty content"
+                f"{self._provider} JSON-mode fallback returned empty content"
             )
         try:
             return json.loads(text)
@@ -447,7 +473,7 @@ class DeepSeekClient:
             return self._repair_json(text)
         except json.JSONDecodeError as e:
             raise ValueError(
-                f"DeepSeek JSON-mode fallback unparseable "
+                f"{self._provider} JSON-mode fallback unparseable "
                 f"(len={len(text)}, preview={text[:160]!r}): {e!s}"
             ) from e
 
