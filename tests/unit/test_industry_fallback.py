@@ -103,3 +103,59 @@ class TestSectorPackFromF10Industry:
 
     def test_empty_maps_to_general(self):
         assert self._infer("") is None
+
+
+class TestBackfillQuoteGaps:
+    """AkShareConnector._backfill_quote_gaps — price-only Method 2 must not
+    leave market_cap=0 downstream (Kangda 002669 run 2026-07-10)."""
+
+    @staticmethod
+    def _quote(**kw):
+        base = dict(code="002669", name="康达新材", current_price=13.73,
+                    market_cap=4.2e9, shares_outstanding=3.03e8)
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def test_price_only_gets_shares_and_cap(self):
+        md = {"current_price": 13.73}
+        info = {}
+        with patch(
+            "aegis.core.acquisition.connectors.tencent_sina_quote.fetch_cn_quote",
+            return_value=self._quote(),
+        ):
+            name = AkShareConnector._backfill_quote_gaps("002669", md, None, info)
+        assert md["total_shares"] == 3.03e8
+        assert md["market_cap"] == 4.2e9
+        assert md["current_price"] == 13.73  # existing price untouched
+        assert name == "康达新材"
+
+    def test_zero_cap_from_method1_is_treated_as_missing(self):
+        # Method 1 writes `_safe_float(...) or 0.0` — a literal 0.0 must be
+        # backfilled, not treated as present.
+        md = {"current_price": 13.73, "total_shares": 0.0, "market_cap": 0.0}
+        with patch(
+            "aegis.core.acquisition.connectors.tencent_sina_quote.fetch_cn_quote",
+            return_value=self._quote(),
+        ):
+            AkShareConnector._backfill_quote_gaps("002669", md, "康达新材", {})
+        assert md["market_cap"] == 4.2e9
+        assert md["total_shares"] == 3.03e8
+
+    def test_noop_when_all_present(self):
+        md = {"current_price": 13.9, "total_shares": 3e8, "market_cap": 4.2e9}
+        with patch(
+            "aegis.core.acquisition.connectors.tencent_sina_quote.fetch_cn_quote",
+            side_effect=AssertionError("must not be called"),
+        ):
+            AkShareConnector._backfill_quote_gaps("002669", md, "康达新材", {})
+        assert md == {"current_price": 13.9, "total_shares": 3e8, "market_cap": 4.2e9}
+
+    def test_dead_quote_source_never_raises(self):
+        md = {"current_price": 13.73}
+        with patch(
+            "aegis.core.acquisition.connectors.tencent_sina_quote.fetch_cn_quote",
+            side_effect=OSError("network down"),
+        ):
+            name = AkShareConnector._backfill_quote_gaps("002669", md, None, {})
+        assert name is None
+        assert "market_cap" not in md

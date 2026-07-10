@@ -257,6 +257,51 @@ class AkShareConnector:
             logger.debug(f"datacenter F10 industry lookup failed: {e}")
             return None
 
+    @staticmethod
+    def _backfill_quote_gaps(
+        stock_code: str,
+        market_data: dict[str, float],
+        company_name: str | None,
+        company_info: dict[str, Any],
+    ) -> str | None:
+        """Fill missing price / total_shares / market_cap from the
+        tencent/sina quote helper (mutates market_data/company_info in
+        place, returns the possibly-updated company_name).
+
+        No-op when all three fields are already present. Never raises —
+        a dead quote source just leaves the gaps for downstream fallbacks
+        (orchestrator fetches its own market-data snapshot).
+        """
+        if (market_data.get("current_price")
+                and market_data.get("total_shares")
+                and market_data.get("market_cap")):
+            return company_name
+        try:
+            from .tencent_sina_quote import fetch_cn_quote
+            q = fetch_cn_quote(stock_code)
+            if q is None:
+                return company_name
+            filled = []
+            if q.current_price and not market_data.get("current_price"):
+                market_data["current_price"] = q.current_price
+                filled.append(f"price=¥{q.current_price:.2f}")
+            if q.shares_outstanding and not market_data.get("total_shares"):
+                market_data["total_shares"] = q.shares_outstanding
+                filled.append("shares")
+            if q.market_cap and not market_data.get("market_cap"):
+                market_data["market_cap"] = q.market_cap
+                filled.append("cap")
+            if q.name and not company_name:
+                company_name = q.name
+                company_info.setdefault("name", q.name)
+                filled.append("name")
+            if filled:
+                logger.info(f"akshare: backfilled via tencent/sina quote: "
+                            f"{', '.join(filled)}")
+        except Exception as e:
+            logger.debug(f"tencent/sina quote backfill failed: {e}")
+        return company_name
+
     def fetch(self, stock_code: str) -> AkShareFinancials | None:
         """Fetch full financials + real-time quote + company info.
 
@@ -448,7 +493,6 @@ class AkShareConnector:
             logger.debug(f"akshare individual_info unavailable for {stock_code}, "
                          f"trying bid_ask fallback for price only")
             # Method 2: stock_bid_ask_em — level-1 quote fallback (different host)
-            got_price = False
             try:
                 q = ak.stock_bid_ask_em(symbol=stock_code)
                 if q is not None and not q.empty:
@@ -456,35 +500,25 @@ class AkShareConnector:
                     price = _safe_float(qd.get("最新"))
                     if price:
                         market_data["current_price"] = price
-                        got_price = True
                         logger.info(f"akshare: got price via bid_ask fallback (¥{price:.2f})")
             except Exception as e:
                 logger.debug(f"akshare bid_ask fallback also failed: {e}")
 
-            # Method 3: tencent/sina level-1 quote helper (hosts reachable
-            # even when push2.eastmoney.com is down). Replaces the old
-            # stock_zh_a_spot() full-market crawl, which was dead code
-            # (AUDIT 2026-07): sina's 代码 column carries "sz002669"-style
-            # prefixes so the bare-code match never hit, the frame has no
-            # 总股本/总市值 columns to read, and the ~80-page crawl risks a
-            # sina IP ban on repeat runs.
-            if not got_price:
-                try:
-                    from .tencent_sina_quote import fetch_cn_quote
-                    q3 = fetch_cn_quote(stock_code)
-                    if q3 is not None and q3.current_price:
-                        market_data["current_price"] = q3.current_price
-                        logger.info(f"akshare: got price via tencent/sina "
-                                    f"quote (¥{q3.current_price:.2f})")
-                        if q3.shares_outstanding and not market_data.get("total_shares"):
-                            market_data["total_shares"] = q3.shares_outstanding
-                        if q3.market_cap and not market_data.get("market_cap"):
-                            market_data["market_cap"] = q3.market_cap
-                        if q3.name and not company_name:
-                            company_name = q3.name
-                            company_info.setdefault("name", q3.name)
-                except Exception as e:
-                    logger.debug(f"tencent/sina quote fallback also failed: {e}")
+        # Method 3: tencent/sina level-1 quote helper (hosts reachable even
+        # when push2.eastmoney.com is down). Replaces the old
+        # stock_zh_a_spot() full-market crawl, which was dead code
+        # (AUDIT 2026-07): sina's 代码 column carries "sz002669"-style
+        # prefixes so the bare-code match never hit, the frame has no
+        # 总股本/总市值 columns to read, and the ~80-page crawl risks a
+        # sina IP ban on repeat runs.
+        #
+        # Runs as a gap-filler for price AND shares/cap: Method 2 (bid_ask)
+        # can succeed with price only, which used to leave market_cap=0
+        # downstream (P/E and EV/EBITDA silently missing — observed on the
+        # Kangda 002669 run 2026-07-10, log printed "cap=¥0亿").
+        company_name = self._backfill_quote_gaps(
+            stock_code, market_data, company_name, company_info
+        )
 
         # Method 1.5 (AUDIT 2026-07, BUG-Y18 root-cause fix): when push2 is
         # unreachable — or answered without a 行业 field — fetch the industry
