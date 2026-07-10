@@ -2712,12 +2712,16 @@ class AutoResearchOrchestrator:
                 agents_results[AgentCls.AGENT_NAME] = out
 
             # Sector agent with limited input
+            # 中文化铁律: pass macro_context so the rule-based sector agent
+            # sees language="zh-CN" for A-shares (mirrors the LLM path's
+            # BUG-FIX 2026-04-15 at the sector_inp above).
             sector_inp = AgentInput(
                 entity_id=entity_id, run_id=run_id,
                 question_id=f"q_{config.ticker.lower()}_sector",
                 metric_results={k: v for k, v in computed_metrics.items()
                                if k in ("arpu", "dau_mau_ratio", "gross_margin", "operating_margin")},
                 sector_pack=sector_pack,
+                macro_context=agent_macro,
             )
             sector_out = SectorContextAgent().run(sector_inp)
             agents_results[sector_out.judgment.agent_name] = sector_out
@@ -3228,6 +3232,18 @@ class AutoResearchOrchestrator:
             cache_dir = _Path(".cache/smoke") if getattr(config, "smoke_mode", False) else _Path(".cache")
             cache_dir.mkdir(parents=True, exist_ok=True)
             cache_file = cache_dir / f"{config.ticker.lower()}_replay_state.pkl"
+            # AUDIT follow-up (2026-07-10): critic_context carries the live
+            # shared_llm_client (BUG-Y40 cost accounting). DeepSeek's OpenAI
+            # SDK client holds a _thread.RLock — pickling it killed the whole
+            # replay dump on every LLM run ("cannot pickle '_thread.RLock'").
+            # Drop runtime-only handles from a shallow copy; replay can't use
+            # a live client anyway.
+            _cc_picklable = critic_context
+            if isinstance(critic_context, dict):
+                _cc_picklable = {
+                    k: v for k, v in critic_context.items()
+                    if k != "shared_llm_client"
+                }
             state = {
                 "entity_id": entity_id,
                 "entity_name": entity_name,
@@ -3235,7 +3251,7 @@ class AutoResearchOrchestrator:
                 "config": config,
                 "all_judgments": all_judgments,
                 "critic_results": critic_results,
-                "critic_context": critic_context,
+                "critic_context": _cc_picklable,
                 "synthesized_thesis": synthesized_thesis,
                 "research_directive": research_directive,
                 "gate_result_first_pass": gate_result,  # may re-evaluate
@@ -3269,8 +3285,22 @@ class AutoResearchOrchestrator:
                 # section without re-hitting the FRED API. None for A-shares.
                 "macro_snapshot": us_snap if not is_a_share else None,
             }
+            try:
+                _blob = pickle.dumps(state)
+            except Exception:
+                # Belt-and-braces: a single unpicklable object must not kill
+                # the whole replay cache. Drop offending keys, keep the rest.
+                _dropped = []
+                for _k in list(state.keys()):
+                    try:
+                        pickle.dumps(state[_k])
+                    except Exception:
+                        _dropped.append(_k)
+                        state[_k] = None
+                _log(f"  ⚠ Replay cache: dropped unpicklable keys {_dropped}")
+                _blob = pickle.dumps(state)
             with cache_file.open("wb") as f:
-                pickle.dump(state, f)
+                f.write(_blob)
             _log(f"💾 Replay cache saved: {cache_file} ({cache_file.stat().st_size // 1024}KB)")
         except Exception as cache_err:
             _log(f"  ⚠ Replay cache dump failed: {cache_err}")

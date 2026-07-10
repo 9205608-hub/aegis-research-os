@@ -1,6 +1,23 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-10 (Kimi 后端整体摘除 + Grok 备选后端接入；同日早间：康达新材验证 + 行业解析根因修复)
+> 最新更新: 2026-07-10 第三批 (康达新材首次 DeepSeek 全量 LLM run 实证 + rule-based 模板中文化 + 两个实战新 bug 修复)
+
+## 🎯 2026-07-10 康达新材(002669) 首次 DeepSeek 全量 LLM run + 三项修复
+
+**实证数据**：25 分钟 / $0.17 / 18 次 LLM 调用 / **7 agent 全真 LLM 零 mock**（B1 恢复链修复后的首次全量验证）/ Editor 中文标题「33倍PE定价的'增长故事'，DCF概率加权仅¥2.36——一场83%估值落差下的流动性陷阱」/ scrubber 实战拦截 LLM 编造「¥10 公允价值」×2 / 决策 blocked（terminal_value_gate，与 rule-based 一致）。用户 DEEPSEEK_API_KEY 已入 run_research.local.sh（gitignore + chmod 600）。
+
+**修复 ①：rule-based 兜底模板全英文（中文化铁律漏网区，用户实际投诉）**
+7 个 specialist 的 rule-based 路径（observations/inferences/counterarguments/uncertainties 等）全部英文硬编码——smoke/--no-llm 报告全英文，LLM run 中 agent 失败退兜底时英文混入中文报告。修复：base.py 新增 `is_zh_input()`（与 LLM 路径 language 信号同源），7 个 agent 全部字符串 zh/en 双语（券商研报口吻，en 路径逐字不变）；顺带修 orchestrator no-llm 路径 sector_inp 漏传 macro_context。验证：822 段 zh 输出零英文泄漏（对照组确认检测器有效），en 路径 7 组逐字锚点不变。新增 test_rule_based_zh.py 35 用例。
+
+**修复 ②：scrubber 误伤比率修辞（实战暴露）**
+lede 中「每确认¥1账面利润，实际要烧掉近¥10现金」的 ¥10（CFO/NI≈-9.56x 修辞）被当成公允价值声明改写成英文占位符 `[see DCF scenarios]`，中文句子烂在句中。修复：[thesis_synthesizer.py](aegis/core/chief_analyst/thesis_synthesizer.py) 新增 `_FAIR_VALUE_CONTEXT` 语境门——数字 ±40 字符内出现 目标价/公允/合理价/每股价值/fair value 等词才按公允价值声明审查（宁漏勿假，同 Y48 原则）；替换占位符中文报告改用「〔详见DCF情景估值〕」。真恶意声明（"合理估值应达¥10"）仍拦截。+4 测试。
+
+**修复 ③：replay cache 全量 LLM run 必炸（实战暴露）**
+`cannot pickle '_thread.RLock'`——critic_context 里的 shared_llm_client（BUG-Y40 成本统计）在 DeepSeek 后端下是 OpenAI SDK client（含线程锁），pickle 整包报废。老 Kimi 是裸 requests 所以从没炸过，切 DS 后每次 LLM run 必炸。修复：dump 前从 critic_context 浅拷贝剔除 shared_llm_client + 逐键兜底（坏键置 None 打日志，其余照存）。
+
+**基础设施**：run_research.sh 现在自动 source `run_research.local.sh`（此前只在注释里提过从未实现）；SDK 后端（Claude Max OAuth，`BACKEND=sdk` + `claude setup-token`）与 Grok（key 备好即用）在 local.sh 里留了模板。
+
+**测试：931 → 970 passed**（+35 zh 模板 +4 scrubber 门）。遗留：ComparativeAnalyst（multi-entity demo 专用）未双语化；en 路径 accruals_ratio 观察索引匹配 quirk 保持现状（详见 workflow notes）。
 
 ## 🗑 2026-07-10 Kimi 后端整体摘除 + Grok 接入
 

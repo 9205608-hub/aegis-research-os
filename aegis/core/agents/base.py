@@ -27,6 +27,20 @@ from aegis.data_contracts.judgment_schema import (
 )
 
 
+def is_zh_input(inp: "AgentInput") -> bool:
+    """True when the run targets a Simplified-Chinese (A-share) report.
+
+    Mirrors the LLM path's language detection (llm_agent_base.py, the
+    language_directive block): the orchestrator stamps
+    macro_context["language"] = "zh-CN" (plus market_id = "cn") for
+    A-share entities. Rule-based agents call this to pick the zh template
+    branch, so smoke/--no-llm runs and LLM→rule-based fallbacks obey the
+    中文化铁律 (CLAUDE.md): A 股报告所有自然语言必须是简体中文.
+    """
+    mc = getattr(inp, "macro_context", None) or {}
+    return mc.get("language") == "zh-CN" or mc.get("market_id") == "cn"
+
+
 @dataclass
 class AgentInput:
     """Standard input bundle for any specialist agent."""
