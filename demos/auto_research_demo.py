@@ -76,6 +76,11 @@ def main():
                         help="Smoke-test mode: skip ALL LLM calls (rule-based agents only), still run "
                              "data fetch / DCF / HTML render. Targets <5 min completion to validate "
                              "non-LLM bug fixes without paying the 25-75 min LLM pipeline cost.")
+    parser.add_argument("--update", action="store_true",
+                        help="Aegis 2.0 Phase 2: 增量模式。data 永远重跑（行情/事件/季报保鲜）、"
+                             "valuation 永远重算、report 永远重渲染；agents stage 仅在基本面输入 "
+                             "digest 与上次 checkpoint 一致时复用缓存判断与合成产物（零 LLM 调用，"
+                             "全程 <3 分钟），否则自动回退全量重跑。")
     args = parser.parse_args()
 
     # TODO-1 (2026-04-24): smoke mode forces non-LLM paths for fast iteration.
@@ -118,6 +123,7 @@ def main():
         enable_quarterly=not args.no_quarterly,
         strict_llm=args.strict_llm,
         smoke_mode=args.smoke,
+        update_mode=args.update,
     )
 
     print(f"{'='*70}")
@@ -129,6 +135,8 @@ def main():
     print(f"{'='*70}")
     print(f"  Price: ${config.current_price}" if config.current_price else "  Price: not provided")
     print(f"  WACC: {config.wacc:.1%}  TG: {config.terminal_growth_rate:.1%}")
+    if config.update_mode:
+        print("  增量模式 (--update): 基本面未变时复用上次智能体分析（零 LLM 调用）")
     if config.use_llm:
         print(f"  LLM Mode: {config.llm_model} (backend: {config.llm_backend})")
         if config.fast_agents:

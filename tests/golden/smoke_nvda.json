@@ -1,0 +1,713 @@
+{
+  "report": {
+    "agents": [
+      {
+        "cons": [
+          "Aggregate metrics can mask segment-level issues — a single profitable segment may subsidize losses elsewhere",
+          "Cross-standard differences in revenue recognition, R&D treatment, and government subsidy classification may affect metric comparability"
+        ],
+        "fallback": false,
+        "name": "Earnings quality & cash flow",
+        "narrative": "",
+        "pros": [
+          "Accruals ratio is 0.0839, indicating acceptable earnings quality",
+          "CFO/Net Income ratio is 0.86 — healthy"
+        ],
+        "role": "Accounting Analyst",
+        "score": 3.4,
+        "stance": "bull",
+        "thesis": "Earnings quality appears sound — accruals and cash conversion are within normal ranges"
+      },
+      {
+        "cons": [
+          "High margins may reflect temporary market position rather than structural moat — new entrants or regulation could compress margins"
+        ],
+        "fallback": false,
+        "name": "Unit economics & segment mix",
+        "narrative": "",
+        "pros": [
+          "Gross margin is 71.07%",
+          "ROIC is 66.39%, indicating value-creating capital allocation"
+        ],
+        "role": "Business Analyst",
+        "score": 3.0,
+        "stance": "bull",
+        "thesis": "Business exhibits strong pricing power and capital efficiency — consistent with a durable moat"
+      },
+      {
+        "cons": [
+          "Historical ROIC reflects past decisions — current management's strategy may differ. CEO tenure and recent major decisions should be weighted more heav",
+          "Quantitative track record alone cannot capture management quality — communication transparency and strategic consistency also matter"
+        ],
+        "fallback": false,
+        "name": "Capital allocation & strategy",
+        "narrative": "",
+        "pros": [
+          "ROIC is 66.39% — reflects capital allocation effectiveness",
+          "ROE is 76.33%"
+        ],
+        "role": "Management Analyst",
+        "score": 3.0,
+        "stance": "bull",
+        "thesis": "Management demonstrates strong capital allocation — ROIC exceeds cost of capital"
+      },
+      {
+        "cons": [
+          "DCF valuation is highly sensitive to terminal growth and WACC assumptions — small changes drive large value swings"
+        ],
+        "fallback": false,
+        "name": "DCF & multiples triangulation",
+        "narrative": "",
+        "pros": [
+          "P/E (TTM): 30.6x",
+          "P/E (FY static): 40.6x"
+        ],
+        "role": "Valuation Analyst",
+        "score": 3.4,
+        "stance": "neutral",
+        "thesis": "Scenario spread (bull/bear): 104% — wide range of outcomes"
+      },
+      {
+        "cons": [
+          "Variant thesis without near-term catalyst may fail to converge within horizon — 'the market can stay irrational longer than you can stay solvent'"
+        ],
+        "fallback": false,
+        "name": "Consensus gap decomposition",
+        "narrative": "",
+        "pros": [
+          "Market-implied revenue growth: 17.70%",
+          "Consensus revision momentum: flat, breadth=mixed"
+        ],
+        "role": "Variant Analyst",
+        "score": 3.3,
+        "stance": "bear",
+        "thesis": "Base case implies -25% downside — price above our intrinsic value estimate"
+      },
+      {
+        "cons": [
+          "Risk assessment may be overly conservative — tail risks by definition have low probability"
+        ],
+        "fallback": false,
+        "name": "Concentration & solvency",
+        "narrative": "",
+        "pros": [
+          "Net Debt/EBITDA: -0.0x — leverage is manageable",
+          "Current ratio: 3.91x"
+        ],
+        "role": "Risk Analyst",
+        "score": 3.8,
+        "stance": "bear",
+        "thesis": "Net cash position provides balance sheet optionality — reduces downside risk in stress scenarios"
+      },
+      {
+        "cons": [
+          "Structural shifts (e.g., AI demand in semiconductors) may decouple entity from traditional cycle patterns",
+          "Sector pack benchmarks are general — company-specific factors may justify deviation from sector norms"
+        ],
+        "fallback": false,
+        "name": "Macro & industry context",
+        "narrative": "",
+        "pros": [
+          "Entity classified under sector: Semiconductor (pack: sp_semiconductor_v1)",
+          "Sector KPI 'Gross margin' = 0.7106808435754708 [importance: medium]"
+        ],
+        "role": "Sector Context Agent",
+        "score": 3.8,
+        "stance": "neutral",
+        "thesis": "Sector is highly cyclical — current-period metrics may not represent mid-cycle earnings power"
+      }
+    ],
+    "bias": "warned",
+    "catalysts": [
+      {
+        "date": "2026-08-26",
+        "impact": "Medium",
+        "note": "",
+        "title": "Earnings Report"
+      },
+      {
+        "date": "2026-08-09",
+        "impact": "Low",
+        "note": "10-Q Q2 filing deadline (period ending 2026-06-30)",
+        "title": "SEC 10-Q Q2 Due"
+      },
+      {
+        "date": "2026-11-09",
+        "impact": "Low",
+        "note": "10-Q Q3 filing deadline (period ending 2026-09-30)",
+        "title": "SEC 10-Q Q3 Due"
+      },
+      {
+        "date": "2027-03-01",
+        "impact": "Low",
+        "note": "10-K Annual Report filing deadline (period ending 2026-12-31)",
+        "title": "SEC 10-K Annual Report Due"
+      }
+    ],
+    "code": "nvda",
+    "company": "NVIDIA Corporation",
+    "companyFullName": "NVIDIA Corporation",
+    "conclusion": {
+      "catalystsTitle": "Catalysts · Next 6 months",
+      "paragraphs": [],
+      "subtitle": "Chief Analyst · Final",
+      "title": "Awaiting catalyst verification"
+    },
+    "confidence": "Medium",
+    "coreCalloutHtml": "<strong>Core judgment: </strong>Base-case DCF $151.36; probability-weighted $160.22, implying <strong>-20.5%</strong> vs spot $201.45.",
+    "critics": [
+      {
+        "issues": 0,
+        "name": "Logic Critic"
+      },
+      {
+        "issues": 0,
+        "name": "Accounting Critic"
+      },
+      {
+        "issues": 4,
+        "name": "Evidence Critic"
+      },
+      {
+        "issues": 1,
+        "name": "Sector Critic"
+      },
+      {
+        "issues": 3,
+        "name": "Cognitive Bias Critic"
+      },
+      {
+        "issues": 2,
+        "name": "Macro Consistency Critic"
+      },
+      {
+        "issues": 0,
+        "name": "Market Critic"
+      },
+      {
+        "issues": 0,
+        "name": "Numeric Consistency Critic"
+      },
+      {
+        "issues": 0,
+        "name": "Narrative Fact Critic"
+      },
+      {
+        "issues": 1,
+        "name": "LLM Judge"
+      }
+    ],
+    "dataAsOf": null,
+    "dcf": {
+      "gBase": 3.0,
+      "growthPathCapped": true,
+      "growthPathCappedYear": 6,
+      "paragraphHtml": "Two-stage FCFF: Y1–Y10 explicit + terminal (g = 3.0%, WACC = 9.5%). ⚠ Growth path capped from Y6 at the cumulative 30× revenue bound and converged to terminal growth (engine intervention, not a model view).",
+      "projection": [
+        [
+          1,
+          274.84651,
+          165.952322738,
+          4.0394526153248185,
+          140.89352200456202,
+          6.87116275,
+          0.6506751,
+          137.41113676988684,
+          125.48962262090123
+        ],
+        [
+          2,
+          337.41739013,
+          199.143743654726,
+          5.345327823719622,
+          169.07303836286238,
+          8.43543475325,
+          0.6257088013000001,
+          165.357222632032,
+          137.90973718815872
+        ],
+        [
+          3,
+          414.28633981489,
+          238.8775035372656,
+          7.037337152268917,
+          202.80700050313848,
+          10.357158495372252,
+          0.7686894968489002,
+          198.71848966318626,
+          151.35470298931907
+        ],
+        [
+          4,
+          495.4229121344767,
+          278.97264182292383,
+          8.982718167049963,
+          236.84777290766232,
+          12.385572803361917,
+          0.8113657231958668,
+          232.6335525481545,
+          161.81391895427143
+        ],
+        [
+          5,
+          576.5286001325129,
+          316.8024657728159,
+          11.113268345155369,
+          268.96529344112065,
+          14.413215003312827,
+          0.8110568799803626,
+          264.8542899029828,
+          168.24277221495709
+        ],
+        [
+          6,
+          652.4086129949615,
+          349.62577570399986,
+          13.322799093712526,
+          296.8322835726959,
+          16.310215324874036,
+          0.7588001286244849,
+          293.08606721290994,
+          170.0240896824653
+        ],
+        [
+          7,
+          717.3060412711161,
+          374.64894535590395,
+          15.469212090613793,
+          318.0769546071624,
+          17.932651031777905,
+          0.6489742827615466,
+          314.96454138323674,
+          166.86406894722438
+        ],
+        [
+          8,
+          765.5069788907917,
+          389.41340016174587,
+          17.385024424236615,
+          330.6119767373222,
+          19.137674472269794,
+          0.4820093761967566,
+          328.3773173130923,
+          158.87669508364175
+        ],
+        [
+          9,
+          792.2997231519694,
+          392.26759293253997,
+          18.900496678942066,
+          333.03518639972646,
+          19.807493078799236,
+          0.26792744261177615,
+          331.8602625572575,
+          146.63180473283867
+        ],
+        [
+          10,
+          820.0302134622882,
+          394.8445477820918,
+          20.500755336557205,
+          335.22302106699595,
+          20.500755336557205,
+          0.27730490310318845,
+          334.94571616389277,
+          135.155348259734
+        ]
+      ],
+      "sharesBase": 24.22,
+      "subtitle": "DCF Engine · Two-stage FCFF",
+      "summary": {
+        "equity": 3666.2,
+        "ev": 3664.1,
+        "netDebt": -2.1,
+        "perShare": 151.36,
+        "pvCashflows": 1522.4,
+        "pvTerminal": 2141.7,
+        "shares": 24.22
+      },
+      "title": "10-year FCFF bridge & EV decomposition",
+      "unit": "USD billions",
+      "waccBase": 9.5
+    },
+    "display": {
+      "bigScale": 1000000000000.0,
+      "bigUnit": "T",
+      "currency": "USD",
+      "scale": 1000000000.0,
+      "symbol": "$",
+      "unit": "B"
+    },
+    "driverSensitivity": [
+      {
+        "delta": 26.1,
+        "k": "Revenue Growth",
+        "shock": 191
+      },
+      {
+        "delta": -14.7,
+        "k": "WACC",
+        "shock": 129
+      },
+      {
+        "delta": 10.1,
+        "k": "Operating Margin",
+        "shock": 167
+      },
+      {
+        "delta": 3.3,
+        "k": "Terminal Growth",
+        "shock": 156
+      },
+      {
+        "delta": -1.8,
+        "k": "Effective Tax Rate",
+        "shock": 149
+      },
+      {
+        "delta": -0.1,
+        "k": "Capex / Revenue",
+        "shock": 151
+      }
+    ],
+    "exchange": "NASDAQ",
+    "executiveParagraphs": [],
+    "financials": {
+      "calloutHtml": "",
+      "kpis": [
+        {
+          "label": "Revenue",
+          "value": "$215.9B"
+        },
+        {
+          "label": "Net Income",
+          "value": "$120.1B"
+        },
+        {
+          "label": "EBITDA",
+          "value": "$133.2B"
+        },
+        {
+          "label": "CFO",
+          "tone": "up",
+          "value": "$102.7B"
+        },
+        {
+          "label": "Gross Margin",
+          "total": true,
+          "value": "71.1%"
+        },
+        {
+          "label": "Op. Margin",
+          "value": "60.4%"
+        },
+        {
+          "label": "ROIC",
+          "value": "66.4%"
+        },
+        {
+          "label": "ROE",
+          "value": "76.3%"
+        },
+        {
+          "label": "P/E (static)",
+          "value": "30.6×"
+        },
+        {
+          "label": "EV / EBITDA",
+          "value": "36.6×"
+        }
+      ],
+      "kpisTitle": "FY2026 Key Metrics",
+      "paragraphs": [],
+      "revFootnote": "",
+      "revHighlightYear": "2026",
+      "revHistory": [
+        {
+          "v": 26.9,
+          "y": "2022"
+        },
+        {
+          "v": 27.0,
+          "y": "2023"
+        },
+        {
+          "v": 60.9,
+          "y": "2024"
+        },
+        {
+          "v": 130.5,
+          "y": "2025"
+        },
+        {
+          "v": 215.9,
+          "y": "2026"
+        }
+      ],
+      "revTitle": "Annual revenue · USD billions",
+      "subtitle": "Accounting Analyst · Business Analyst",
+      "title": "Income statement vs cash flow"
+    },
+    "headline": "NVIDIA Corporation: rule-based DCF implies 20.5% downside",
+    "lede": "",
+    "macro": {
+      "kpis": [
+        {
+          "label": "Fed Funds Rate",
+          "value": "4.25%"
+        },
+        {
+          "label": "US 10Y Yield",
+          "value": "4.30%"
+        },
+        {
+          "label": "CPI YoY",
+          "value": "2.80%"
+        },
+        {
+          "label": "Unemployment",
+          "value": "3.80%"
+        },
+        {
+          "label": "VIX",
+          "value": "18.5"
+        },
+        {
+          "label": "Manufacturing PMI",
+          "value": "52.3"
+        },
+        {
+          "label": "2s10s Spread",
+          "value": "20 bps"
+        },
+        {
+          "label": "US Dollar Index",
+          "value": "104.5"
+        }
+      ],
+      "kpisTitle": "Key macro variables",
+      "paragraphs": [
+        "The Fed Funds Rate is <strong>4.25%</strong> against <strong>2.80%</strong> CPI YoY, implying a real rate of <strong>+1.45%</strong>. The US 10Y yield sits at <strong>4.30%</strong> with a 2s10s spread of <strong>20 bps</strong>.",
+        "volatility sits in a <strong>normal vol</strong> (18.5 VIX); manufacturing is <strong>expanding</strong> (52.3 PMI)."
+      ],
+      "shares": [],
+      "subtitle": "late expansion cycle",
+      "title": "Macro Context"
+    },
+    "model": "—",
+    "period": "FY2026",
+    "pipelineDuration": "<NORMALIZED>",
+    "price": {
+      "asOf": "<NORMALIZED>",
+      "change": 0.0,
+      "changePct": 0.0,
+      "currency": "$",
+      "last": 201.45,
+      "market": "US"
+    },
+    "pricedIn": null,
+    "quick": [
+      {
+        "lbl": "Market Cap",
+        "sub": "P/S 22.6×",
+        "val": "$4.88T"
+      },
+      {
+        "lbl": "P/E (TTM)",
+        "sub": "EPS 4.93",
+        "val": "30.6×"
+      },
+      {
+        "lbl": "EV / EBITDA",
+        "sub": "",
+        "val": "36.6×"
+      },
+      {
+        "lbl": "Op. Margin",
+        "sub": "",
+        "val": "60.4%"
+      },
+      {
+        "lbl": "Operating Cash Flow",
+        "sub": "CFO / NI = 0.86",
+        "val": "$102.7B"
+      }
+    ],
+    "rail": {
+      "biasStatus": "warned",
+      "marketKvs": [
+        {
+          "k": "Market Cap",
+          "v": "$4.88T"
+        },
+        {
+          "k": "Revenue (TTM)",
+          "v": "$215.9B"
+        },
+        {
+          "k": "Cash & equiv.",
+          "v": "$10.6B"
+        },
+        {
+          "k": "Total Debt",
+          "v": "$8.5B"
+        },
+        {
+          "k": "Net Debt",
+          "tone": "up",
+          "v": "$-2.1B"
+        },
+        {
+          "k": "EV / EBITDA",
+          "v": "36.6×"
+        }
+      ],
+      "openQuestions": [],
+      "priceHistory": [
+        201.45
+      ]
+    },
+    "rating": {
+      "bookValuePerShare": 6.49,
+      "dcfMeaningful": true,
+      "downgraded": false,
+      "riskLevel": "Medium-High",
+      "target": 160.22,
+      "timeHorizon": "12 months",
+      "tone": "avoid",
+      "weighted": "Probability-weighted",
+      "word": "Avoid"
+    },
+    "reportDate": "<NORMALIZED>",
+    "riskWarning": null,
+    "runId": "<NORMALIZED>",
+    "scenarios": [
+      {
+        "clamped": false,
+        "key": "bear",
+        "narrative": "",
+        "prob": 0.25,
+        "px": 111.1,
+        "tag": "Bear Case"
+      },
+      {
+        "clamped": false,
+        "key": "base",
+        "narrative": "",
+        "prob": 0.5,
+        "px": 151.36,
+        "tag": "Base Case"
+      },
+      {
+        "clamped": true,
+        "footnote": "⚠ Value clamped to a conservative bound (raw model output $84.44)",
+        "key": "bull",
+        "narrative": "⚠ Value clamped to a conservative bound (raw model output $84.44)",
+        "prob": 0.25,
+        "px": 227.05,
+        "rawPx": 84.44,
+        "tag": "Bull Case"
+      }
+    ],
+    "sector": "—",
+    "sensitivity": {
+      "baseValue": 151.36419645463684,
+      "cols": [
+        2.0,
+        2.5,
+        3.0,
+        3.5,
+        4.0
+      ],
+      "footnote": "Green = above base (more upside), red = below.",
+      "matrix": [
+        [
+          178.9,
+          190.4,
+          204.21,
+          221.09,
+          242.18
+        ],
+        [
+          162.97,
+          172.31,
+          183.35,
+          196.59,
+          212.78
+        ],
+        [
+          149.36,
+          157.04,
+          166.0,
+          176.59,
+          189.3
+        ],
+        [
+          137.6,
+          143.99,
+          151.36,
+          159.96,
+          170.13
+        ],
+        [
+          127.36,
+          132.72,
+          138.85,
+          145.93,
+          154.18
+        ],
+        [
+          118.35,
+          122.89,
+          128.04,
+          133.93,
+          140.72
+        ],
+        [
+          110.37,
+          114.25,
+          118.61,
+          123.56,
+          129.21
+        ]
+      ],
+      "paragraphs": [
+        "Elasticity of base per-share value under ±1σ single-factor shocks."
+      ],
+      "rows": [
+        8.0,
+        8.5,
+        9.0,
+        9.5,
+        10.0,
+        10.5,
+        11.0
+      ]
+    },
+    "staleBanner": null,
+    "thesis": {
+      "core": "",
+      "counter": "",
+      "divergence": "",
+      "marketStory": "",
+      "variant": "",
+      "whyNow": ""
+    },
+    "tickerMark": "NV",
+    "valuationPullquote": null
+  },
+  "summary": {
+    "bias_check_status": "warned",
+    "confidence_bucket": "medium",
+    "entity_id": "nvda",
+    "gate_checks_passed": 13,
+    "gate_checks_total": 13,
+    "gate_publishable": true,
+    "kill_criteria_count": 4,
+    "monitorables_count": 26,
+    "publishing_status": "published",
+    "signal_conviction": "medium",
+    "signal_direction": "short",
+    "signal_sizing_tier": "starter_position"
+  }
+}

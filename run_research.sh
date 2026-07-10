@@ -9,6 +9,10 @@
 #   ./run_research.sh --smoke NVDA            # smoke mode (rule-based, <5min)
 #   ./run_research.sh --strict-llm NVDA       # fail hard on agent mock fallback
 #   FAST_AGENTS=1 ./run_research.sh NVDA      # hybrid flash routing (see below)
+#   UPDATE=1 ./run_research.sh 002669         # Aegis 2.0 Phase 2 增量模式：
+#                                             # data/valuation/report 照常刷新，
+#                                             # 基本面未变时复用上次智能体分析
+#                                             # （零 LLM 调用，全程 <3 分钟）
 #
 # Price and period defaults:
 #   - If PRICE arg is empty or not passed, yfinance auto-fetches current price
@@ -85,6 +89,12 @@ if [ "${FAST_AGENTS:-0}" = "1" ]; then
     FAST_AGENTS_ARG="--fast-agents"
 fi
 
+# Aegis 2.0 Phase 2 (任务 C2): UPDATE=1 环境开关透传为 --update 增量模式。
+UPDATE_ARG=""
+if [ "${UPDATE:-0}" = "1" ]; then
+    UPDATE_ARG="--update"
+fi
+
 # Build price arg: only pass --price if user provided one
 PRICE_ARG=""
 if [ -n "$PRICE" ]; then
@@ -93,10 +103,10 @@ fi
 
 if [ -n "$SMOKE" ]; then
     echo "Running in SMOKE mode (rule-based, <5min plumbing check) — period=latest, auto-price..."
-    python demos/auto_research_demo.py "$TICKER" $PRICE_ARG --wacc 0.095 --period latest --smoke
+    python demos/auto_research_demo.py "$TICKER" $PRICE_ARG --wacc 0.095 --period latest --smoke $UPDATE_ARG
 elif [ "$NO_LLM" = "--no-llm" ]; then
     echo "Running in rule-based mode (no LLM) — period=latest, auto-price..."
-    python demos/auto_research_demo.py "$TICKER" $PRICE_ARG --wacc 0.095 --period latest
+    python demos/auto_research_demo.py "$TICKER" $PRICE_ARG --wacc 0.095 --period latest $UPDATE_ARG
 else
     # Default backend: deepseek (V4) — OpenAI-compatible, direct access from
     # China, low cost. Falls back to subprocess (Claude Max via CLI) if
@@ -107,5 +117,5 @@ else
     MODEL="${MODEL:-deepseek-v4-pro}"
     echo "Running with LLM agents (backend=$BACKEND model=$MODEL) — period=latest, auto-price..."
     python demos/auto_research_demo.py "$TICKER" $PRICE_ARG --wacc 0.095 --period latest \
-        --llm --backend "$BACKEND" --model "$MODEL" $STRICT_LLM $FAST_AGENTS_ARG
+        --llm --backend "$BACKEND" --model "$MODEL" $STRICT_LLM $FAST_AGENTS_ARG $UPDATE_ARG
 fi
