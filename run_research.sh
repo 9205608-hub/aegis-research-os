@@ -29,8 +29,20 @@
 #   (--fast, DEEP→standard depth downgrade, remains an explicit CLI opt-in
 #   on demos/auto_research_demo.py — it trades away narrative_supplement
 #   content, which is not a pure performance knob.)
+#
+# Local secrets:
+#   若同目录存在 run_research.local.sh（已 gitignore），会在解析参数前自动
+#   source，用于注入 DEEPSEEK_API_KEY / GROK_API_KEY / KIMI_API_KEY 等本地
+#   密钥，避免把真实 key 写进本文件或提交到仓库。
 
 set -e
+
+# Auto-load local secrets file if present (gitignored; see header comment).
+SCRIPT_DIR="$(dirname "$0")"
+if [ -f "$SCRIPT_DIR/run_research.local.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/run_research.local.sh"
+fi
 
 # Parse leading flags (--smoke / --strict-llm) before positional args.
 SMOKE=""

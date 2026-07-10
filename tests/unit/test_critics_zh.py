@@ -342,3 +342,57 @@ class TestNumericCriticZh:
         j = _judgment("j_zh_204", ["净负债 47 亿 = 总债务 75 亿 − 现金 15 亿"])
         res = NumericConsistencyCritic().review([j])
         assert any(i.issue_code == "NUMERIC_BROKEN_EQUATION" for i in res.issues)
+
+
+class TestFairValueContextGate:
+    """AUDIT follow-up (2026-07-10, 康达新材 LLM run): bare currency figures
+    in ratio/illustration prose must not be scrubbed as fair-value claims,
+    and the rewrite tag must be Chinese in CN reports."""
+
+    SCEN = {"bear_value": 1.07, "base_value": 2.15,
+            "bull_value": 4.30, "currency": "CNY"}
+    MD = {"current_price": 13.76}
+
+    def test_cash_burn_ratio_not_scrubbed(self):
+        # The exact Kangda sentence that got rewritten into mid-sentence
+        # garbage: ¥10 is CFO/NI≈-9.56x illustration, not a value claim.
+        text = "换言之，公司每确认¥1账面利润，实际要烧掉近¥10现金。"
+        out, warns = _scrub_fair_value_claims(
+            {"executive_summary": text}, self.SCEN, self.MD,
+            fields=("executive_summary",),
+        )
+        assert out["executive_summary"] == text
+        assert warns == [], warns
+
+    def test_rogue_target_price_still_scrubbed_with_zh_tag(self):
+        # A genuine off-scenario fair-value claim near valuation context
+        # must still be caught — and rewritten with the Chinese tag.
+        text = "我们认为合理估值应达¥10，对应显著上行。"
+        out, warns = _scrub_fair_value_claims(
+            {"executive_summary": text}, self.SCEN, self.MD,
+            fields=("executive_summary",),
+        )
+        assert "〔详见DCF情景估值〕" in out["executive_summary"]
+        assert "¥10" not in out["executive_summary"]
+        assert warns and "VALUATION CONSISTENCY" in warns[0]
+
+    def test_english_rogue_claim_keeps_english_tag(self):
+        scen = {"bear_value": 60.0, "base_value": 90.0,
+                "bull_value": 120.0, "currency": "USD"}
+        text = "We believe fair value is $200 per share."
+        out, warns = _scrub_fair_value_claims(
+            {"executive_summary": text}, scen, {"current_price": 100.0},
+            fields=("executive_summary",),
+        )
+        assert "[see DCF scenarios]" in out["executive_summary"]
+        assert warns and "VALUATION CONSISTENCY" in warns[0]
+
+    def test_scenario_matching_value_near_context_not_scrubbed(self):
+        # Sanctioned base 2.15 quoted with valuation context → legitimate.
+        text = "DCF基准情景对应每股价值¥2.15，较现价存在明显落差。"
+        out, warns = _scrub_fair_value_claims(
+            {"executive_summary": text}, self.SCEN, self.MD,
+            fields=("executive_summary",),
+        )
+        assert out["executive_summary"] == text
+        assert warns == [], warns

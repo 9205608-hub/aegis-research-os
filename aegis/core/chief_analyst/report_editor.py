@@ -168,9 +168,9 @@ VALUATION ANCHORING (zero tolerance):
   not match one of those three. If you want to express a blended view,
   cite the probability-weighted value that the model already computed.
 - The synthesizer narrative occasionally contains the tag "[see DCF scenarios]"
-  — this is a marker that the upstream layer rewrote an off-scenario value.
-  Preserve this tag or replace it with the correct scenario number. Do NOT
-  fill in a guess.
+  (Chinese reports: "〔详见DCF情景估值〕") — this is a marker that the
+  upstream layer rewrote an off-scenario value. Preserve this tag or replace
+  it with the correct scenario number. Do NOT fill in a guess.
 - Violating this produces reports where the headline says one number and
   the scenario table shows another. The editor is the LAST line of defense."""
 
