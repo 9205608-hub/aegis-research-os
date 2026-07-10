@@ -132,6 +132,18 @@ _GROWTH_CONTEXT_KEYWORDS = (
     "cagr",
 )
 
+# AUDIT follow-up (2026-07-10, 康达新材 LLM run): context words that mark a
+# bare currency figure as a fair-value / price-target claim. A ¥/$ figure
+# with none of these nearby is illustrative prose (unit economics, cash-burn
+# ratios like "每确认¥1账面利润，实际要烧掉近¥10现金") and must NOT be
+# scrubbed — the old behaviour rewrote it into mid-sentence garbage.
+_FAIR_VALUE_CONTEXT = (
+    "目标价", "公允", "合理价", "内在价值", "每股价值", "每股", "估值",
+    "定价", "价值区间", "对应股价", "股价应", "看至", "上看", "应达",
+    "fair value", "price target", "target price", "intrinsic",
+    "worth", "per share", "per-share", "valuation", "should trade",
+)
+
 
 # AUDIT (2026-07, thesis_synthesizer:106/:112): Y48 introduced substring
 # collisions across the two direction sets — "回归"(down) ⊂ "估值回归"(up),
@@ -297,6 +309,15 @@ def _scrub_fair_value_claims(
                 )
                 if re.match(_agg_dash, lookahead):
                     continue
+            # AUDIT follow-up (2026-07-10, 康达新材 run): bare currency
+            # figures in ratio/illustration prose are not fair-value claims
+            # ("每确认¥1账面利润，实际要烧掉近¥10现金" was rewritten into
+            # mid-sentence garbage). Only scrutinise a figure when nearby
+            # context talks about value / price targets — otherwise skip
+            # (宁漏勿假, same principle as the Y48 direction-word fix).
+            _win = text[max(0, m.start() - 40):m.end() + 40].lower()
+            if not any(k in _win for k in _FAIR_VALUE_CONTEXT):
+                continue
             # A claim is bad if neither endpoint matches a sanctioned scenario.
             if v2 is not None:
                 if not _matches_scenario(v1) and not _matches_scenario(v2):
@@ -307,11 +328,12 @@ def _scrub_fair_value_claims(
         if not bad:
             continue
         # Rewrite the offending dollar tokens with a [see scenarios] tag.
+        # 中文化铁律: the tag itself must be Chinese in CN reports — the
+        # English tag was leaking into A-share ledes mid-sentence.
+        _tag = "〔详见DCF情景估值〕" if is_cny else "[see DCF scenarios]"
         new_text = text
         for token, _ in bad:
-            new_text = new_text.replace(
-                token, "[see DCF scenarios]", 1,
-            )
+            new_text = new_text.replace(token, _tag, 1)
         out[field_name] = new_text
         bad_str = ", ".join(t for t, _ in bad[:3])
         warnings.append(
