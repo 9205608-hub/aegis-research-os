@@ -1,6 +1,25 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-10 第五批 (**Aegis 2.0 Phase 1 落地**：A 股中频数据层，分支 claude/phase1-data-layer 待验收合并；Phase 0 已于 PR #11 合并)
+> 最新更新: 2026-07-10 第六批 (**Aegis 2.0 Phase 2 落地**：观点持久化 + --update 增量模式，分支 claude/phase2-persistence 待验收合并；P0=PR #11、P1=PR #12 已合并)
+
+## 🔄 2026-07-10 Phase 2 · 观点持久化 + 增量运行（DESIGN_2.0 第三期，待用户验收）
+
+**分支 `claude/phase2-persistence`（已 push 未合并）。测试 1276 → 1365 passed / 7 skipped。**
+
+### 交付物
+- ✅ **[golden_master.py](scripts/golden_master.py)（红线 7 闸门）**：record/check 双模式，沿 replay_from_cache 已验证缝重建报告 dict，NORMALIZE_RULES 固化 7 条易变字段（含确定性守卫：同 pkl 两次重建必须逐字节一致）。4 份基线（002669 LLM/002669/600519/nvda smoke）入库 tests/golden/。**此后任何 auto_research.py 手术每步必须 check 零 diff**。已知漂移面（catalysts 按日过滤、staleBanner 按月漂移）记录在 docstring：跨月手术先重新 record。27 测试
+- ✅ **[aegis/core/thesis/](aegis/core/thesis/)**：复活 ThesisContract 死合同。monitorables 封闭目录（verification 6 型号+价格偏离+公告关键词，阈值与检查器同源；LLM 乱写型号经归一化挂目录，挂不上降级 watch_only「人工关注」）；核验未通过项自动成为监控点；market_implied_story 从预期前沿生成；版本链 append-only JSONL（.cache/thesis/{entity}.jsonl，v/parent_version/run_id），不建状态机。44 测试
+- ✅ **最小 stage 化**：run() 四缝插桩（data/valuation/agents/report checkpoint + 输入 digest），**不搬代码不拆函数**（真拆解=Phase 4）；dump 复用防 RLock 净化
+- ✅ **--update 增量模式**（CLI --update / UPDATE=1）：data 永远新鲜、valuation 永远重算、report 永远重渲染；**agents 层按基本面 digest 复用**——digest 显式排除实时价格/市值/时间戳及 frontier/regime 等价格衍生键（盘中抖动不作废深度分析），基本面或事件一变自动回退全量。命中时零 LLM 调用，HTML 注入「智能体分析引用自 {时间}（基本面输入未变）｜观点版本 v{N}」。ScenarioArchitect 蓝图按 valuation digest 单独复用（否则 update 下仍发 LLM）
+- ✅ **meta_facts 棘轮（红线 8）**：FROZEN_WHITELIST 冻结 2026-07-10 真实基线 13 文件，白名单外新触碰 fail、迁移干净未删行也 fail（只许缩短）
+
+### 验证
+> golden check 4 快照零 diff（含 smoke 刷新 pkl 后复跑）；pytest 1365 绿；UPDATE=1 smoke 二次运行 **9 秒**、agents digest 命中零 LLM 调用、thesis 链 v1→v2、双标注渲染。LLM 全量+增量实测演示进行中（预期：首跑 ~20min 建观点 v1 → UPDATE=1 数分钟出 v2）
+
+### 遗留（Phase 2 第二批/Phase 3 接口）
+- typed FactsContext + dunder 方言清偿（评审估一个 session）——棘轮已冻结存量，迁移待下批
+- thesis review_date=+90 天已按 postmortem 对齐，90 天回看执行器属 Phase 3
+- 合并等用户验收
 
 ## 📡 2026-07-10 Phase 1 · A 股中频数据层（DESIGN_2.0 第二期，待用户验收）
 
