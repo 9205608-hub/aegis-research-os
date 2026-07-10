@@ -7,8 +7,12 @@ Tests cover:
 - NewsSentimentInsights dataclass
 - Rule-based fallback sentiment
 - NewsSentimentAnalyzer (no-LLM mode)
-- HTML report card rendering
 - Date range computation
+
+NOTE (Phase 0, DESIGN_2.0): the HTML report card tests
+(TestNewsSentimentCard) were removed together with html_report_legacy.py —
+they exercised `_build_news_sentiment_card`, a legacy-renderer-only helper
+with no production caller.
 """
 
 import pytest
@@ -240,72 +244,3 @@ class TestNewsSentimentAnalyzer:
         assert "Apple Inc." in msg
         assert "AAPL" in msg
         assert "Apple Q1 earnings beat" in msg
-
-
-# ============================================================
-# HTML Report Card Tests
-# ============================================================
-
-class TestNewsSentimentCard:
-
-    def test_card_renders_with_data(self):
-        from aegis.core.reports.html_report import _build_news_sentiment_card
-
-        insights = NewsSentimentInsights(
-            overall_sentiment="positive",
-            sentiment_score=0.45,
-            sentiment_trend="improving",
-            key_themes=["AI monetization", "Services growth"],
-            bullish_signals=["Record services revenue"],
-            bearish_signals=["China market weakness"],
-            news_summary="Apple sentiment is broadly positive driven by AI.",
-            materiality="medium",
-            article_count=12,
-            date_range="Apr 01 - Apr 13, 2026",
-        )
-
-        html = _build_news_sentiment_card(insights)
-        assert "News Sentiment" in html
-        assert "Positive" in html
-        assert "+0.45" in html
-        assert "AI monetization" in html
-        assert "Record services revenue" in html
-        assert "China market weakness" in html
-
-    def test_card_empty_when_none(self):
-        from aegis.core.reports.html_report import _build_news_sentiment_card
-        assert _build_news_sentiment_card(None) == ""
-
-    def test_card_empty_when_no_articles(self):
-        from aegis.core.reports.html_report import _build_news_sentiment_card
-
-        insights = NewsSentimentInsights(
-            overall_sentiment="neutral",
-            sentiment_score=0.0,
-            sentiment_trend="stable",
-            key_themes=[],
-            bullish_signals=[],
-            bearish_signals=[],
-            news_summary="",
-            materiality="low",
-            article_count=0,
-        )
-        assert _build_news_sentiment_card(insights) == ""
-
-    def test_card_shows_trend(self):
-        from aegis.core.reports.html_report import _build_news_sentiment_card
-
-        insights = NewsSentimentInsights(
-            overall_sentiment="negative",
-            sentiment_score=-0.3,
-            sentiment_trend="deteriorating",
-            key_themes=["Regulatory risk"],
-            bullish_signals=[],
-            bearish_signals=["Antitrust probe"],
-            news_summary="Negative sentiment.",
-            materiality="high",
-            article_count=5,
-        )
-        html = _build_news_sentiment_card(insights)
-        assert "Deteriorating" in html
-        assert "Negative" in html

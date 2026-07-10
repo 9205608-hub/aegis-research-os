@@ -230,23 +230,26 @@ const REPORT = (typeof window !== "undefined" && window.REPORT) ? window.REPORT 
 
 const SECTIONS_ZH = [
   { id: "sec-summary",     num: "01", title: "执行摘要" },
-  { id: "sec-valuation",   num: "02", title: "估值情景与结论" },
-  { id: "sec-macro",       num: "03", title: "宏观与行业语境" },
-  { id: "sec-financial",   num: "04", title: "财务解剖" },
-  { id: "sec-dcf",         num: "05", title: "DCF 推导" },
-  { id: "sec-agents",      num: "06", title: "七位专家观点" },
-  { id: "sec-sensitivity", num: "07", title: "敏感性分析" },
-  { id: "sec-conclusion",  num: "08", title: "结论与催化剂" },
+  // Aegis 2.0 Phase 0：预期前沿是第一公民，排在 DCF 情景区块之前
+  { id: "sec-pricedin",    num: "02", title: "市场在定价什么" },
+  { id: "sec-valuation",   num: "03", title: "估值情景与结论" },
+  { id: "sec-macro",       num: "04", title: "宏观与行业语境" },
+  { id: "sec-financial",   num: "05", title: "财务解剖" },
+  { id: "sec-dcf",         num: "06", title: "DCF 推导" },
+  { id: "sec-agents",      num: "07", title: "七位专家观点" },
+  { id: "sec-sensitivity", num: "08", title: "敏感性分析" },
+  { id: "sec-conclusion",  num: "09", title: "结论与催化剂" },
 ];
 const SECTIONS_EN = [
   { id: "sec-summary",     num: "01", title: "Executive summary" },
-  { id: "sec-valuation",   num: "02", title: "Scenarios & fair value" },
-  { id: "sec-macro",       num: "03", title: "Macro & industry context" },
-  { id: "sec-financial",   num: "04", title: "Financial dissection" },
-  { id: "sec-dcf",         num: "05", title: "DCF derivation" },
-  { id: "sec-agents",      num: "06", title: "Seven-agent views" },
-  { id: "sec-sensitivity", num: "07", title: "Sensitivity analysis" },
-  { id: "sec-conclusion",  num: "08", title: "Conclusion & catalysts" },
+  { id: "sec-pricedin",    num: "02", title: "What the market is pricing" },
+  { id: "sec-valuation",   num: "03", title: "Scenarios & fair value" },
+  { id: "sec-macro",       num: "04", title: "Macro & industry context" },
+  { id: "sec-financial",   num: "05", title: "Financial dissection" },
+  { id: "sec-dcf",         num: "06", title: "DCF derivation" },
+  { id: "sec-agents",      num: "07", title: "Seven-agent views" },
+  { id: "sec-sensitivity", num: "08", title: "Sensitivity analysis" },
+  { id: "sec-conclusion",  num: "09", title: "Conclusion & catalysts" },
 ];
 
 // ---------- Helpers ----------
@@ -262,6 +265,7 @@ const L = (zh, en) => isCN() ? zh : en;
 const _SECTIONS_FULL = isCN() ? SECTIONS_ZH : SECTIONS_EN;
 const _SECTION_DATA_GUARD = {
   "sec-summary":     () => REPORT.headline || REPORT.thesis,
+  "sec-pricedin":    () => REPORT.pricedIn && (REPORT.pricedIn.frontier || REPORT.pricedIn.regime || REPORT.pricedIn.events),
   "sec-valuation":   () => Array.isArray(REPORT.scenarios) && REPORT.scenarios.length > 0,
   "sec-macro":       () => REPORT.macro && (REPORT.macro.paragraphs?.length || REPORT.macro.kpis?.length),
   "sec-financial":   () => REPORT.financials && (REPORT.financials.revHistory?.length || REPORT.financials.kpis?.length),
@@ -585,6 +589,163 @@ function ExecutiveSummary() {
   );
 }
 
+// ---------- Aegis 2.0 Phase 0: 市场在定价什么（第一公民区块） ----------
+// 条件化预期前沿表 + 定价体制 + 验证点清单 + 近事件摘要。
+// 设计红线 1：本区块只提供叙事框架——DCF 情景与差值在下一节照旧完整展示。
+function PricedIn() {
+  const p = REPORT.pricedIn;
+  if (!p || (!p.frontier && !p.regime && !p.events)) return null;
+  const f = p.frontier;
+  const r = p.regime;
+  const ev = p.events;
+  const none = L("暂无", "n/a");
+  return (
+    <section id="sec-pricedin">
+      <SectionHead
+        idx={L("02 · 市场在定价什么", "02 · What the market is pricing")}
+        title={p.title || L("市场在定价什么", "What the market is pricing")}
+        subtitle={p.subtitle || L("条件化预期前沿 · 定价体制 · 验证点", "Expectations frontier · Pricing regime · Verification")}
+      />
+
+      {/* ── 条件化预期前沿表 ── */}
+      <div style={{marginTop: 8}}>
+        <div className="eyebrow" style={{marginBottom: 10}}>
+          {L("条件化预期前沿", "Conditional expectations frontier")}
+        </div>
+        {f && (f.rows || []).length > 0 ? (
+          <div style={{overflowX: "auto"}}>
+            <p style={{margin: "0 0 10px", color: "var(--text-3)", fontSize: 13.5}}>{f.priceLine}</p>
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>{L("利润率情景", "Margin scenario")}</th>
+                  <th className="num">{L("终年利润率", "Terminal margin")}</th>
+                  {(f.waccCols || []).map((c, i) => <th className="num" key={i}>{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {f.rows.map((row, ri) => (
+                  <tr key={ri}>
+                    <td>{row.label}</td>
+                    <td className="num">{row.margin}</td>
+                    {(row.cells || []).map((cell, ci) => {
+                      const noSol = (cell.flags || []).includes("no_solution");
+                      const extreme = (cell.flags || []).includes("extreme");
+                      const multi = (cell.flags || []).includes("multiple");
+                      return (
+                        <td className="num" key={ci} title={cell.diag || ""}
+                            style={noSol ? {color: "var(--text-4)"} : (ci === 1 ? {color: "var(--accent)"} : {})}>
+                          {extreme ? "⚠ " : ""}{cell.text}{multi ? L("（多解）", " (multi)") : ""}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="footnote">{f.note}</p>
+          </div>
+        ) : (
+          <p className="footnote">{L("暂无（前沿求解不可用）", "n/a (frontier unavailable)")}</p>
+        )}
+      </div>
+
+      {/* ── 定价体制标签 + 权重条 ── */}
+      <div style={{marginTop: 28}}>
+        <div className="eyebrow" style={{marginBottom: 10}}>{L("定价体制", "Pricing regime")}</div>
+        {r ? (
+          <div style={{padding: "18px 22px", background: "var(--bg-elev)", border: "1px solid var(--hairline)", borderRadius: 8}}>
+            <div style={{display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap"}}>
+              <span style={{fontSize: 17, color: "var(--text)", fontWeight: 600}}>{r.dominantLabel}</span>
+              {r.mixed && (
+                <span style={{fontSize: 12, color: "var(--text-3)", fontFamily: "var(--mono)"}}>
+                  {L("混合体制 · 单一框架不足以解释现价", "mixed regime")}
+                </span>
+              )}
+            </div>
+            <div style={{marginTop: 14, display: "grid", gap: 6}}>
+              {(r.weights || []).map(w => (
+                <div key={w.key} style={{display: "grid", gridTemplateColumns: "110px 1fr 52px", alignItems: "center", gap: 10}}>
+                  <span style={{fontSize: 12.5, color: "var(--text-3)"}}>{w.label}</span>
+                  <div style={{height: 6, background: "var(--hairline)", borderRadius: 3, overflow: "hidden"}}>
+                    <div style={{width: `${Math.min(100, w.pct)}%`, height: "100%", background: "var(--accent)"}}/>
+                  </div>
+                  <span className="mono" style={{fontSize: 12, color: "var(--text-3)", textAlign: "right"}}>{w.pct.toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+            {r.narrative && (
+              <p style={{margin: "14px 0 0", color: "var(--text-2)", fontSize: 13.5, lineHeight: 1.7}}>{r.narrative}</p>
+            )}
+          </div>
+        ) : (
+          <p className="footnote">{none}</p>
+        )}
+      </div>
+
+      {/* ── 验证点清单（Phase 0：未核验 — 核验能力为 Phase 1 交付物） ── */}
+      {(p.verification || []).length > 0 && (
+        <div style={{marginTop: 28}}>
+          <div className="eyebrow" style={{marginBottom: 10}}>{L("验证点清单", "Verification checklist")}</div>
+          <div style={{display: "grid", gap: 8}}>
+            {p.verification.map((v, i) => (
+              <div key={i} style={{display: "flex", gap: 10, alignItems: "baseline"}}>
+                <span style={{fontSize: 11, fontFamily: "var(--mono)", color: "var(--text-4)", border: "1px solid var(--hairline)", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap"}}>
+                  {v.status || L("未核验", "Unverified")}
+                </span>
+                <span style={{fontSize: 13.5, color: "var(--text-2)"}}>{v.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 近事件摘要（近 90 天预告 / 公告） ── */}
+      <div style={{marginTop: 28}}>
+        <div className="eyebrow" style={{marginBottom: 10}}>
+          {L("最新披露事件", "Recent disclosed events")}
+          {ev && ev.asOf ? <span style={{marginLeft: 8, color: "var(--text-4)", textTransform: "none", letterSpacing: 0}}>{L("截至 ", "as of ")}{ev.asOf}</span> : null}
+        </div>
+        {ev ? (
+          <div style={{display: "grid", gap: 18}}>
+            <div>
+              <div style={{fontSize: 12.5, color: "var(--text-3)", marginBottom: 6}}>{L("业绩预告", "Earnings forecasts")}</div>
+              {(ev.forecasts || []).length > 0 ? (
+                (ev.forecasts || []).map((fc, i) => (
+                  <div key={i} style={{fontSize: 13.5, color: "var(--text-2)", padding: "4px 0"}}>
+                    {L(`报告期 ${fc.period} · ${fc.type} · ${fc.indicator}：${fc.range}（公告日 ${fc.noticeDate}）`,
+                       `${fc.period} · ${fc.type} · ${fc.indicator}: ${fc.range} (disclosed ${fc.noticeDate})`)}
+                  </div>
+                ))
+              ) : (
+                <div style={{fontSize: 13, color: "var(--text-4)"}}>{L("暂无业绩预告", "No forecasts")}</div>
+              )}
+            </div>
+            <div>
+              <div style={{fontSize: 12.5, color: "var(--text-3)", marginBottom: 6}}>{L("公告标题（按日期倒序）", "Announcements (date desc)")}</div>
+              {(ev.announcements || []).length > 0 ? (
+                (ev.announcements || []).map((a, i) => (
+                  <div key={i} style={{fontSize: 13, color: "var(--text-2)", padding: "3px 0", display: "flex", gap: 10}}>
+                    <span className="mono" style={{color: "var(--text-4)", whiteSpace: "nowrap"}}>{a.date}</span>
+                    <span>{a.title}{a.category ? <span style={{color: "var(--text-4)"}}>（{a.category}）</span> : null}</span>
+                  </div>
+                ))
+              ) : (
+                <div style={{fontSize: 13, color: "var(--text-4)"}}>{L("暂无公告", "No announcements")}</div>
+              )}
+            </div>
+            {ev.consensusLine && (
+              <p className="footnote" style={{margin: 0}}>{L("一致预期（旁证口径）：", "Consensus (secondary evidence): ")}{ev.consensusLine}</p>
+            )}
+          </div>
+        ) : (
+          <p className="footnote">{none}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ValuationBand() {
   const segs = REPORT.scenarios || [];
   const pq = REPORT.valuationPullquote;
@@ -592,7 +753,7 @@ function ValuationBand() {
   if (segs.length === 0) return null;
   return (
     <section id="sec-valuation">
-      <SectionHead idx={L("02 · 估值情景与结论", "02 · Scenarios & fair value")} title={L("三情景分布与概率加权公允价值", "Three-scenario distribution & probability-weighted fair value")} subtitle={L("情景架构师 → 估值分析师", "Scenario Architect → Valuation Analyst")}/>
+      <SectionHead idx={L("03 · 估值情景与结论", "03 · Scenarios & fair value")} title={L("三情景分布与概率加权公允价值", "Three-scenario distribution & probability-weighted fair value")} subtitle={L("情景架构师 → 估值分析师", "Scenario Architect → Valuation Analyst")}/>
       <div className="scen-grid">
         {segs.map(s => (
           <div key={s.key} className={`scen-cell ${s.key}`}>
@@ -677,7 +838,7 @@ function Macro() {
 
   return (
     <section id="sec-macro">
-      <SectionHead idx={L("03 · 宏观与行业", "03 · Macro & industry")} title={m.title} subtitle={m.subtitle}/>
+      <SectionHead idx={L("04 · 宏观与行业", "04 · Macro & industry")} title={m.title} subtitle={m.subtitle}/>
       <div className="reading wide prose">
         {(m.paragraphs || []).map((html, i) => (
           <p key={i} dangerouslySetInnerHTML={{__html: html}}/>
@@ -737,7 +898,7 @@ function Financials() {
 
   return (
     <section id="sec-financial">
-      <SectionHead idx={L("04 · 财务解剖", "04 · Financial dissection")} title={f.title || L("财务解剖", "Financial dissection")} subtitle={f.subtitle}/>
+      <SectionHead idx={L("05 · 财务解剖", "05 · Financial dissection")} title={f.title || L("财务解剖", "Financial dissection")} subtitle={f.subtitle}/>
       {(f.paragraphs && f.paragraphs.length > 0) && (
         <div className="reading wide prose">
           {f.paragraphs.map((html, i) => (
@@ -804,7 +965,7 @@ function DcfSection() {
   const curr = CURR();
   return (
     <section id="sec-dcf">
-      <SectionHead idx={L("05 · DCF 推导", "05 · DCF derivation")} title={d.title || L("DCF 推导", "DCF derivation")} subtitle={d.subtitle}/>
+      <SectionHead idx={L("06 · DCF 推导", "06 · DCF derivation")} title={d.title || L("DCF 推导", "DCF derivation")} subtitle={d.subtitle}/>
       {d.paragraphHtml && (
         <div className="reading wide prose">
           <p dangerouslySetInnerHTML={{__html: d.paragraphHtml}}/>
@@ -886,7 +1047,7 @@ function DcfSection() {
 function AgentsSection() {
   return (
     <section id="sec-agents">
-      <SectionHead idx={L("06 · 专家观点", "06 · Expert views")} title={L("七位 Agent 的独立分析与分歧", "Seven independent agents — analyses & disagreements")} subtitle={L("Agent 小组 · 经 Critic 审核", "Agent Panel · Critic-Reviewed")}/>
+      <SectionHead idx={L("07 · 专家观点", "07 · Expert views")} title={L("七位 Agent 的独立分析与分歧", "Seven independent agents — analyses & disagreements")} subtitle={L("Agent 小组 · 经 Critic 审核", "Agent Panel · Critic-Reviewed")}/>
       <div className="reading wide prose">
         <p>
           {(() => {
@@ -972,7 +1133,7 @@ function SensitivitySection() {
 
   return (
     <section id="sec-sensitivity">
-      <SectionHead idx={L("07 · 敏感性", "07 · Sensitivity")} title={L("驱动因子弹性与 WACC × g 热力矩阵", "Driver elasticities & WACC × g heat-map")} subtitle={L("敏感性分析器", "Sensitivity Analyzer")}/>
+      <SectionHead idx={L("08 · 敏感性", "08 · Sensitivity")} title={L("驱动因子弹性与 WACC × g 热力矩阵", "Driver elasticities & WACC × g heat-map")} subtitle={L("敏感性分析器", "Sensitivity Analyzer")}/>
       {(s.paragraphs || []).length > 0 && (
         <div className="reading wide prose">
           {s.paragraphs.map((html, i) => (
@@ -1042,7 +1203,7 @@ function Conclusion() {
   const c = REPORT.conclusion || {};
   return (
     <section id="sec-conclusion">
-      <SectionHead idx={L("08 · 结论", "08 · Conclusion")} title={c.title || L("结论", "Conclusion")} subtitle={c.subtitle || L("首席分析师 · 终稿", "Chief Analyst · Final")}/>
+      <SectionHead idx={L("09 · 结论", "09 · Conclusion")} title={c.title || L("结论", "Conclusion")} subtitle={c.subtitle || L("首席分析师 · 终稿", "Chief Analyst · Final")}/>
       {(c.paragraphs && c.paragraphs.length > 0) && (
         <div className="reading wide prose">
           {c.paragraphs.map((html, i) => (
@@ -1216,6 +1377,8 @@ function App() {
         <main className="main" style={mainWidthStyle}>
           <Hero/>
           <ExecutiveSummary/>
+          {/* Aegis 2.0 Phase 0：预期前沿第一公民——放在 DCF 情景之前 */}
+          <PricedIn/>
           <ValuationBand/>
           <Macro/>
           <Financials/>

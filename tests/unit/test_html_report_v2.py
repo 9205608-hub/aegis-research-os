@@ -150,8 +150,25 @@ class TestPublishingStatusRating:
         assert rep["rating"]["downgraded"] is False
 
     def test_blocked_shows_not_rated(self):
+        # Aegis 2.0 Phase 0（评级语义）：blocked 文案改造为「预期无法验证」
+        # 语境——不是模型没意见，而是现价隐含预期无法用可验证事实核验。
         rep = _build_cn(decision=_decision(publishing_status="blocked"))
-        assert rep["rating"]["word"] == "暂不评级"
+        assert rep["rating"]["word"] == "预期无法验证 · 暂不评级"
+        assert rep["rating"]["tone"] == "hold"
+
+    def test_blocked_shows_not_rated_en(self):
+        rep = v2.build_report_dict(
+            decision=_decision(entity_id="NVDA", publishing_status="blocked"),
+            market_data={"current_price": 100.0},
+            meta_facts={"ebitda": 5e9, "operating_income": 4e9},
+            scenarios={"currency": "USD", "base_value": 150.0,
+                       "probability_weighted_value": 150.0},
+            entity_id="NVDA",
+            entity_name="NVIDIA",
+            entity_name_clean="NVIDIA",
+            period="FY2026",
+        )
+        assert rep["rating"]["word"] == "Expectations unverifiable · Not Rated"
         assert rep["rating"]["tone"] == "hold"
 
     def test_needs_review_shows_under_review(self):
@@ -262,22 +279,46 @@ class TestGeneratedJsonIntegrity:
 
 class TestChineseHeadlineFallback:
 
-    def test_downside_uses_abs_no_double_negative(self):
-        # target 76.2 vs price 100 → implied -23.8%. The old fallback
-        # rendered "DCF 基准 -23.8%下行空间" — a double negative.
+    def test_downside_uses_expectations_framing(self):
+        # Aegis 2.0 Phase 0（第 6 项）：target 76.2 vs price 100（隐含
+        # -23.8%）——中文 fallback 不再输出裸「X% 下行空间」主张，改为
+        # 预期框架句式。DCF 差值仍在情景区块/核心判断完整展示（红线 1）。
         sc = dict(_CN_SCENARIOS)
         sc["base_value"] = 76.2
         sc["probability_weighted_value"] = 76.2
         rep = _build_cn(scenarios=sc)
-        assert "下行空间" in rep["headline"]
-        assert "23.8%" in rep["headline"]
-        assert "-23.8" not in rep["headline"]
+        assert "现价隐含预期显著高于可验证基本面" in rep["headline"]
+        assert "下行空间" not in rep["headline"]
+        assert "%" not in rep["headline"]  # 裸百分比主张禁止出现在 headline
 
-    def test_upside_keeps_direction_word(self):
-        rep = _build_cn()  # target 150 vs 100 → +50%
-        assert "上行空间" in rep["headline"]
-        assert "50.0%" in rep["headline"]
+    def test_upside_uses_expectations_framing(self):
+        rep = _build_cn()  # target 150 vs 100 → +50%（市场隐含预期偏保守）
+        assert "现价隐含预期低于模型可验证基本面" in rep["headline"]
+        assert "上行空间" not in rep["headline"]
+        assert "%" not in rep["headline"]
         assert "贵州茅台" in rep["headline"]
+
+    def test_near_par_uses_compatible_framing(self):
+        sc = dict(_CN_SCENARIOS)
+        sc["base_value"] = 102.0
+        sc["probability_weighted_value"] = 102.0
+        rep = _build_cn(scenarios=sc)
+        assert "大体相容" in rep["headline"]
+
+    def test_en_fallback_unchanged(self):
+        # 铁律：rule-based 模板 en 分支逐字不动。
+        rep = v2.build_report_dict(
+            decision=_decision(entity_id="NVDA"),
+            market_data={"current_price": 100.0},
+            meta_facts={"ebitda": 5e9, "operating_income": 4e9},
+            scenarios={"currency": "USD", "base_value": 76.2,
+                       "probability_weighted_value": 76.2},
+            entity_id="NVDA",
+            entity_name="NVIDIA",
+            entity_name_clean="NVIDIA",
+            period="FY2026",
+        )
+        assert rep["headline"] == "NVIDIA: rule-based DCF implies 23.8% downside"
 
     def test_editor_headline_takes_precedence(self):
         rep = _build_cn(edited_report={"headline": "编辑器标题", "lede": "导语"})

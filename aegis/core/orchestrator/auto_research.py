@@ -158,6 +158,155 @@ def renormalize_scenario_probabilities(
     return {k: v / total for k, v in probs.items()}
 
 
+# ═══ Aegis 2.0 Phase 0 — 预期前沿 / 定价体制接线辅助 ═══════════════════
+#
+# DESIGN_2.0 §三.A：报告主轴从「DCF 说值 X，市场错了 Y%」转为「当前价格
+# 隐含了什么预期？该预期与可验证事实是否相容？」。下面的纯函数负责把
+# 现有管线数据映射成 solve_expectations_frontier / assess_pricing_regime
+# 的输入——保持纯函数便于单测（test_phase0_wiring.py）。
+
+# 行业档缺省利润率：sector pack 没有典型利润率字段时的兜底（任务规格）。
+DEFAULT_SECTOR_TYPICAL_MARGIN = 0.08
+
+# pw_value ≤ 0 时 DCF 缺口无法定义为比值——现价为正而概率加权价值非正，
+# 属于「现价与已实现现金流彻底脱钩」的极端溢价形态，直接喂给体制感知
+# 其 clip 上限（assess_pricing_regime 内部 clip 到 10.0）。
+_EXTREME_GAP_SENTINEL = 10.0
+
+
+def _sector_typical_margin(sector_pack: dict | None) -> float:
+    """从 sector pack yaml 里读「行业典型营业利润率」（取区间中点）。
+
+    优先 valuation_framework.typical_operating_margin_range，其次
+    benchmarks.typical_margins.operating_margin；两者都没有则返回
+    行业档缺省 8%（DEFAULT_SECTOR_TYPICAL_MARGIN）。
+    """
+    pack = sector_pack or {}
+    for path in (
+        ("valuation_framework", "typical_operating_margin_range"),
+        ("benchmarks", "typical_margins", "operating_margin"),
+    ):
+        node: Any = pack
+        for key in path:
+            node = node.get(key) if isinstance(node, dict) else None
+            if node is None:
+                break
+        if isinstance(node, (list, tuple)) and len(node) >= 2:
+            try:
+                lo, hi = float(node[0]), float(node[1])
+            except (TypeError, ValueError):
+                continue
+            return (lo + hi) / 2.0
+        if isinstance(node, (int, float)):
+            return float(node)
+    return DEFAULT_SECTOR_TYPICAL_MARGIN
+
+
+def build_margin_scenarios(
+    current_margin: float,
+    sector_pack: dict | None,
+    zh: bool,
+) -> list[tuple[str, float]]:
+    """构造预期前沿的 2-3 档终年利润率情景（Phase 0 接线规格）。
+
+    档位：维持现状（当前利润率）/ 行业中位（sector pack 典型利润率，
+    没有则 8% 缺省）/ 两者中点。当前与行业档几乎重合（<0.5pp）时去重，
+    只留两档（中点档与两端重合无信息量）。标签 zh/en 双语由调用方按
+    市场选择（中文化铁律）。
+    """
+    sector_m = _sector_typical_margin(sector_pack)
+    cur = float(current_margin)
+    labels = (
+        ("维持现状", "行业中位", "两者中点") if zh
+        else ("Hold current margin", "Sector median", "Midpoint")
+    )
+    if abs(cur - sector_m) < 0.005:
+        return [(labels[0], round(cur, 4))]
+    mid = (cur + sector_m) / 2.0
+    return [
+        (labels[0], round(cur, 4)),
+        (labels[1], round(sector_m, 4)),
+        (labels[2], round(mid, 4)),
+    ]
+
+
+def compute_pricing_regime_inputs(
+    meta_facts: dict[str, Any],
+    computed_metrics: dict[str, Any],
+    market_price: float,
+    pw_value: float,
+    terminal_value_gate_triggered: bool,
+) -> dict[str, Any]:
+    """把管线已算好的量映射成 assess_pricing_regime 的关键字参数。
+
+    特征口径（与 pricing_regime docstring 对齐）：
+    - dcf_gap: (price − pw_value) / pw_value；pw_value ≤ 0 时给极端溢价
+      哨兵值（clip 上限），不猜。
+    - fcf_positive: 优先 meta_facts.free_cash_flow，退 computed
+      fcf_simple，再退 CFO；全缺按 False（保守）。
+    - cfo_to_ni: 净利润 ≤ 0 时口径失效传 None。
+    - growth_regime_break: 最新一年 YoY 与历史 CAGR 的背离幅度；CAGR
+      不可靠（__revenue_cagr_unreliable）或数据缺失时传 False。
+    - net_debt_to_ebitda: EBITDA ≤ 0 传 None。
+    """
+    price = float(market_price or 0.0)
+    pw = float(pw_value or 0.0)
+    if pw > 0 and price > 0:
+        dcf_gap = price / pw - 1.0
+    elif price > 0:
+        dcf_gap = _EXTREME_GAP_SENTINEL
+    else:
+        dcf_gap = 0.0
+
+    fcf = meta_facts.get("free_cash_flow")
+    if not isinstance(fcf, (int, float)):
+        fcf = computed_metrics.get("fcf_simple")
+    if not isinstance(fcf, (int, float)):
+        fcf = meta_facts.get("cfo") or meta_facts.get("operating_cash_flow")
+    fcf_positive = bool(isinstance(fcf, (int, float)) and fcf > 0)
+
+    accruals = computed_metrics.get("accruals_ratio")
+    cfo_to_ni = computed_metrics.get("cfo_to_net_income")
+    ni = meta_facts.get("net_income")
+    if isinstance(ni, (int, float)) and ni <= 0:
+        cfo_to_ni = None  # 净利润非正时 CFO/NI 口径失效（不猜）
+
+    growth_break: float | bool = False
+    hist = meta_facts.get("__historical_growth") or {}
+    cagr = meta_facts.get("__revenue_cagr")
+    if (
+        isinstance(hist, dict) and hist
+        and isinstance(cagr, (int, float))
+        and not meta_facts.get("__revenue_cagr_unreliable")
+    ):
+        try:
+            latest_yoy = float(hist[max(hist.keys())])
+            growth_break = abs(latest_yoy - float(cagr))
+        except (TypeError, ValueError):
+            growth_break = False
+
+    net_debt = computed_metrics.get("net_debt")
+    if not isinstance(net_debt, (int, float)):
+        net_debt = meta_facts.get("net_debt")
+    ebitda = meta_facts.get("ebitda")
+    nd_to_ebitda = None
+    if (
+        isinstance(net_debt, (int, float))
+        and isinstance(ebitda, (int, float)) and ebitda > 0
+    ):
+        nd_to_ebitda = float(net_debt) / float(ebitda)
+
+    return {
+        "dcf_gap": dcf_gap,
+        "fcf_positive": fcf_positive,
+        "accruals_ratio": accruals if isinstance(accruals, (int, float)) else None,
+        "cfo_to_ni": cfo_to_ni if isinstance(cfo_to_ni, (int, float)) else None,
+        "growth_regime_break": growth_break,
+        "net_debt_to_ebitda": nd_to_ebitda,
+        "terminal_value_gate_triggered": bool(terminal_value_gate_triggered),
+    }
+
+
 @dataclass
 class ResearchConfig:
     """Configuration for an automated research run."""
@@ -233,6 +382,10 @@ class ResearchConfig:
 
     # News sentiment
     enable_news_sentiment: bool = True
+
+    # Aegis 2.0 Phase 0: A 股近事件切片（公告标题 + 业绩预告 + 一致预期）。
+    # 事实源注入 agent prompt，防止 LLM 幻觉「并购故事」。离线测试可关。
+    enable_recent_events: bool = True
 
 
 @dataclass
@@ -1904,6 +2057,84 @@ class AutoResearchOrchestrator:
             "matrix": scaled_matrix,
         }
 
+        # ── Step 7d (Aegis 2.0 Phase 0): 预期前沿 + 定价体制 ──────────
+        # DESIGN_2.0 §三.A：反推「现价隐含了什么预期」（条件化，设计红线
+        # 2），并评估市场按哪种逻辑定价（只改叙事框架，设计红线 1——
+        # DCF-vs-price 差值照旧展示，任何下游不得据此隐藏差值）。
+        expectations_frontier_summary: dict[str, Any] | None = None
+        pricing_regime_dict: dict[str, Any] | None = None
+        if market_data["current_price"]:
+            try:
+                from aegis.core.chief_analyst.thesis_synthesizer import (
+                    frontier_prompt_lines,
+                )
+                from aegis.core.truth.scenario_engine.expectations_frontier import (
+                    solve_expectations_frontier,
+                )
+                _margin_scens = build_margin_scenarios(
+                    current_margin=dcf_input_flat.operating_margin_path[0],
+                    sector_pack=sector_pack,
+                    zh=is_a_share,
+                )
+                _frontier = solve_expectations_frontier(
+                    dcf_input_flat,
+                    float(market_data["current_price"]),
+                    _margin_scens,
+                )
+                _frontier_dict = _frontier.to_dict()
+                # 全量 dataclass 树进 meta_facts（渲染层 + replay 缓存消费；
+                # __ 前缀键会被 agent prompt 序列化层剥掉，不会撑爆 prompt）。
+                meta_facts["__expectations_frontier"] = _frontier_dict
+                # prompt / rule-based agent 消费的精简摘要（按市场语言渲染）。
+                expectations_frontier_summary = {
+                    "market_price": _frontier_dict["market_price"],
+                    "currency": _frontier_dict["currency"],
+                    "base_wacc": _frontier_dict["base_wacc"],
+                    "lines": frontier_prompt_lines(
+                        _frontier_dict, "zh" if is_a_share else "en",
+                    ),
+                }
+                _log(
+                    f"Expectations frontier: {len(_margin_scens)} margin "
+                    f"scenario(s) × WACC±1% solved against price "
+                    f"{market_data['current_price']:.2f}"
+                )
+            except Exception as e:
+                _log(f"  ⚠ Expectations frontier skipped: {e}")
+
+            # 定价体制感知 v1。terminal_value_gate 是种子特征——该 gate 只依
+            # 赖 DCF 输入/输出与指标，可在 publish gate（Step 12）之前单独
+            # 预评估，不影响 Step 12 的正式评估结果。
+            try:
+                from aegis.core.publish_gate import PublishGate
+                _tv_gate_early = not PublishGate()._terminal_value_gate({
+                    "dcf_output": dcf_output,
+                    "dcf_input": dcf_input_flat,
+                    "computed_metrics": computed_metrics,
+                    "meta_facts": meta_facts,
+                }).passed
+            except Exception:
+                _tv_gate_early = False
+            try:
+                from dataclasses import asdict as _asdict
+                from aegis.core.truth.pricing_regime import assess_pricing_regime
+                _regime = assess_pricing_regime(**compute_pricing_regime_inputs(
+                    meta_facts=meta_facts,
+                    computed_metrics=computed_metrics,
+                    market_price=market_data["current_price"],
+                    pw_value=pw_value,
+                    terminal_value_gate_triggered=_tv_gate_early,
+                ))
+                pricing_regime_dict = _asdict(_regime)
+                meta_facts["__pricing_regime"] = pricing_regime_dict
+                _log(
+                    f"Pricing regime: dominant={_regime.dominant} "
+                    f"top_two={_regime.top_two} "
+                    f"weights=({', '.join(f'{k}={v:.2f}' for k, v in _regime.weights.items())})"
+                )
+            except Exception as e:
+                _log(f"  ⚠ Pricing regime skipped: {e}")
+
         # DCF projections for report (both types now expose .projections)
         raw_projections = dcf_output.projections
         dcf_projections = [
@@ -1986,6 +2217,34 @@ class AutoResearchOrchestrator:
         # number into all 7 agents' MACRO CONTEXT (and the __-prefixed
         # meta_facts flag gets stripped from prompts, so agents couldn't see
         # the unreliable marker). Null it out and pass an explicit flag.
+        # ── Step 8b (Aegis 2.0 Phase 0 第 3 项): A 股近事件切片 ─────────
+        # 公告标题流 + 业绩预告 + 一致预期（含红线 5 覆盖度 gate）。注入
+        # 全体 agent 的 MACRO CONTEXT，作为唯一 sanctioned 催化剂事实源——
+        # 否则 LLM 只能幻觉「并购故事」。任何数据源失败静默降级为空段。
+        recent_events_prompt: str | None = None
+        if is_a_share and getattr(config, "enable_recent_events", True):
+            try:
+                from dataclasses import asdict as _asdict
+                from aegis.core.acquisition.connectors.em_events_connector import (
+                    fetch_recent_events,
+                )
+                _rev = fetch_recent_events(config.ticker)
+                recent_events_prompt = _rev.to_prompt_block()
+                # 结构化切片进 meta_facts（渲染层「市场在定价什么」区块 +
+                # replay 缓存消费）；prompt 版本给 chief-analyst 各层复用。
+                meta_facts["__recent_events"] = _asdict(_rev)
+                meta_facts["__recent_events_prompt"] = recent_events_prompt
+                _cons_ok = bool(
+                    _rev.consensus and not _rev.consensus.insufficient_coverage
+                )
+                _log(
+                    f"Recent events: {len(_rev.announcements)} 公告 / "
+                    f"{len(_rev.forecasts)} 预告 / "
+                    f"一致预期={'可用' if _cons_ok else '无有效覆盖'}"
+                )
+            except Exception as e:
+                _log(f"  ⚠ Recent events fetch skipped: {e}")
+
         _ig_unreliable_for_agents = bool(meta_facts.get("__implied_growth_unreliable"))
         agent_macro = {
             "cycle_phase": config.cycle_phase,
@@ -1993,6 +2252,10 @@ class AutoResearchOrchestrator:
                 "implied_revenue_growth": None if _ig_unreliable_for_agents else implied_growth,
                 "implied_growth_unreliable": _ig_unreliable_for_agents,
                 "implied_terminal_growth": config.terminal_growth_rate,
+                # Aegis 2.0 Phase 0：条件化预期前沿摘要（设计红线 2——
+                # 「若利润率 X 则需增速 Y」句式；旧 implied_growth 单点字段
+                # 保留兼容，None 表示前沿不可用）。
+                "expectations_frontier": expectations_frontier_summary,
                 "revision_momentum": revision_momentum,
                 "revision_signal": revision_signal_detail,
                 # Prefer TTM (matches peer comparison source); fall back
@@ -2018,6 +2281,28 @@ class AutoResearchOrchestrator:
             # giant A-share DEEP prompts that bottleneck on output thinking.
             "split_prompts": bool(getattr(config, "split_prompts", False)),
         }
+
+        # Aegis 2.0 Phase 0：近事件事实块（A 股）——整段中文 prompt 文本，
+        # 首行即「禁止引用未在此列出的催化剂」硬约束，全 agent 可见。
+        if recent_events_prompt:
+            agent_macro["recent_events"] = recent_events_prompt
+
+        # Aegis 2.0 Phase 0：定价体制（设计红线 1——只用于叙事框架与验证
+        # 点选择，禁止任何消费方据此隐藏 / 折扣 DCF-vs-price 差值展示）。
+        if pricing_regime_dict:
+            agent_macro["pricing_regime"] = {
+                "dominant": pricing_regime_dict["dominant"],
+                "top_two": list(pricing_regime_dict["top_two"]),
+                "weights": {
+                    k: round(v, 3)
+                    for k, v in pricing_regime_dict["weights"].items()
+                },
+                "narrative_frame": (
+                    pricing_regime_dict["narrative_frame_zh"] if is_a_share
+                    else pricing_regime_dict["narrative_frame_en"]
+                ),
+                "verification_focus": pricing_regime_dict["verification_focus"],
+            }
 
         # Inject catalyst timeline for agents (VariantAnalyst uses catalyst timing)
         if catalyst_timeline:
@@ -2800,8 +3085,16 @@ class AutoResearchOrchestrator:
             # BUG-Y20 follow-up: when reverse-DCF didn't converge, drop the
             # "market-implied growth" assertion altogether — it would
             # otherwise be the misleading fake-clean boundary value.
+            # Aegis 2.0 Phase 0（设计红线 2）：前沿可用时，隐含增速表述
+            # 必须条件化——单点 "market implies Z% growth" 不再进叙事。
             _ig_unreliable = meta_facts.get("__implied_growth_unreliable")
-            if _ig_unreliable:
+            if expectations_frontier_summary and expectations_frontier_summary.get("lines"):
+                why_wrong = _why_base + (
+                    "Market-implied growth is margin-conditional (see the "
+                    "expectations frontier: at each terminal-margin scenario the "
+                    "price requires a different growth rate)."
+                )
+            elif _ig_unreliable:
                 why_wrong = _why_base + (
                     "Market-implied revenue growth is undefined "
                     "(reverse-DCF non-monotonic for loss-making/high-capex profile)."
@@ -2852,6 +3145,14 @@ class AutoResearchOrchestrator:
             # driver shift when the implied growth is unreliable, since the
             # numeric value is meaningless in that case.
             "edge_decay_trigger": (
+                # Aegis 2.0 Phase 0（设计红线 2）：前沿可用时衰减触发器同样
+                # 用条件化表述，不引用单点隐含增速。
+                f"disclosed facts start supporting the price-implied "
+                f"margin/growth combination (expectations frontier), or key "
+                f"assumption ({top_driver}) shifts materially"
+                if (expectations_frontier_summary
+                    and expectations_frontier_summary.get("lines"))
+                else
                 f"key assumption ({top_driver}) shifts materially "
                 f"(market-implied growth currently unreliable due to non-monotonic DCF)"
                 if meta_facts.get("__implied_growth_unreliable")
