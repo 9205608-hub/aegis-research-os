@@ -343,6 +343,16 @@ function TableOfContents({ active }) {
       <div className="meta">
         {L("生成时间", "Generated")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.reportDate}</span><br/>
         {L("数据期", "Period")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.period}</span><br/>
+        {REPORT.dataAsOf && REPORT.dataAsOf.latestPeriod ? (
+          <React.Fragment>
+            {L("数据截至", "Data as of")} <span className="mono" style={{color:"var(--text-2)"}}>
+              {REPORT.dataAsOf.latestPeriod}
+              {REPORT.dataAsOf.days !== null && REPORT.dataAsOf.days !== undefined
+                ? L(`（${REPORT.dataAsOf.days} 天前）`, ` (${REPORT.dataAsOf.days}d)`)
+                : ""}
+            </span><br/>
+          </React.Fragment>
+        ) : null}
         {L("Pipeline 用时", "Pipeline runtime")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.pipelineDuration || "—"}</span><br/>
         {L("模型", "Model")} <span className="mono" style={{color:"var(--text-2)"}}>{REPORT.model || "—"}</span>
       </div>
@@ -523,6 +533,12 @@ function Hero() {
         )}
         <div className="price-meta mono">{REPORT.price.asOf}</div>
       </div>
+      {/* Aegis 2.0 Phase 1（任务 D3）：数据截至行 —— 最新报告期 + 财务数据时效 */}
+      {REPORT.dataAsOf && REPORT.dataAsOf.line && (
+        <div className="mono" style={{fontSize: 12, color: "var(--text-3)", margin: "6px 0 0"}}>
+          {REPORT.dataAsOf.line}
+        </div>
+      )}
       <StaleBanner/>
 
       <div className="stat-strip">
@@ -594,11 +610,20 @@ function ExecutiveSummary() {
 // 设计红线 1：本区块只提供叙事框架——DCF 情景与差值在下一节照旧完整展示。
 function PricedIn() {
   const p = REPORT.pricedIn;
-  if (!p || (!p.frontier && !p.regime && !p.events)) return null;
+  if (!p || (!p.frontier && !p.regime && !p.events && !p.relative && !(p.verification || []).length)) return null;
   const f = p.frontier;
   const r = p.regime;
   const ev = p.events;
+  const rel = p.relative;
   const none = L("暂无", "n/a");
+  // 验证点三态配色（不用 --up/--down：那两个跟随 A 股红涨绿跌翻转，
+  // 而通过/未通过是语义色，须与批评审核面板的 dot 配色一致）。
+  const verColor = (state) => (
+    state === "pass" ? "oklch(0.72 0.13 155)"
+    : state === "fail" ? "oklch(0.68 0.17 25)"
+    : state === "insufficient" ? "var(--warn)"
+    : "var(--text-4)"
+  );
   return (
     <section id="sec-pricedin">
       <SectionHead
@@ -683,17 +708,65 @@ function PricedIn() {
         )}
       </div>
 
-      {/* ── 验证点清单（Phase 0：未核验 — 核验能力为 Phase 1 交付物） ── */}
+      {/* ── 相对估值锚（Phase 1：target vs 同业中位 PE/PB + 分位 + 样本） ── */}
+      <div style={{marginTop: 28}}>
+        <div className="eyebrow" style={{marginBottom: 10}}>
+          {L("相对估值（同业倍数分位）", "Relative valuation (peer multiples)")}
+          {rel && rel.dataDate ? <span style={{marginLeft: 8, color: "var(--text-4)", textTransform: "none", letterSpacing: 0}}>{L("数据日期 ", "as of ")}{rel.dataDate}</span> : null}
+        </div>
+        {rel ? (
+          rel.insufficient ? (
+            <p className="footnote">{L("同业样本不足", "Insufficient peer sample")}{rel.note ? `（${rel.note}）` : ""}</p>
+          ) : (
+            <div style={{overflowX: "auto"}}>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>{L("指标", "Metric")}</th>
+                    <th className="num">{L("目标公司", "Target")}</th>
+                    <th className="num">{L("同业中位数", "Peer median")}</th>
+                    <th className="num">{L("同业分位", "Percentile")}</th>
+                    <th>{L("样本", "Sample")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(rel.rows || []).map((row, i) => (
+                    <tr key={i}>
+                      <td>{row.lbl}</td>
+                      <td className="num" style={{color: "var(--accent)"}}>{row.target}</td>
+                      <td className="num">{row.median}</td>
+                      <td className="num">{row.pct}</td>
+                      <td style={{fontSize: 12.5, color: "var(--text-3)"}}>{row.sample}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {rel.note && <p className="footnote">{rel.note}</p>}
+            </div>
+          )
+        ) : (
+          <p className="footnote">{none}</p>
+        )}
+      </div>
+
+      {/* ── 验证点清单（Phase 1：已核验·通过/未通过/数据不足 + 依据；无数据维持未核验） ── */}
       {(p.verification || []).length > 0 && (
         <div style={{marginTop: 28}}>
           <div className="eyebrow" style={{marginBottom: 10}}>{L("验证点清单", "Verification checklist")}</div>
           <div style={{display: "grid", gap: 8}}>
             {p.verification.map((v, i) => (
               <div key={i} style={{display: "flex", gap: 10, alignItems: "baseline"}}>
-                <span style={{fontSize: 11, fontFamily: "var(--mono)", color: "var(--text-4)", border: "1px solid var(--hairline)", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap"}}>
+                <span style={{fontSize: 11, fontFamily: "var(--mono)", color: verColor(v.state), border: "1px solid var(--hairline)", borderRadius: 4, padding: "1px 6px", whiteSpace: "nowrap"}}>
                   {v.status || L("未核验", "Unverified")}
                 </span>
-                <span style={{fontSize: 13.5, color: "var(--text-2)"}}>{v.text}</span>
+                <span style={{fontSize: 13.5, color: "var(--text-2)"}}>
+                  {v.text}
+                  {v.evidence ? (
+                    <span style={{display: "block", fontSize: 12, color: "var(--text-4)", marginTop: 2}}>
+                      {L("依据：", "Evidence: ")}{v.evidence}
+                    </span>
+                  ) : null}
+                </span>
               </div>
             ))}
           </div>

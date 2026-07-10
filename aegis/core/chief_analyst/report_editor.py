@@ -243,16 +243,23 @@ class ReportEditor:
             from aegis.core.chief_analyst.thesis_synthesizer import (
                 _scrub_fair_value_claims,
                 frontier_sanctioned_growth_pcts,
+                relative_valuation_sanctioned_pcts,
             )
             editor_fields = (
                 "headline", "executive_summary", "opening_paragraph",
                 "closing_paragraph", "risk_summary",
             )
-            # 设计红线 9：前沿隐含增速/margin 档百分数是 sanctioned numbers。
+            # 设计红线 9：前沿隐含增速/margin 档百分数是 sanctioned numbers；
+            # Phase 1 同则：相对估值锚的 PE/PB/分位数字同步注册。
             scrubbed, warns = _scrub_fair_value_claims(
                 raw, scenarios, market_data, fields=editor_fields,
-                extra_sanctioned_pcts=frontier_sanctioned_growth_pcts(
-                    (meta_facts or {}).get("__expectations_frontier")
+                extra_sanctioned_pcts=(
+                    frontier_sanctioned_growth_pcts(
+                        (meta_facts or {}).get("__expectations_frontier")
+                    )
+                    + relative_valuation_sanctioned_pcts(
+                        (meta_facts or {}).get("__relative_valuation")
+                    )
                 ),
             )
             if warns:
