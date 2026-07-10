@@ -13,6 +13,8 @@
 - **测试 922 → 927 passed**（−10 Kimi 旧用例 +14 Grok +1 auto 选 grok）
 - ⚠ 待实测（等 key 注入环境）：grok-4 模型名、x.ai 探针连通性、DeepSeek 全量 LLM run
 
+**追加（同日，主目录 002669 复跑暴露）**：akshare Method 2 (bid_ask) 只回价格不回股本/市值时，market_cap 静默为 0（日志实证 `cap=¥0亿`），P/E、EV/EBITDA 该 run 悄悄缺失。修复：[akshare_connector.py](aegis/core/acquisition/connectors/akshare_connector.py) 抽 `_backfill_quote_gaps()`——价格/股本/市值任一缺失（含 Method 1 写入的字面 0.0）都从 tencent/sina 行情补缺，永不抛异常。+4 回归测试，927 → 931 passed。
+
 ---
 
 ## 🔍 2026-07-10 康达新材(002669) 实盘验证 + 行业解析根因修复
