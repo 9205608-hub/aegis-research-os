@@ -16,7 +16,7 @@ const MOCK_REPORT = {
   confidence: "高",
   bias: "告警",
   pipelineDuration: "24m 37s",
-  model: "Kimi k2.6",
+  model: "deepseek-v4-pro",
   staleBanner: "最新可得财报为 FY2024（截至 2024-12-31），距今约 16 个月；本分析的价格动态基于实时行情，但财务基数落后约 1 个财年。",
 
   price: { last: 85.22, change: -1.34, changePct: -1.55, currency: "¥", asOf: "15:00 CST · 4/18", market: "CN" },

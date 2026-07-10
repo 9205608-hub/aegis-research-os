@@ -32,7 +32,8 @@ Run a research report:
 Configure secrets through environment variables. Do not commit live keys.
 
 - `SEC_USER_AGENT`
-- `KIMI_API_KEY`
+- `DEEPSEEK_API_KEY` (default LLM backend)
+- `GROK_API_KEY` / `XAI_API_KEY` (alternate LLM backend; model via `GROK_MODEL`, default `grok-4`)
 - `FMP_API_KEY`
 - `FRED_API_KEY`
 

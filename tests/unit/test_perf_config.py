@@ -1,11 +1,12 @@
 """AUDIT-D1/D2/D3/D4 regression tests: backend-tiered performance knobs.
 
 D1: AGENT_MAX_PARALLEL=2 was a subprocess-CLI rate-limit guard applied to
-    every backend — API backends (deepseek/kimi/sdk) now get their own cap
+    every backend — API backends (deepseek/grok/sdk) now get their own cap
     (default 4) so batch 1's four agents run in one wave.
 D2: run_research.sh never wired the already-implemented speed switches;
     AEGIS_LLM_CACHE now defaults ON and FAST_AGENTS=1 passes --fast-agents.
-D3: DeepSeek/Kimi cold-start max_tokens was flat (32768/16384) for every
+D3: DeepSeek (and OpenAI-compatible wrappers like Grok) cold-start
+    max_tokens was flat (32768) for every
     agent depth; llm_agent_base now passes a depth-tiered max_tokens_hint
     (light=8K / standard=16K / deep=32K) and the clients anchor their
     shrink/grow recovery ladders on it. No hint → old behavior exactly.
@@ -64,7 +65,7 @@ def _restore_config():
 
 class TestAgentMaxParallel:
     def test_api_backends_default_4(self):
-        for backend in ("deepseek", "kimi", "sdk"):
+        for backend in ("deepseek", "grok", "sdk"):
             assert cfg.agent_max_parallel_for(backend) == 4, backend
 
     def test_subprocess_keeps_2(self):
@@ -98,7 +99,7 @@ class TestAgentMaxParallel:
 class TestTimeoutTiers:
     def test_batch_timeout_defaults(self):
         assert cfg.agent_batch_timeout_for("deepseek") == 1800
-        assert cfg.agent_batch_timeout_for("kimi") == 1800
+        assert cfg.agent_batch_timeout_for("grok") == 1800
         assert cfg.agent_batch_timeout_for("sdk") == 1800
         assert cfg.agent_batch_timeout_for("subprocess") == 4800
 
@@ -113,7 +114,7 @@ class TestTimeoutTiers:
             AEGIS_AGENT_WATCHDOG_API_S="600",
         )
         assert c.agent_batch_timeout_for("deepseek") == 1200
-        assert c.agent_watchdog_timeout_for("kimi") == 600
+        assert c.agent_watchdog_timeout_for("grok") == 600
         # subprocess tier untouched
         assert c.agent_batch_timeout_for("subprocess") == 4800
 
@@ -134,11 +135,11 @@ class TestResolvedBackendKind:
         return object.__new__(AutoResearchOrchestrator)
 
     @staticmethod
-    def _cfg(backend="auto", deepseek_key="", kimi_key=""):
+    def _cfg(backend="auto", deepseek_key="", grok_key=""):
         return SimpleNamespace(
             llm_backend=backend,
             deepseek_api_key=deepseek_key,
-            kimi_api_key=kimi_key,
+            grok_api_key=grok_key,
         )
 
     def test_explicit_backend_passthrough(self, orch):
@@ -146,14 +147,21 @@ class TestResolvedBackendKind:
         assert orch._resolved_backend_kind(self._cfg("deepseek")) == "deepseek"
 
     def test_auto_prefers_deepseek_key(self, orch, monkeypatch):
-        for var in ("DEEPSEEK_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY",
+        for var in ("DEEPSEEK_API_KEY", "GROK_API_KEY", "XAI_API_KEY",
                     "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
             monkeypatch.delenv(var, raising=False)
         assert orch._resolved_backend_kind(
             self._cfg("auto", deepseek_key="sk-x")) == "deepseek"
 
+    def test_auto_prefers_grok_when_no_deepseek(self, orch, monkeypatch):
+        for var in ("DEEPSEEK_API_KEY", "GROK_API_KEY", "XAI_API_KEY",
+                    "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
+            monkeypatch.delenv(var, raising=False)
+        assert orch._resolved_backend_kind(
+            self._cfg("auto", grok_key="xai-x")) == "grok"
+
     def test_auto_falls_to_subprocess_without_keys(self, orch, monkeypatch):
-        for var in ("DEEPSEEK_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY",
+        for var in ("DEEPSEEK_API_KEY", "GROK_API_KEY", "XAI_API_KEY",
                     "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
             monkeypatch.delenv(var, raising=False)
         assert orch._resolved_backend_kind(self._cfg("auto")) == "subprocess"
@@ -256,11 +264,11 @@ class TestDeepSeekHint:
         assert fake.calls[0]["max_tokens"] == 32768
 
 
-class TestKimiHint:
+class TestGrokHint:
     def _client(self, monkeypatch):
-        monkeypatch.setenv("KIMI_API_KEY", "sk-kimi-test")
-        from aegis.core.llm.kimi_client import KimiClient
-        client = KimiClient(model="k2.6")
+        monkeypatch.setenv("GROK_API_KEY", "xai-test")
+        from aegis.core.llm.grok_client import GrokClient
+        client = GrokClient()
         fake = _FakeCompletions(_fake_openai_response({"ok": 1}))
         client._client = SimpleNamespace(chat=SimpleNamespace(completions=fake))
         return client, fake
@@ -271,10 +279,11 @@ class TestKimiHint:
                                max_tokens_hint=8192)
         assert fake.calls[0]["max_tokens"] == 8192
 
-    def test_no_hint_keeps_historical_16384(self, monkeypatch):
+    def test_no_hint_keeps_inherited_32768(self, monkeypatch):
+        # GrokClient inherits DeepSeekClient's historical 32768 cold start.
         client, fake = self._client(monkeypatch)
         client.call_structured("sys", "user", {"type": "object"})
-        assert fake.calls[0]["max_tokens"] == 16384
+        assert fake.calls[0]["max_tokens"] == 32768
 
 
 # ---------------------------------------------------------------------------
@@ -390,10 +399,10 @@ class TestHintCapabilityCheck:
             SimpleNamespace(call_structured=LLMClient.call_structured),
         )
 
-    def test_deepseek_and_kimi_accepted(self, monkeypatch):
+    def test_deepseek_and_grok_accepted(self, monkeypatch):
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
-        monkeypatch.setenv("KIMI_API_KEY", "sk-kimi-test")
+        monkeypatch.setenv("GROK_API_KEY", "xai-test")
         from aegis.core.llm.deepseek_client import DeepSeekClient
-        from aegis.core.llm.kimi_client import KimiClient
+        from aegis.core.llm.grok_client import GrokClient
         assert _client_accepts_max_tokens_hint(DeepSeekClient())
-        assert _client_accepts_max_tokens_hint(KimiClient())
+        assert _client_accepts_max_tokens_hint(GrokClient())

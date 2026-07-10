@@ -73,7 +73,7 @@ AGENT_MAX_PARALLEL: int = _env_int("AEGIS_AGENT_MAX_PARALLEL", 2)
 # ── Backend-tiered knobs (AUDIT-D1 / AUDIT-D4) ──────────────────────────
 # The batch/watchdog/parallel values above were all sized for the
 # subprocess/Claude-CLI path (tens-of-minutes calls, hard 50 req/min
-# ceiling). The API backends (deepseek / kimi / sdk) are minutes-per-call
+# ceiling). The API backends (deepseek / grok / sdk) are minutes-per-call
 # and rate-limited far above our worst-case 4-agent fan-out, yet the same
 # cap=2 forced batch 1 (4 agents) into two serial waves and the same 80-min
 # batch timeout let a single hung network call eat the whole afternoon.
@@ -81,7 +81,7 @@ AGENT_MAX_PARALLEL: int = _env_int("AEGIS_AGENT_MAX_PARALLEL", 2)
 #   - parallel 4    → batch 1 runs in ONE wave (agent phase −30~40%)
 #   - batch 1800s   → hung batch surfaces in 30 min, not 80
 #   - watchdog 900s → hung single agent surfaces in 15 min, not 30
-API_BACKENDS: frozenset[str] = frozenset({"deepseek", "kimi", "sdk"})
+API_BACKENDS: frozenset[str] = frozenset({"deepseek", "grok", "sdk"})
 
 AGENT_MAX_PARALLEL_API: int = _env_int("AEGIS_AGENT_MAX_PARALLEL_API", 4)
 AGENT_BATCH_TIMEOUT_API_S: int = _env_int("AEGIS_AGENT_BATCH_TIMEOUT_API_S", 1800)

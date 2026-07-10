@@ -5,7 +5,7 @@
 端到端自动化股票研报生成系统。从 ticker 出发，拉财报数据 → 归一化 → 计算指标 → DCF 估值 → 7 位 LLM 智能体分析 → 批评审核 → 发布门槛 → 论点合成 → 报告编辑 → HTML 输出。
 
 **数据覆盖**: 美股 (SEC EDGAR XBRL) + A 股 (akshare / eastmoney / yfinance fallback)
-**LLM 后端**: Kimi k2.6 (默认)，可切 sonnet / subprocess
+**LLM 后端**: DeepSeek (默认) / Grok / subprocess (claude CLI)
 **入口**: `./run_research.sh <TICKER>`
 
 ## 开工前必读
@@ -54,7 +54,7 @@ LLM 会在叙述里编算术式不闭合的数字（例："净负债 47 亿 = �
 | `aegis/core/acquisition/connectors/` | 数据源：cninfo / akshare / openbb / sec |
 | `aegis/core/market_adapter/` | CAS (中国会计准则) ↔ US GAAP 概念映射 |
 | `aegis/core/acquisition/fact_bridge.py` | adapted → meta_facts 归一化 + 衍生字段 |
-| `aegis/core/truth/scenario_engine/dcf_engine.py` | **DCF 引擎** (P0 bug 待修) |
+| `aegis/core/truth/scenario_engine/dcf_engine.py` | **DCF 引擎**（D&A 比率模型，2026-07-09 修复） |
 | `aegis/core/truth/scenario_engine/sensitivity_analyzer.py` | 敏感性分析 |
 | `aegis/core/agents/llm_agent_base.py` | LLM agent 基类 + 系统 prompt |
 | `aegis/core/agents/llm_agents.py` | 7 位专家 agent 定义 |
@@ -73,7 +73,7 @@ LLM 会在叙述里编算术式不闭合的数字（例："净负债 47 亿 = �
 ./run_research.sh 301358
 
 # 从 cache 快速重渲染（不重跑 LLM agent，约 1 秒）
-export KIMI_API_KEY="..."  # Editor 需要
+export DEEPSEEK_API_KEY="..."  # Editor 需要
 python scripts/replay_from_cache.py 301358 --allow-stale
 python scripts/replay_from_cache.py 301358 --allow-stale --editor  # 顺带重跑 Report Editor
 ```
@@ -82,7 +82,7 @@ python scripts/replay_from_cache.py 301358 --allow-stale --editor  # 顺带重�
 
 - Python 3.12 (miniforge)
 - 关键包: `yfinance` `akshare` `openbb` `pydantic` `pandas`
-- LLM: Kimi API key 在 `run_research.sh` 里硬编码（注意不要误提交外部仓库）
+- LLM: DEEPSEEK_API_KEY / GROK_API_KEY 从环境注入（可放本地专用 `run_research.local.sh`，已 gitignore），不要把真实 key 写进仓库文件
 - **网络环境**: 用户在中国大陆 + Clash Verge 代理。`.cn` / `eastmoney.com` 域名需要 bypass 代理 —— `akshare_connector._no_proxy()` 里有处理。`push2.eastmoney.com` 在当前代理配置下仍然不可达（已知遗留问题）
 - **LLM 偏好**: 优先用 Claude Max 订阅（SDK/OAuth），不要提议申请新的独立 API key
 
@@ -91,7 +91,7 @@ python scripts/replay_from_cache.py 301358 --allow-stale --editor  # 顺带重�
 - ✅ **AUDIT_2026-07 路线图 50 项批量修复落地**（阶段 A-E 全部完成，详见 HANDOFF 2026-07-09 条目）
 - ✅ DCF D&A 口径修复（P0）：比率模型 + 终值年 D&A≈capex 守恒，资本密集股 DCF base 下降 20-30%（合成基准 338.87→263.48/股）
 - ✅ A 股口径三连：total_debt 补应付债券、净利润切归母、所得税率真实派生（不再固定美国 21%）
-- ✅ KimiClient 恢复链接通（原是死代码，首次失败即退 mock）+ LLM 缓存质量门（降级壳不再投毒）
+- ✅ LLM 恢复链接通（原是死代码，首次失败即退 mock）+ LLM 缓存质量门（降级壳不再投毒）；2026-07-10 起弃用的 Moonshot 后端整体移除，恢复链统一由 DeepSeekClient 承载（GrokClient 继承复用）
 - ✅ 性能接线：API 后端 agent 并发 2→4、LLM 磁盘缓存默认开启、超时按 backend 分档（预期 ~40min→~20min，待实测）
 - ✅ 测试 673→913 passed（新增 240 个回归用例，补齐 _coerce/html_report_v2/critics 中文路径/DCF 口径四大零覆盖）
 - ⚠ `FAST_AGENTS=1`（前 4 个 specialist 降 flash 档，预期再省 ~10min）已接线但默认关——需先在 2-3 个真实 ticker 上 A/B 验证 flash 输出质量
