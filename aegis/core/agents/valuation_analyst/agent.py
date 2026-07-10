@@ -77,11 +77,25 @@ class ValuationAnalyst(AgentBase):
         # Implied assumptions from market expectations (in prior judgments or context)
         if inp.macro_context:
             priced_in = inp.macro_context.get("priced_in", {})
+            # Aegis 2.0 Phase 0（设计红线 2）：优先使用条件化预期前沿——
+            # 「若利润率 X%，现价需要 Y% 增速支撑」句式（lines 已由
+            # orchestrator 按市场语言渲染）。前沿可用时不再输出单点
+            # 「市场隐含增速 Z%」（一个价格反解不出两个未知数）。
+            _frontier = priced_in.get("expectations_frontier") or {}
+            if _frontier.get("lines"):
+                for _line in _frontier["lines"][:4]:
+                    observations.append(Observation(
+                        text=(f"市场隐含预期（条件化反解）: {_line}" if zh
+                              else f"Market-implied expectation (conditional): {_line}"),
+                        source_ids=["expectations_frontier"],
+                    ))
             # AUDIT-A9 (BUG-Y20 third path): boundary-hit reverse-DCF values
             # are fake-clean artifacts (e.g. exactly 0.50). The orchestrator
             # nulls the value and sets `implied_growth_unreliable`; guard
             # here too so the artifact can never become an Observation.
-            if (priced_in.get("implied_revenue_growth") is not None
+            # (Legacy single-point fallback — only when the frontier is
+            # unavailable; 设计红线 2 prohibits it otherwise.)
+            elif (priced_in.get("implied_revenue_growth") is not None
                     and not priced_in.get("implied_growth_unreliable")):
                 observations.append(Observation(
                     text=(f"市场隐含营收增速: {priced_in['implied_revenue_growth']:.2%}" if zh
@@ -144,8 +158,29 @@ class ValuationAnalyst(AgentBase):
             k in o.text.lower() for k in ("pe ", "ev ", "enterprise")
         ) or "市盈率" in o.text or "企业价值" in o.text]
 
-        # Implied growth vs consensus comparison
-        if implied_obs and inp.macro_context:
+        # Aegis 2.0 Phase 0：前沿观察在场时，推理必须保持条件化框架
+        # （设计红线 2），并把预期与可验证事实的对照作为核心任务。
+        frontier_obs = [i for i, o in enumerate(observations)
+                        if "expectations_frontier" in (o.source_ids or [])]
+        _frontier_ctx = (inp.macro_context or {}).get("priced_in", {}).get(
+            "expectations_frontier") or {}
+        if frontier_obs and _frontier_ctx.get("lines"):
+            inferences.append(Inference(
+                text=("市场定价须按条件化预期解读：同一现价在不同终年利润率情景下"
+                      "对应不同的隐含增速，结论应表述为「若利润率 X%，需 Y% 增速支撑」，"
+                      "并对照业绩预告、公告与财务证据检验该预期的可信度"
+                      if zh else
+                      "Price must be read through conditional expectations: the same "
+                      "price maps to different implied growth under each terminal-margin "
+                      "scenario. State conclusions as 'at margin X%, ~Y% growth is "
+                      "required' and test that expectation against disclosed facts"),
+                based_on_observation_indices=frontier_obs[:1],
+                confidence="high",
+            ))
+
+        # Implied growth vs consensus comparison (legacy single-point path —
+        # only when the conditional frontier is unavailable, 设计红线 2)
+        if implied_obs and inp.macro_context and not _frontier_ctx.get("lines"):
             priced_in = inp.macro_context.get("priced_in", {})
             implied_g = priced_in.get("implied_revenue_growth")
             # AUDIT-A9: skip the aggressive/modest judgment when the value

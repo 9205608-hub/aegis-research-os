@@ -781,6 +781,243 @@ def _build_macro_block(macro_snapshot: Any, is_zh: bool) -> dict | None:
 # Main builder
 # ─────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────
+# Aegis 2.0 Phase 0 — 「市场在定价什么」第一公民区块
+# ─────────────────────────────────────────────────────────────────
+# DESIGN_2.0 §三.A：条件化预期前沿表 + 定价体制标签 + 验证点清单 +
+# 近事件摘要，放在 DCF 情景区块之前。设计红线 1：本区块只提供叙事
+# 框架，DCF 情景与差值照旧完整展示，不得删改。
+
+_REGIME_LABEL_ZH = {
+    "steady": "稳态现金流", "growth": "增长溢价",
+    "turnaround": "困境反转", "story": "题材叙事",
+}
+_REGIME_LABEL_EN = {
+    "steady": "Steady cash flow", "growth": "Growth premium",
+    "turnaround": "Turnaround", "story": "Narrative / story",
+}
+
+
+def _fmt_cny_compact(value: Any) -> str:
+    """CNY 金额 → 亿/万 人文单位（与 em_events_connector 口径一致：
+    <100 的每股量保留两位小数，防止 0.06 元被压成「0元」）。"""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "未披露"
+    a = abs(v)
+    if a >= 1e8:
+        return f"{v / 1e8:.2f}亿元"
+    if a >= 1e4:
+        return f"{v / 1e4:.0f}万元"
+    if a >= 100:
+        return f"{v:.0f}元"
+    return f"{v:.2f}元"
+
+
+def _build_priced_in_block(
+    frontier: dict | None,
+    regime: dict | None,
+    events: dict | None,
+    *,
+    is_zh: bool,
+) -> dict | None:
+    """把 meta_facts 里的 Phase 0 三件套映射成渲染层显示结构。
+
+    数据缺失的子块置 None，前端显示「暂无」而不是烂值。
+    """
+    if not (frontier or regime or events):
+        return None
+    block: dict[str, Any] = {
+        "title": "市场在定价什么" if is_zh else "What the market is pricing",
+        "subtitle": (
+            "条件化预期前沿 · 定价体制 · 验证点" if is_zh
+            else "Conditional expectations frontier · Pricing regime · Verification"
+        ),
+        "frontier": None,
+        "regime": None,
+        "verification": [],
+        "events": None,
+    }
+
+    # ── 条件化预期前沿表（设计红线 2：禁止单点隐含增速） ──
+    if isinstance(frontier, dict) and frontier.get("scenarios"):
+        sym = {"CNY": "¥", "USD": "$", "HKD": "HK$"}.get(
+            str(frontier.get("currency", "")), "")
+        try:
+            _price = float(frontier.get("market_price") or 0.0)
+        except (TypeError, ValueError):
+            _price = 0.0
+        try:
+            _wacc = float(frontier.get("base_wacc") or 0.0)
+        except (TypeError, ValueError):
+            _wacc = 0.0
+        rows = []
+        for scen in frontier["scenarios"]:
+            if not isinstance(scen, dict):
+                continue
+            cells = []
+            cols = sorted(
+                [c for c in (scen.get("wacc_columns") or []) if isinstance(c, dict)],
+                key=lambda c: c.get("wacc_delta") or 0.0,
+            )
+            for col in cols:
+                sols = [s for s in (col.get("solutions") or []) if isinstance(s, dict)]
+                if sols:
+                    txt = " / ".join(
+                        f"{float(s['implied_growth']):+.1%}" for s in sols
+                        if s.get("implied_growth") is not None
+                    )
+                    flags = []
+                    if any(s.get("extreme_expectation") for s in sols):
+                        flags.append("extreme")
+                    if len(sols) > 1:
+                        flags.append("multiple")
+                    cells.append({"text": txt or ("暂无" if is_zh else "—"),
+                                  "flags": flags, "diag": ""})
+                else:
+                    status = str(col.get("status") or "")
+                    diag = str(
+                        col.get("diagnostic_zh" if is_zh else "diagnostic_en") or "")
+                    label = (
+                        ("不可计算" if is_zh else "n/m")
+                        if status == "no_valid_grid_points"
+                        else ("无解" if is_zh else "no solution")
+                    )
+                    cells.append({"text": label, "flags": ["no_solution"],
+                                  "diag": diag})
+            try:
+                _margin_txt = f"{float(scen.get('target_margin')):.1%}"
+            except (TypeError, ValueError):
+                _margin_txt = "—"
+            rows.append({
+                "label": str(scen.get("label", "")),
+                "margin": _margin_txt,
+                "cells": cells,
+            })
+        if rows:
+            block["frontier"] = {
+                "priceLine": (
+                    f"现价 {sym}{_price:.2f} 隐含的条件化增速要求"
+                    f"（基准 WACC {_wacc:.1%}）" if is_zh else
+                    f"Growth required to support the current price "
+                    f"{sym}{_price:.2f} (base WACC {_wacc:.1%})"
+                ),
+                "waccCols": (
+                    ["WACC−1%", "基准", "WACC+1%"] if is_zh
+                    else ["WACC−1%", "Base", "WACC+1%"]
+                ),
+                "rows": rows,
+                "note": (
+                    "「若利润率为 X%，现价需要 Y% 年增速支撑」。⚠=极端预期"
+                    "（累计营收 scale >30×）；多解=价格-增速曲线非单调。"
+                    if is_zh else
+                    "Read as: at terminal margin X%, the price requires Y% "
+                    "annual growth. ⚠ = extreme expectation (>30× cumulative "
+                    "revenue scale); multiple roots = non-monotonic curve."
+                ),
+            }
+
+    # ── 定价体制（设计红线 1：只改叙事框架，估值差照旧展示） ──
+    if isinstance(regime, dict) and regime.get("weights"):
+        _labels = _REGIME_LABEL_ZH if is_zh else _REGIME_LABEL_EN
+        dominant = str(regime.get("dominant") or "")
+        top_two = list(regime.get("top_two") or [])
+        if dominant == "mixed" and len(top_two) >= 2:
+            dom_label = (
+                f"混合（{_labels.get(top_two[0], top_two[0])} × "
+                f"{_labels.get(top_two[1], top_two[1])}）" if is_zh else
+                f"Mixed ({_labels.get(top_two[0], top_two[0])} × "
+                f"{_labels.get(top_two[1], top_two[1])})"
+            )
+        else:
+            dom_label = _labels.get(dominant, dominant)
+        weights = []
+        for key, val in sorted(
+            (regime.get("weights") or {}).items(),
+            key=lambda kv: kv[1], reverse=True,
+        ):
+            try:
+                pct = round(float(val) * 100.0, 1)
+            except (TypeError, ValueError):
+                continue
+            weights.append({
+                "key": key, "label": _labels.get(key, key), "pct": pct,
+            })
+        block["regime"] = {
+            "dominant": dominant,
+            "dominantLabel": dom_label,
+            "mixed": dominant == "mixed",
+            "weights": weights,
+            "narrative": str(
+                regime.get("narrative_frame_zh" if is_zh else "narrative_frame_en")
+                or ""
+            ),
+        }
+        # 验证点清单（Phase 0 验收：标注「未核验」——核验能力是 Phase 1 交付物）
+        block["verification"] = [
+            {"text": str(v), "status": "未核验" if is_zh else "Unverified"}
+            for v in (regime.get("verification_focus") or [])
+        ]
+
+    # ── 近事件摘要（近 90 天预告/公告，中文；A 股专属） ──
+    if isinstance(events, dict):
+        forecasts = []
+        for f in (events.get("forecasts") or []):
+            if not isinstance(f, dict):
+                continue
+            lo, hi = f.get("value_low"), f.get("value_high")
+            if lo is None and hi is None:
+                rng = "未披露"
+            elif lo is not None and hi is not None and lo != hi:
+                rng = f"{_fmt_cny_compact(lo)} ~ {_fmt_cny_compact(hi)}"
+            else:
+                rng = _fmt_cny_compact(lo if lo is not None else hi)
+            forecasts.append({
+                "period": str(f.get("report_period", "")),
+                "type": str(f.get("forecast_type", "") or "未知"),
+                "indicator": str(f.get("indicator", "") or "净利润"),
+                "range": rng,
+                "noticeDate": str(f.get("notice_date", "")),
+            })
+        announcements = [
+            {
+                "date": str(a.get("date", "")),
+                "title": str(a.get("title", "")),
+                "category": str(a.get("category", "")),
+            }
+            for a in (events.get("announcements") or [])
+            if isinstance(a, dict) and a.get("title")
+        ][:10]
+        cons = events.get("consensus")
+        if not isinstance(cons, dict):
+            consensus_line = "一致预期数据不可用" if is_zh else "Consensus unavailable"
+        elif cons.get("insufficient_coverage"):
+            consensus_line = (
+                f"无有效一致预期：近6个月覆盖机构 {cons.get('org_count', 0)} 家，"
+                f"最近研报日期 {cons.get('latest_report_date') or '无'}，未达使用门槛"
+                if is_zh else
+                f"No usable consensus: {cons.get('org_count', 0)} covering org(s) "
+                f"in 6 months, latest report {cons.get('latest_report_date') or 'none'}"
+            )
+        else:
+            consensus_line = (
+                f"覆盖机构 {cons.get('org_count', 0)} 家（近6个月），"
+                f"最近研报日期 {cons.get('latest_report_date') or '—'}"
+                if is_zh else
+                f"{cons.get('org_count', 0)} covering orgs (6 months), "
+                f"latest report {cons.get('latest_report_date') or '—'}"
+            )
+        block["events"] = {
+            "asOf": str(events.get("as_of", "")),
+            "forecasts": forecasts,
+            "announcements": announcements,
+            "consensusLine": consensus_line,
+        }
+
+    return block
+
+
 def build_report_dict(
     *,
     decision: Any = None,
@@ -884,7 +1121,12 @@ def build_report_dict(
     _ps = (_g(decision, "publishing_status", "") or "").lower()
     _rating_downgraded = False
     if _ps == "blocked":
-        rating_word = "暂不评级" if is_zh else "Not Rated"
+        # Aegis 2.0 Phase 0（评级语义）：blocked 不是「模型没意见」，而是
+        # 「现价隐含的预期无法用可验证事实核验」——文案随之改造。
+        rating_word = (
+            "预期无法验证 · 暂不评级" if is_zh
+            else "Expectations unverifiable · Not Rated"
+        )
         rating_tone = "hold"  # neutral colour — neither buy nor avoid
     elif _ps == "needs_review":
         rating_word = "审核中" if is_zh else "Under Review"
@@ -990,12 +1232,25 @@ def build_report_dict(
             implied = None
         company = entity_name or eid or ""
         if implied is not None:
-            verdict = "上行空间" if implied > 0 else ("下行空间" if implied < 0 else "公允区间")
             if is_zh:
-                # AUDIT (2026-07): mirror the English branch's abs() — a signed
-                # negative here rendered "-23.8%下行空间", a double negative
-                # that reads like upside. Direction lives in `verdict` alone.
-                headline = f"{company}：DCF 基准隐含 {abs(implied):.1f}% {verdict}（rule-based 摘要）"
+                # Aegis 2.0 Phase 0（第 6 项）：中文 rule-based headline 改为
+                # 预期框架句式，不再输出裸「X% 下行/上行空间」作为主张。
+                # DCF 差值本身照旧在情景区块 / 核心判断完整展示（设计红线 1）。
+                if implied < -10:
+                    headline = (
+                        f"{company}：现价隐含预期显著高于可验证基本面，"
+                        f"关键验证点见正文（rule-based 摘要）"
+                    )
+                elif implied > 10:
+                    headline = (
+                        f"{company}：现价隐含预期低于模型可验证基本面，"
+                        f"存在预期差待核验（rule-based 摘要）"
+                    )
+                else:
+                    headline = (
+                        f"{company}：现价隐含预期与可验证基本面大体相容"
+                        f"（rule-based 摘要）"
+                    )
             else:
                 direction = "upside" if implied > 0 else ("downside" if implied < 0 else "fairly valued")
                 headline = f"{company}: rule-based DCF implies {abs(implied):.1f}% {direction}"
@@ -1743,6 +1998,14 @@ def build_report_dict(
         except ValueError:
             pass
 
+    # ── 市场在定价什么（Aegis 2.0 Phase 0 第一公民区块） ──
+    priced_in_block = _build_priced_in_block(
+        meta_facts.get("__expectations_frontier") if isinstance(meta_facts, dict) else None,
+        meta_facts.get("__pricing_regime") if isinstance(meta_facts, dict) else None,
+        meta_facts.get("__recent_events") if isinstance(meta_facts, dict) else None,
+        is_zh=is_zh,
+    )
+
     # ── Assemble ──
     report = {
         # `company` is the canonical company name (cleaned of exchange risk
@@ -1813,6 +2076,10 @@ def build_report_dict(
         "lede": lede,
         "executiveParagraphs": exec_paragraphs,
         "coreCalloutHtml": core_callout,
+
+        # Aegis 2.0 Phase 0：「市场在定价什么」——放在 DCF 情景之前渲染
+        # （设计红线 1：只是叙事框架，DCF 情景/差值区块原样保留）。
+        "pricedIn": priced_in_block,
 
         "quick": quick,
         "scenarios": scen_cells,

@@ -62,6 +62,9 @@ def main():
     parser.add_argument("--fmp-key", default=None, help="FMP API key for consensus estimates (or set FMP_API_KEY env var)")
     parser.add_argument("--fred-key", default=None, help="FRED API key for macro data (or set FRED_API_KEY env var)")
     parser.add_argument("--no-openbb", action="store_true", help="Disable OpenBB data enrichment")
+    parser.add_argument("--no-recent-events", action="store_true",
+                        help="Aegis 2.0 Phase 0: skip the A-share recent-events slice "
+                             "(公告/业绩预告/一致预期 fetch) — for offline runs / debugging")
     parser.add_argument("--strict-llm", action="store_true",
                         help="Fail hard if any agent's LLM exhausts retries (no silent mock fallback). "
                              "Use for production runs where mock-mixed output is worse than no report.")
@@ -107,6 +110,7 @@ def main():
         fmp_api_key=args.fmp_key,
         fred_api_key=args.fred_key,
         enable_openbb=not args.no_openbb,
+        enable_recent_events=not args.no_recent_events,
         strict_llm=args.strict_llm,
         smoke_mode=args.smoke,
     )

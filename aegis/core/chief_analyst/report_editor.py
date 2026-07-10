@@ -172,7 +172,25 @@ VALUATION ANCHORING (zero tolerance):
   upstream layer rewrote an off-scenario value. Preserve this tag or replace
   it with the correct scenario number. Do NOT fill in a guess.
 - Violating this produces reports where the headline says one number and
-  the scenario table shows another. The editor is the LAST line of defense."""
+  the scenario table shows another. The editor is the LAST line of defense.
+
+EXPECTATIONS-FIRST HEADLINE RULES (Aegis 2.0 methodology, zero tolerance):
+- The headline / executive_summary lead with what the price IMPLIES and
+  whether verifiable facts support it — the arc is: market-implied
+  expectations (quote the EXPECTATIONS FRONTIER conditionally: "at margin
+  X%, the price requires ~Y% growth") → expectations vs verifiable facts
+  (RECENT DISCLOSED EVENTS + financial evidence) → verification /
+  falsification checkpoints.
+- PROHIBITED as the headline claim: a bare "XX% 下行空间 / XX% upside /
+  XX% downside" percentage. Rephrase as an expectations judgment, e.g.
+  "现价隐含预期显著高于可验证基本面，关键验证点见正文". The DCF
+  scenarios and DCF-vs-price gap remain quotable INSIDE the body as
+  supporting evidence — never delete or hide them.
+- Never quote a single-point "市场隐含增速 Z%" — only the conditional
+  frontier form ("若利润率 X%，需 Y% 增速").
+- When a PRICING REGIME narrative frame is provided, the opening should
+  read through that frame (steady / growth / turnaround / story / mixed);
+  the regime never justifies omitting the valuation gap."""
 
 
 class ReportEditor:
@@ -224,13 +242,18 @@ class ReportEditor:
         try:
             from aegis.core.chief_analyst.thesis_synthesizer import (
                 _scrub_fair_value_claims,
+                frontier_sanctioned_growth_pcts,
             )
             editor_fields = (
                 "headline", "executive_summary", "opening_paragraph",
                 "closing_paragraph", "risk_summary",
             )
+            # 设计红线 9：前沿隐含增速/margin 档百分数是 sanctioned numbers。
             scrubbed, warns = _scrub_fair_value_claims(
                 raw, scenarios, market_data, fields=editor_fields,
+                extra_sanctioned_pcts=frontier_sanctioned_growth_pcts(
+                    (meta_facts or {}).get("__expectations_frontier")
+                ),
             )
             if warns:
                 for k in editor_fields:
@@ -326,6 +349,46 @@ class ReportEditor:
             else:
                 parts.append(f"  {k}: {v}")
         parts.append("")
+
+        # ── Aegis 2.0 Phase 0：预期前沿 / 定价体制 / 近事件事实块 ──
+        from aegis.core.chief_analyst.thesis_synthesizer import (
+            frontier_prompt_lines,
+        )
+        _lang = "zh" if disp["currency"] == "CNY" else "en"
+        _frontier_lines = frontier_prompt_lines(
+            (meta_facts or {}).get("__expectations_frontier"), _lang,
+        )
+        if _frontier_lines:
+            parts.append("=== MARKET-IMPLIED EXPECTATIONS FRONTIER (conditional reverse-DCF) ===")
+            parts.append(
+                "(Headline/lede must use the conditional form; bare single-point "
+                "implied growth or bare ±% return claims are prohibited.)"
+            )
+            for _ln in _frontier_lines:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        _regime = (meta_facts or {}).get("__pricing_regime")
+        if isinstance(_regime, dict) and _regime.get("weights"):
+            parts.append("=== PRICING REGIME (narrative frame only) ===")
+            parts.append(
+                "Weights: "
+                + ", ".join(f"{k}={float(v):.2f}" for k, v in _regime["weights"].items())
+                + f" | dominant: {_regime.get('dominant', '')}"
+            )
+            _frame = (
+                _regime.get("narrative_frame_zh") if _lang == "zh"
+                else _regime.get("narrative_frame_en")
+            )
+            if _frame:
+                parts.append(f"Narrative frame: {_frame}")
+            parts.append("")
+
+        _events_block = (meta_facts or {}).get("__recent_events_prompt")
+        if isinstance(_events_block, str) and _events_block.strip():
+            parts.append("=== RECENT DISCLOSED EVENTS (the ONLY sanctioned catalyst source) ===")
+            parts.append(_events_block)
+            parts.append("")
 
         # Key metrics for front page selection
         parts.append("=== ALL AVAILABLE METRICS ===")
