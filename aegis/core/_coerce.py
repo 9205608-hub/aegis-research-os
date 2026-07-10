@@ -1,6 +1,6 @@
 """Robust coercion helpers for LLM output parse boundaries.
 
-LLM outputs (DeepSeek V4, Kimi k2.6, Claude tool_use) occasionally serialize
+LLM outputs (DeepSeek V4, Grok, Claude tool_use) occasionally serialize
 list-typed schema fields as STRINGS containing JSON arrays
 ('["a", "b", "c"]') instead of returning the array directly. Downstream code
 that does ``for x in lst`` then iterates character-by-character — symptom:
@@ -64,7 +64,7 @@ def coerce_list(val: Any) -> list:
 def normalize_low_med_high(val: Any) -> str:
     """Normalize an LLM-emitted bucket value to low/medium/high.
 
-    BUG-Y24/Y27: LLMs (DeepSeek V4, Kimi) occasionally emit compound bucket
+    BUG-Y24/Y27: LLMs (DeepSeek V4 and other reasoning backends) occasionally emit compound bucket
     values like ``medium_high`` / ``high_medium`` / ``mediumlow`` that fail
     the strict ``^(low|medium|high)$`` Pydantic patterns on
     Inference.confidence, FollowUpQuestion.priority and all 4

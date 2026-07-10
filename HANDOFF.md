@@ -1,6 +1,19 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-10 (康达新材 002669 实盘验证 + A 股行业解析根因修复)
+> 最新更新: 2026-07-10 (Kimi 后端整体摘除 + Grok 备选后端接入；同日早间：康达新材验证 + 行业解析根因修复)
+
+## 🗑 2026-07-10 Kimi 后端整体摘除 + Grok 接入
+
+**用户指示：Kimi API 早已弃用，以后默认 DeepSeek，备选 Grok。**
+- ✅ 删除 `aegis/core/llm/kimi_client.py` + `tests/unit/test_kimi_recovery.py`；全仓（aegis/scripts/demos/tests/web/CLAUDE.md/README）grep kimi/moonshot/k2.x **零残留**（HANDOFF/AUDIT 历史档除外）
+- ✅ **Grok 后端**：新增 [grok_client.py](aegis/core/llm/grok_client.py)（继承参数化后的 DeepSeekClient——base_url `https://api.x.ai/v1`、key 取 `GROK_API_KEY`→`XAI_API_KEY`、模型 `GROK_MODEL` env 可覆盖，缺省 grok-4 **未实测**）。BUG-A20 恢复链 + max_tokens_hint 分档经继承全部生效；14 个新测试
+- ✅ `--backend auto` 解析顺序：deepseek → grok → sdk → subprocess；API 档并发/超时对 grok 同享
+- ✅ 顺带修复：llm_judge_critic 的 flash 裁判模型原是硬编码死值（现真正接 DeepSeek 工厂）；content-filter 类型化判定从 Kimi 切到 DeepSeekContentFilterError，顺带修掉 "400 - rejected" 消息漏判；replay_from_cache --editor 改用 DEEPSEEK_API_KEY
+- ✅ 旧 replay 缓存兼容：pickled 旧 ResearchConfig 无 grok 字段，读取全走 getattr
+- **测试 922 → 927 passed**（−10 Kimi 旧用例 +14 Grok +1 auto 选 grok）
+- ⚠ 待实测（等 key 注入环境）：grok-4 模型名、x.ai 探针连通性、DeepSeek 全量 LLM run
+
+---
 
 ## 🔍 2026-07-10 康达新材(002669) 实盘验证 + 行业解析根因修复
 

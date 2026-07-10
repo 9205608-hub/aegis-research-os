@@ -51,12 +51,12 @@ export SEC_USER_AGENT="Aegis Research research@aegis.ai"
 # Keep legacy env name working for older SEC client call sites.
 export EDGAR_USER_AGENT="${EDGAR_USER_AGENT:-$SEC_USER_AGENT}"
 # LLM / data enrichment keys.
-# 2026-05-04: switched default LLM from Kimi (key revoked, BUG-23) to
-# DeepSeek V4 — OpenAI-compatible, direct access from China, low cost.
-# Set DEEPSEEK_API_KEY in your environment (e.g., export it from ~/.zshrc or
-# use a local-only run_research.local.sh). Do not commit a real key here.
+# 默认 LLM 后端为 DeepSeek V4（OpenAI 兼容，中国大陆直连，低成本）；
+# 备选后端 Grok（xAI，需代理），设 GROK_API_KEY（或 XAI_API_KEY）并
+# BACKEND=grok 启用。密钥从环境注入（例如 ~/.zshrc，或本地专用的
+# run_research.local.sh，已 gitignore）。不要在这里提交真实 key。
 export DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
-export KIMI_API_KEY="${KIMI_API_KEY:-}"
+export GROK_API_KEY="${GROK_API_KEY:-}"
 export FMP_API_KEY="${FMP_API_KEY:-}"
 export FRED_API_KEY="${FRED_API_KEY:-}"
 
@@ -87,9 +87,9 @@ elif [ "$NO_LLM" = "--no-llm" ]; then
     python demos/auto_research_demo.py "$TICKER" $PRICE_ARG --wacc 0.095 --period latest
 else
     # Default backend: deepseek (V4) — OpenAI-compatible, direct access from
-    # China, low cost. Switched 2026-05-04 from subprocess after user
-    # provided a working DEEPSEEK_API_KEY. Falls back to subprocess (Claude
-    # Max via CLI) if DEEPSEEK_API_KEY is unset.
+    # China, low cost. Falls back to subprocess (Claude Max via CLI) if
+    # DEEPSEEK_API_KEY is unset. Alternate: BACKEND=grok（需 GROK_API_KEY
+    # 且能代理访问 api.x.ai；模型用 GROK_MODEL 覆盖，缺省 grok-4）。
     # To override, set BACKEND / MODEL in the caller env.
     BACKEND="${BACKEND:-deepseek}"
     MODEL="${MODEL:-deepseek-v4-pro}"

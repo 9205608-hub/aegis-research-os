@@ -189,13 +189,13 @@ class ResearchConfig:
     # LLM mode
     use_llm: bool = False
     llm_model: str = "sonnet"  # "sonnet", "opus", "haiku"
-    llm_backend: str = "auto"  # "auto", "sdk", "subprocess", "kimi", "deepseek"
-    kimi_api_key: str | None = None
-    kimi_model: str = "k2.6"
+    llm_backend: str = "auto"  # "auto", "deepseek", "grok", "sdk", "subprocess"
     deepseek_api_key: str | None = None
     deepseek_model: str = "deepseek-v4-pro"  # flagship; "deepseek-v4-flash" for cheaper/faster
+    grok_api_key: str | None = None  # falls back to GROK_API_KEY / XAI_API_KEY env
+    grok_model: str | None = None  # None → GROK_MODEL env, else "grok-4"
     fast_agents: bool = False  # Use cheaper model for specialist agents
-    fast_agent_model: str = "k2.5"  # Cheaper/faster model for agents
+    fast_agent_model: str = "deepseek-v4-flash"  # Cheaper/faster model for agents
     # TODO-X3: --fast pipeline shortcut. When True, Research Director's per-
     # agent DEEP designations are overridden to "standard" (no
     # narrative_supplement, smaller schema, ~50-70% faster per call). Used
@@ -376,7 +376,7 @@ class AutoResearchOrchestrator:
         # BUG-43: wall-time watchdog for LLM agent calls. GOOGL Run #3 died
         # silently at business_analyst → valuation_analyst boundary with no
         # stack trace, no exit log, 50 min of zero output. Most likely cause
-        # is a Kimi API call hanging indefinitely (no HTTP timeout). Use
+        # is an LLM API call hanging indefinitely (no HTTP timeout). Use
         # SIGALRM to force a TimeoutError after N seconds so the agent loop
         # catches it, logs it, and falls through to mock instead of hanging
         # the whole pipeline.
@@ -410,7 +410,7 @@ class AutoResearchOrchestrator:
         # ── Step 0: LLM backend health check (BUG-22) ────────────────
         # Fail fast if the chosen LLM backend is unreachable/unauthorized.
         # Without this, pipelines ran 15+ min before every agent fell back
-        # to mock (e.g. revoked Kimi key returning 401, or CLI timeouts).
+        # to mock (e.g. a revoked API key returning 401, or CLI timeouts).
         if config.use_llm:
             health_err = self._check_llm_backend_health(config)
             if health_err:
@@ -1440,7 +1440,7 @@ class AutoResearchOrchestrator:
 
         if config.use_llm:
             # BUG-7 fix: retry-once on exception. Before this, any transient
-            # Kimi error (empty tool_call args, 502, content_filter) would
+            # LLM error (empty tool_call args, 502, content_filter) would
             # cause a silent fallback to mechanical [-4%/-3%] deltas with
             # empty narratives. The retry absorbs flaky failures; the mock
             # fallback is still there for hard failures.
@@ -2157,7 +2157,7 @@ class AutoResearchOrchestrator:
 
         # AUDIT-D1/D4: concurrency cap + timeouts are backend-tiered. The
         # legacy values (cap=2, batch=4800s, watchdog=1800s) were sized for
-        # the subprocess/Claude-CLI path; API backends (deepseek/kimi/sdk)
+        # the subprocess/Claude-CLI path; API backends (deepseek/grok/sdk)
         # get cap=4 (batch 1's four agents run in one wave) and much tighter
         # hang detection (1800s/900s). Resolved once here — the locals feed
         # `_run_batch` below plus every `_agent_watchdog` in this method.
@@ -2340,7 +2340,7 @@ class AutoResearchOrchestrator:
                     out = agent.run(local_inp)
                     # BUG-31 fix: first-pass quality gate. Previously if
                     # agent returned weak output (2 obs / 1 inf, e.g.
-                    # variant_analyst's intermittent Kimi flakiness) we just
+                    # variant_analyst's intermittent LLM flakiness) we just
                     # kept it because there were no follow-up questions to
                     # trigger a re-run. Now: if first pass is below a floor,
                     # retry ONCE (same prompt, fresh LLM call) and keep the
@@ -2500,7 +2500,7 @@ class AutoResearchOrchestrator:
                         q_entries.append(entry)
 
                 except Exception as e:
-                    # Kimi-only fallback chain. The llm_agent_base.py
+                    # LLM fallback chain. The llm_agent_base.py
                     # wrapper already handles content_filter retry via
                     # prompt stripping (BUG-30, v2 after GLM removal); if
                     # that still fails we go straight to rule-based.
@@ -3886,7 +3886,7 @@ class AutoResearchOrchestrator:
 
         Returns None on success, or an error string describing what's wrong.
         Intentionally conservative: we only flag definitive failures (e.g.
-        401 from Kimi, claude CLI not on PATH, missing key for SDK). A
+        401 from DeepSeek, claude CLI not on PATH, missing key for SDK). A
         transient network blip would still let the pipeline start and let
         per-agent retries handle it.
         """
@@ -3898,14 +3898,14 @@ class AutoResearchOrchestrator:
         backend = config.llm_backend
         if backend == "auto":
             has_deepseek = bool(config.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY"))
-            has_kimi = bool(config.kimi_api_key or os.environ.get("KIMI_API_KEY") or os.environ.get("MOONSHOT_API_KEY"))
+            has_grok = bool(config.grok_api_key or os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY"))
             has_api = bool(os.environ.get("ANTHROPIC_API_KEY"))
             has_oauth = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
             in_session = bool(os.environ.get("CLAUDE_CODE_ENTRYPOINT"))
             if has_deepseek:
                 backend = "deepseek"
-            elif has_kimi:
-                backend = "kimi"
+            elif has_grok:
+                backend = "grok"
             elif has_api or (has_oauth and not in_session):
                 backend = "sdk"
             else:
@@ -3932,41 +3932,35 @@ class AutoResearchOrchestrator:
             except Exception as e:
                 return f"DeepSeek probe network error: {type(e).__name__}: {str(e)[:120]}"
 
-        elif backend == "kimi":
-            key = (config.kimi_api_key
-                   or os.environ.get("KIMI_API_KEY")
-                   or os.environ.get("MOONSHOT_API_KEY"))
+        elif backend == "grok":
+            key = (config.grok_api_key
+                   or os.environ.get("GROK_API_KEY")
+                   or os.environ.get("XAI_API_KEY"))
             if not key:
-                return "backend=kimi but no KIMI_API_KEY / MOONSHOT_API_KEY in env"
-            # AUDIT-B3: the probe used to hit api.moonshot.cn without a
-            # User-Agent — an endpoint KimiClient never uses (sk-kimi- keys
-            # route to api.kimi.com/coding/v1, others to api.moonshot.ai/v1,
-            # and Kimi Code 401s any request missing the coding-agent UA).
-            # Good keys were rejected at startup with a misleading "rotate
-            # key" hint. Reuse the client's own endpoint derivation so probe
-            # and client can never disagree.
-            from aegis.core.llm.kimi_client import resolve_kimi_endpoint
-            base_url, ua_headers = resolve_kimi_endpoint(key)
+                return "backend=grok but no GROK_API_KEY / XAI_API_KEY in env"
+            # Probe the same endpoint GrokClient uses so probe and client
+            # can never disagree about where a key authenticates.
+            from aegis.core.llm.grok_client import GROK_BASE_URL
             try:
                 req = _ur.Request(
-                    f"{base_url}/models",
-                    headers={"Authorization": f"Bearer {key}", **ua_headers},
+                    f"{GROK_BASE_URL}/models",
+                    headers={"Authorization": f"Bearer {key}"},
                 )
                 with _ur.urlopen(req, timeout=8) as resp:
                     if resp.status != 200:
-                        return f"Kimi {base_url}/models returned HTTP {resp.status}"
+                        return f"Grok {GROK_BASE_URL}/models returned HTTP {resp.status}"
             except _uerr.HTTPError as e:
                 if e.code in (401, 403):
-                    return (f"Kimi API key rejected (HTTP {e.code}) at {base_url}. "
+                    return (f"Grok API key rejected (HTTP {e.code}) at {GROK_BASE_URL}. "
                             f"Key starts with {key[:8]}... — rotate or switch backend.")
-                return f"Kimi probe HTTP {e.code}: {str(e)[:120]}"
+                return f"Grok probe HTTP {e.code}: {str(e)[:120]}"
             except Exception as e:
-                # AUDIT-B3: network blips (proxy/DNS in the user's CN
-                # environment) must not kill the run — per the docstring,
-                # only definitive failures abort; per-agent retries handle
-                # transient issues. Degrade to a warning on stderr.
+                # api.x.ai needs proxy access from the user's CN network —
+                # a transient proxy/DNS blip must not kill the run. Per the
+                # docstring, only definitive failures abort; per-agent
+                # retries handle the rest. Degrade to a warning on stderr.
                 import sys as _sys
-                print(f"  ⚠ Kimi probe network error (non-fatal): "
+                print(f"  ⚠ Grok probe network error (non-fatal): "
                       f"{type(e).__name__}: {str(e)[:120]}", file=_sys.stderr)
 
         elif backend == "subprocess":
@@ -4005,7 +3999,7 @@ class AutoResearchOrchestrator:
         instantiating a client. Mirrors that method's "auto" branch exactly.
 
         Used to select the backend-tiered concurrency cap and timeouts:
-        API backends (deepseek/kimi/sdk) are minutes-per-call, subprocess
+        API backends (deepseek/grok/sdk) are minutes-per-call, subprocess
         CLI is tens of minutes — one set of knobs cannot fit both.
         """
         import os
@@ -4014,9 +4008,9 @@ class AutoResearchOrchestrator:
             return backend
         if bool(config.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY")):
             return "deepseek"
-        if bool(config.kimi_api_key or os.environ.get("KIMI_API_KEY")
-                or os.environ.get("MOONSHOT_API_KEY")):
-            return "kimi"
+        if bool(getattr(config, "grok_api_key", None) or os.environ.get("GROK_API_KEY")
+                or os.environ.get("XAI_API_KEY")):
+            return "grok"
         if bool(os.environ.get("ANTHROPIC_API_KEY")):
             return "sdk"
         if (bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
@@ -4034,15 +4028,15 @@ class AutoResearchOrchestrator:
 
         if backend == "auto":
             has_deepseek_key = bool(config.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY"))
-            has_kimi_key = bool(config.kimi_api_key or os.environ.get("KIMI_API_KEY") or os.environ.get("MOONSHOT_API_KEY"))
+            has_grok_key = bool(getattr(config, "grok_api_key", None) or os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY"))
             has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
             has_oauth = bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
             in_claude_session = bool(os.environ.get("CLAUDE_CODE_ENTRYPOINT"))
 
             if has_deepseek_key:
                 backend = "deepseek"
-            elif has_kimi_key:
-                backend = "kimi"
+            elif has_grok_key:
+                backend = "grok"
             elif has_api_key:
                 backend = "sdk"
             elif has_oauth and not in_claude_session:
@@ -4056,12 +4050,12 @@ class AutoResearchOrchestrator:
             client = DeepSeekClient(model=config.deepseek_model, api_key=ds_key)
             if not quiet:
                 _log(f"LLM client: DeepSeek (model={config.deepseek_model})")
-        elif backend == "kimi":
-            from aegis.core.llm.kimi_client import KimiClient
-            kimi_key = config.kimi_api_key or os.environ.get("KIMI_API_KEY", "") or os.environ.get("MOONSHOT_API_KEY", "")
-            client = KimiClient(model=config.kimi_model, api_key=kimi_key)
+        elif backend == "grok":
+            from aegis.core.llm.grok_client import GrokClient
+            grok_key = getattr(config, "grok_api_key", None) or os.environ.get("GROK_API_KEY", "") or os.environ.get("XAI_API_KEY", "")
+            client = GrokClient(model=getattr(config, "grok_model", None), api_key=grok_key)
             if not quiet:
-                _log(f"LLM client: Kimi (model={config.kimi_model})")
+                _log(f"LLM client: Grok (model={client.model})")
         elif backend == "sdk":
             from aegis.core.llm.sdk_client import SDKClient
             client = SDKClient(model=config.llm_model)
@@ -4112,9 +4106,10 @@ class AutoResearchOrchestrator:
     def _resolve_fast_llm_client(self, config: Any, _log: Any) -> Any:
         """Resolve a cheaper/faster LLM client for specialist agents.
 
-        Honoured by Kimi backend (k2.6 → k2.5) and DeepSeek backend
-        (deepseek-v4-pro → deepseek-v4-flash). For SDK / subprocess this is
-        a no-op (no published "cheap tier").
+        Honoured by the DeepSeek backend (deepseek-v4-pro →
+        deepseek-v4-flash by default, overridable via fast_agent_model).
+        For Grok / SDK / subprocess this is a no-op (no published/validated
+        cheap tier wired yet).
         """
         if not config.fast_agents:
             return self._resolve_llm_client(config, _log, quiet=True)
@@ -4126,25 +4121,18 @@ class AutoResearchOrchestrator:
         backend = config.llm_backend
         if backend == "auto":
             has_deepseek_key = bool(config.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY"))
-            has_kimi_key = bool(config.kimi_api_key or os.environ.get("KIMI_API_KEY") or os.environ.get("MOONSHOT_API_KEY"))
             if has_deepseek_key:
                 backend = "deepseek"
-            elif has_kimi_key:
-                backend = "kimi"
 
         if backend == "deepseek":
             # TODO-X3 续: DeepSeek V4 actually exposes two tiers. Use flash.
             from aegis.core.llm.deepseek_client import DeepSeekClient
             ds_key = config.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY", "")
-            client = DeepSeekClient(model="deepseek-v4-flash", api_key=ds_key)
-            _log(f"Agent LLM: DeepSeek (model=deepseek-v4-flash, fast mode)")
-        elif backend == "kimi":
-            from aegis.core.llm.kimi_client import KimiClient
-            kimi_key = config.kimi_api_key or os.environ.get("KIMI_API_KEY", "") or os.environ.get("MOONSHOT_API_KEY", "")
-            client = KimiClient(model=config.fast_agent_model, api_key=kimi_key)
-            _log(f"Agent LLM: Kimi (model={config.fast_agent_model}, fast mode)")
+            fast_model = getattr(config, "fast_agent_model", None) or "deepseek-v4-flash"
+            client = DeepSeekClient(model=fast_model, api_key=ds_key)
+            _log(f"Agent LLM: DeepSeek (model={fast_model}, fast mode)")
         else:
-            # Non-Kimi backends: fall back to premium (no fast variant)
+            # Other backends: fall back to premium (no fast variant)
             client = self._resolve_llm_client(config, _log, quiet=True)
 
         # Same disk-cache wrap as premium path so flash calls also benefit.
@@ -4945,24 +4933,25 @@ class AutoResearchOrchestrator:
     def _effective_model_name(self, config: Any) -> str:
         """Resolve the model name actually used for this run, for HTML metadata.
 
-        Prior code hardcoded `config.kimi_model` even when the run actually
-        used DeepSeek or subprocess Claude. Reflect the resolved backend.
+        Prior code hardcoded one backend's model field even when the run
+        actually used another backend. Reflect the resolved backend.
         """
         import os
         backend = config.llm_backend
         if backend == "auto":
             if config.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY"):
                 backend = "deepseek"
-            elif config.kimi_api_key or os.environ.get("KIMI_API_KEY") or os.environ.get("MOONSHOT_API_KEY"):
-                backend = "kimi"
+            elif getattr(config, "grok_api_key", None) or os.environ.get("GROK_API_KEY") or os.environ.get("XAI_API_KEY"):
+                backend = "grok"
             elif os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
                 backend = "sdk"
             else:
                 backend = "subprocess"
         if backend == "deepseek":
             return config.deepseek_model
-        if backend == "kimi":
-            return config.kimi_model
+        if backend == "grok":
+            from aegis.core.llm.grok_client import default_grok_model
+            return getattr(config, "grok_model", None) or default_grok_model()
         return config.llm_model
 
     # BUG-A14 (2026-05-05): A-share industry-string → sector pack mapping.
