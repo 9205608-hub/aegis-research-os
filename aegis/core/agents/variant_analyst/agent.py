@@ -40,12 +40,23 @@ class VariantAnalyst(AgentBase):
         # Priced-in assumptions from macro context
         priced_in = (inp.macro_context or {}).get("priced_in", {})
         if priced_in:
+            # Aegis 2.0 Phase 0（设计红线 2）：条件化预期前沿优先——变体
+            # 分析的第一问从「市场错了多少」变为「现价隐含了什么预期」。
+            _frontier = priced_in.get("expectations_frontier") or {}
+            if _frontier.get("lines"):
+                for _line in _frontier["lines"][:4]:
+                    observations.append(Observation(
+                        text=(f"市场隐含预期（条件化反解）: {_line}" if zh
+                              else f"Market-implied expectation (conditional): {_line}"),
+                        source_ids=["expectations_frontier"],
+                    ))
             # AUDIT-A9 (BUG-Y20 third path): when the reverse DCF hit a
             # bisection boundary the implied growth is a fake-clean edge
             # value (e.g. 0.50). The orchestrator now nulls it out and sets
             # `implied_growth_unreliable`; guard here too so a stale/other
             # caller can never turn the artifact into a rendered Observation.
-            if (priced_in.get("implied_revenue_growth") is not None
+            # (Legacy single-point fallback — frontier unavailable only.)
+            elif (priced_in.get("implied_revenue_growth") is not None
                     and not priced_in.get("implied_growth_unreliable")):
                 observations.append(Observation(
                     text=(f"市场隐含营收增速: {priced_in['implied_revenue_growth']:.2%}" if zh
@@ -154,6 +165,23 @@ class VariantAnalyst(AgentBase):
     ) -> list[Inference]:
         inferences: list[Inference] = []
         zh = is_zh_input(inp)
+
+        # Aegis 2.0 Phase 0：条件化预期框架（设计红线 2）——变体的锚
+        frontier_obs = [i for i, o in enumerate(observations)
+                        if "expectations_frontier" in (o.source_ids or [])]
+        if frontier_obs:
+            inferences.append(Inference(
+                text=("变体判断的锚是条件化预期：先确认现价在哪个利润率情景下需要"
+                      "多高增速，再判断可验证事实（业绩预告、公告、财务证据）能否"
+                      "支撑该组合——支撑不了的部分即为预期差"
+                      if zh else
+                      "Anchor the variant on conditional expectations: identify which "
+                      "margin/growth combination the current price requires, then test "
+                      "whether disclosed facts can support it — the unsupported "
+                      "remainder is the expectations gap"),
+                based_on_observation_indices=frontier_obs[:1],
+                confidence="high",
+            ))
 
         # Variant location from disagreements
         variant_obs = [i for i, o in enumerate(observations)

@@ -176,7 +176,25 @@ HARD CONSTRAINTS:
 - Do NOT fabricate numbers not in the provided data
 - Do NOT make definitive buy/sell calls — form a hypothesis to be tested
 - DO be specific enough that someone could disagree with you
-- DO identify what would change your mind"""
+- DO identify what would change your mind
+
+EXPECTATIONS-FIRST FRAMING (Aegis 2.0 methodology):
+The research question is NOT "what is this company worth" but "what
+expectations does the current price embed, are they compatible with
+verifiable facts, and what signals would falsify them?" Accordingly:
+- When a MARKET-IMPLIED EXPECTATIONS FRONTIER is provided, anchor
+  what_consensus_likely_believes and key_controversy on it, quoting the
+  conditional form ("at margin X%, the price requires ~Y% growth"). Never
+  assert a single-point "market implies Z% growth" — one price cannot
+  identify both growth and margin.
+- When RECENT DISCLOSED EVENTS are provided, they are the ONLY sanctioned
+  catalyst source — do not hypothesize undisclosed M&A / order stories.
+- When a PRICING REGIME is provided, use its narrative frame (steady /
+  growth / turnaround / story / mixed) to set the research angle. The
+  regime only selects the frame and verification points; the DCF-vs-price
+  gap must still be stated openly — the gap itself is information.
+- The opening_angle should read as an expectations judgment with named
+  verification points, not a bare "XX% downside/upside" claim."""
 
 
 class ResearchDirector:
@@ -381,6 +399,40 @@ class ResearchDirector:
                         parts.append(f"  market_implied_revenue_growth: {float(implied_growth):.1%}")
                     except (ValueError, TypeError):
                         parts.append(f"  market_implied_revenue_growth: {implied_growth}")
+            parts.append("")
+
+        # ── Aegis 2.0 Phase 0：预期前沿 / 定价体制 / 近事件事实块 ──
+        # macro_context (= orchestrator agent_macro) 已按市场语言渲染好。
+        _priced_in = (macro_context or {}).get("priced_in") or {}
+        _frontier = _priced_in.get("expectations_frontier") or {}
+        if _frontier.get("lines"):
+            parts.append("=== MARKET-IMPLIED EXPECTATIONS FRONTIER (conditional reverse-DCF) ===")
+            parts.append(
+                "(Quote conditionally — 'at margin X%, the price requires ~Y% "
+                "growth'. Single-point implied growth is prohibited.)"
+            )
+            for _ln in _frontier["lines"]:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        _regime = (macro_context or {}).get("pricing_regime") or {}
+        if _regime.get("weights"):
+            parts.append("=== PRICING REGIME (narrative frame only) ===")
+            parts.append(
+                "Weights: "
+                + ", ".join(f"{k}={float(v):.2f}" for k, v in _regime["weights"].items())
+                + f" | dominant: {_regime.get('dominant', '')}"
+            )
+            if _regime.get("narrative_frame"):
+                parts.append(f"Narrative frame: {_regime['narrative_frame']}")
+            for _vf in _regime.get("verification_focus") or []:
+                parts.append(f"  verify: {_vf}")
+            parts.append("")
+
+        _events_block = (macro_context or {}).get("recent_events")
+        if isinstance(_events_block, str) and _events_block.strip():
+            parts.append("=== RECENT DISCLOSED EVENTS (the ONLY sanctioned catalyst source) ===")
+            parts.append(_events_block)
             parts.append("")
 
         if sensitivity_rankings:

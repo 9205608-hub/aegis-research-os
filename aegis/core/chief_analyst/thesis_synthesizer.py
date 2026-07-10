@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -190,11 +191,163 @@ def _direction_of(window: str) -> int:
     return 0 if tie else best_dir
 
 
+# ═══ Aegis 2.0 Phase 0 — 预期前沿 prompt 渲染 + scrubber 白名单 ═══════
+#
+# DESIGN_2.0 §三.A / 设计红线 2：反解输出必须条件化（「若利润率 X 则需
+# 增速 Y」），禁止单点「市场隐含增速 Z%」。设计红线 9：前沿数字面世必须
+# 同步注册 scrubber/critic 白名单——frontier_sanctioned_growth_pcts 就是
+# 该白名单的生成器，synthesize()/ReportEditor.edit() 把它接进
+# _scrub_fair_value_claims 的 % 一致性检查。
+
+_FRONTIER_CCY_SYMBOLS = {"CNY": "¥", "USD": "$", "HKD": "HK$"}
+
+
+def _fmt_growth(g: float) -> str:
+    return f"{g:+.1%}"
+
+
+def frontier_prompt_lines(frontier: dict[str, Any] | None, lang: str = "zh") -> list[str]:
+    """把 ExpectationsFrontier.to_dict() 渲染成条件化句式行（zh/en 双语）。
+
+    每档利润率情景一行：「若利润率维持 X%，现价需要 Y% 增速支撑
+    （WACC±1%: lo ~ hi）」；无解档引用引擎的结构化诊断文本
+    （diagnostic_zh / diagnostic_en，由渲染语言选择——中文化铁律）。
+    """
+    if not isinstance(frontier, dict) or not frontier.get("scenarios"):
+        return []
+    zh = lang == "zh"
+    sym = _FRONTIER_CCY_SYMBOLS.get(str(frontier.get("currency", "")), "")
+    try:
+        price = float(frontier.get("market_price") or 0.0)
+    except (TypeError, ValueError):
+        price = 0.0
+
+    lines: list[str] = []
+    for scen in frontier["scenarios"]:
+        if not isinstance(scen, dict):
+            continue
+        label = str(scen.get("label", ""))
+        try:
+            margin = float(scen.get("target_margin") or 0.0)
+        except (TypeError, ValueError):
+            margin = 0.0
+        cols = [c for c in (scen.get("wacc_columns") or []) if isinstance(c, dict)]
+        def _delta_of(col: dict) -> float:
+            v = col.get("wacc_delta")
+            try:
+                return float(v) if v is not None else 1.0
+            except (TypeError, ValueError):
+                return 1.0
+
+        base_col = next((c for c in cols if abs(_delta_of(c)) < 1e-9), None)
+        all_growths = [
+            float(s["implied_growth"])
+            for c in cols for s in (c.get("solutions") or [])
+            if isinstance(s, dict) and s.get("implied_growth") is not None
+        ]
+        extreme = any(
+            s.get("extreme_expectation")
+            for c in cols for s in (c.get("solutions") or [])
+            if isinstance(s, dict)
+        )
+        base_growths = [
+            float(s["implied_growth"])
+            for s in ((base_col or {}).get("solutions") or [])
+            if isinstance(s, dict) and s.get("implied_growth") is not None
+        ]
+        diag_key = "diagnostic_zh" if zh else "diagnostic_en"
+        diag = str((base_col or (cols[0] if cols else {})).get(diag_key) or "")
+
+        if base_growths:
+            joiner = "、" if zh else ", "
+            base_txt = joiner.join(_fmt_growth(g) for g in base_growths)
+            lo, hi = min(all_growths), max(all_growths)
+            if zh:
+                line = (
+                    f"若终年营业利润率为 {margin:.1%}（{label}），"
+                    f"现价 {sym}{price:.2f} 需要约 {base_txt} 的年营收增速支撑"
+                    f"（WACC±1% 区间: {_fmt_growth(lo)} ~ {_fmt_growth(hi)}）"
+                )
+                if len(base_growths) > 1:
+                    line += "；价格-增速曲线非单调，存在多个隐含增速解，须结合验证点解读"
+                if extreme:
+                    line += "〔极端预期：隐含终年累计营收 scale 超 30 倍〕"
+            else:
+                line = (
+                    f"At a terminal operating margin of {margin:.1%} ({label}), "
+                    f"the current price {sym}{price:.2f} requires roughly "
+                    f"{base_txt} annual revenue growth "
+                    f"(WACC±1% range: {_fmt_growth(lo)} ~ {_fmt_growth(hi)})"
+                )
+                if len(base_growths) > 1:
+                    line += (
+                        "; the price-vs-growth curve is non-monotonic "
+                        "(multiple implied-growth solutions)"
+                    )
+                if extreme:
+                    line += " [extreme expectation: >30x cumulative revenue scale]"
+        elif all_growths:
+            # 基准 WACC 档无解，但 ±1% 档有解——如实给区间 + 基准档诊断。
+            lo, hi = min(all_growths), max(all_growths)
+            if zh:
+                line = (
+                    f"若终年营业利润率为 {margin:.1%}（{label}）：基准 WACC 档无解"
+                    f"（{diag or '见诊断'}），WACC±1% 档隐含增速 "
+                    f"{_fmt_growth(lo)} ~ {_fmt_growth(hi)}"
+                )
+            else:
+                line = (
+                    f"At a terminal operating margin of {margin:.1%} ({label}): "
+                    f"no solution at base WACC ({diag or 'see diagnostic'}); "
+                    f"WACC±1% columns imply {_fmt_growth(lo)} ~ {_fmt_growth(hi)}"
+                )
+        else:
+            if zh:
+                line = (
+                    f"若终年营业利润率为 {margin:.1%}（{label}）："
+                    f"{diag or '网格内无解'}"
+                )
+            else:
+                line = (
+                    f"At a terminal operating margin of {margin:.1%} ({label}): "
+                    f"{diag or 'no solution within the grid'}"
+                )
+        lines.append(line)
+    return lines
+
+
+def frontier_sanctioned_growth_pcts(frontier: dict[str, Any] | None) -> list[float]:
+    """设计红线 9：前沿表全部隐含增速百分数（含 WACC±1% 列的解）+ margin
+    档百分数 → % 一致性 scrubber 的 sanctioned 白名单（百分数幅值）。"""
+    if not isinstance(frontier, dict):
+        return []
+    out: set[float] = set()
+    for scen in frontier.get("scenarios") or []:
+        if not isinstance(scen, dict):
+            continue
+        try:
+            out.add(round(abs(float(scen.get("target_margin"))) * 100.0, 1))
+        except (TypeError, ValueError):
+            pass
+        for col in scen.get("wacc_columns") or []:
+            if not isinstance(col, dict):
+                continue
+            for s in col.get("solutions") or []:
+                if not isinstance(s, dict):
+                    continue
+                try:
+                    out.add(round(abs(float(s.get("implied_growth"))) * 100.0, 1))
+                except (TypeError, ValueError):
+                    pass
+    return sorted(out)
+
+
 def _scrub_fair_value_claims(
     raw: dict[str, Any],
     scenarios: dict[str, float],
     market_data: dict[str, float] | None = None,
     fields: tuple[str, ...] | None = None,
+    extra_sanctioned_pcts: Sequence[float] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Detect and rewrite per-share fair-value claims that contradict scenarios.
 
@@ -353,6 +506,14 @@ def _scrub_fair_value_claims(
     # -99% — the % numbers come from a different framework (cash floor /
     # restructure ceiling) and the conflation is what misleads readers.
     if market_price and market_price > 0:
+        # 设计红线 9：预期前沿的隐含增速 / margin 档百分数是 sanctioned
+        # numbers——它们会以「若利润率 X% 需 Y% 增速」句式出现在叙事里，
+        # 不得被 % RETURN CONSISTENCY 检查误判为 return 主张。
+        _extra_pcts = tuple(extra_sanctioned_pcts or ())
+
+        def _is_extra_sanctioned(val: float) -> bool:
+            return any(abs(abs(val) - p) <= 0.5 for p in _extra_pcts)
+
         sanctioned_returns = []
         for s in sanctioned:
             if s != 0:
@@ -405,6 +566,9 @@ def _scrub_fair_value_claims(
                         sign = -1 if is_down else (+1 if is_up else 0)
                         if sign == 0:
                             continue
+                        # 设计红线 9：两端都命中前沿白名单 → 不是 return 主张
+                        if _is_extra_sanctioned(v1) and _is_extra_sanctioned(v2):
+                            continue
                         cited = sorted([sign * v1, sign * v2])
                         if not any(cited[0] - 10 <= r <= cited[1] + 10 for r in sanctioned_returns):
                             bad_pct.append(m.group(0))
@@ -427,6 +591,9 @@ def _scrub_fair_value_claims(
                         # / probability mentions, not return claims, unless
                         # there's directional context.
                         if abs(v) < 5 and not (is_down or is_up):
+                            continue
+                        # 设计红线 9：命中前沿隐含增速/margin 白名单 → 放行
+                        if _is_extra_sanctioned(v):
                             continue
                         if not any(abs(v - r) <= 10 for r in sanctioned_returns):
                             bad_pct.append(m.group(0))
@@ -648,7 +815,31 @@ CRITICAL — VALUATION ANCHORING (zero tolerance):
   claim ("base is too low — we expect closer to bull case"). Never as a fresh number.
 - Violating this rule produces internally inconsistent reports where the narrative
   cites one fair value and the scenario table shows another. This is the single
-  most damaging failure mode in our reports."""
+  most damaging failure mode in our reports.
+
+CRITICAL — EXPECTATIONS-FIRST FRAMING (Aegis 2.0 methodology):
+The report's primary conclusion answers "what expectations does the current
+price embed, and are those expectations compatible with verifiable facts?" —
+NOT "the model says fair value is X so the market is wrong by Y%". Follow
+this three-step arc in core_thesis / market_implied_story / why_market_is_wrong:
+1. WHAT THE PRICE IMPLIES — quote the MARKET-IMPLIED EXPECTATIONS FRONTIER
+   when provided, using its conditional form ("at margin X%, the current
+   price requires ~Y% growth"). NEVER assert a single-point "market implies
+   Z% growth" — one price cannot identify both growth and margin.
+2. EXPECTATIONS vs VERIFIABLE FACTS — test those implied expectations
+   against disclosed facts: the RECENT DISCLOSED EVENTS block (the ONLY
+   sanctioned catalyst source) and the agents' financial evidence.
+3. VERIFICATION / FALSIFICATION SIGNALS — state which observable events
+   (预告/公告/季报 metrics) would confirm or kill the priced-in expectations.
+Framing rules:
+- Do NOT phrase the headline claim as a bare "XX% downside/upside". Express
+  the conclusion as an expectations judgment ("the price embeds expectations
+  that verifiable fundamentals do not yet support; key checkpoints below").
+  The DCF scenarios and the DCF-vs-price gap stay fully quotable as
+  supporting evidence — never suppress them (the gap itself is information).
+- When a PRICING REGIME assessment is provided, adopt its narrative frame
+  (steady / growth / turnaround / story / mixed) to interpret the gap and
+  pick verification points. The regime NEVER justifies hiding the gap."""
 
 
 class ThesisSynthesizer:
@@ -705,7 +896,14 @@ class ThesisSynthesizer:
         # We rewrite the offending field in-place and append a CONSISTENCY
         # warning that propagates into the unresolved_tensions list so the
         # report shows the override.
-        raw, valuation_warnings = _scrub_fair_value_claims(raw, scenarios, market_data)
+        # 设计红线 9：前沿隐含增速/margin 百分数注册进 % 白名单，防止
+        # 「若利润率 X% 需 Y% 增速」句式被误判成 return 主张。
+        raw, valuation_warnings = _scrub_fair_value_claims(
+            raw, scenarios, market_data,
+            extra_sanctioned_pcts=frontier_sanctioned_growth_pcts(
+                (meta_facts or {}).get("__expectations_frontier")
+            ),
+        )
         if valuation_warnings:
             existing = list(raw.get("unresolved_tensions", []) or [])
             existing.extend(valuation_warnings)
@@ -801,6 +999,45 @@ class ThesisSynthesizer:
             for sr in sensitivity_rankings[:5]:
                 parts.append(f"  {sr.get('assumption', '')}: {float(sr.get('impact_pct', 0)):.1f}% impact")
         parts.append("")
+
+        # ── Aegis 2.0 Phase 0：预期前沿 / 定价体制 / 近事件事实块 ──
+        _lang = "zh" if disp["currency"] == "CNY" else "en"
+        _frontier_lines = frontier_prompt_lines(
+            (meta_facts or {}).get("__expectations_frontier"), _lang,
+        )
+        if _frontier_lines:
+            parts.append("=== MARKET-IMPLIED EXPECTATIONS FRONTIER (conditional reverse-DCF) ===")
+            parts.append(
+                "(One margin scenario per line. Quote these in conditional form only; "
+                "a single-point 'market implies Z% growth' is prohibited.)"
+            )
+            for _ln in _frontier_lines:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        _regime = (meta_facts or {}).get("__pricing_regime")
+        if isinstance(_regime, dict) and _regime.get("weights"):
+            parts.append("=== PRICING REGIME (narrative frame only — never suppress the DCF gap) ===")
+            parts.append(
+                "Weights: "
+                + ", ".join(f"{k}={float(v):.2f}" for k, v in _regime["weights"].items())
+                + f" | dominant: {_regime.get('dominant', '')}"
+            )
+            _frame = (
+                _regime.get("narrative_frame_zh") if _lang == "zh"
+                else _regime.get("narrative_frame_en")
+            )
+            if _frame:
+                parts.append(f"Narrative frame: {_frame}")
+            for _vf in _regime.get("verification_focus") or []:
+                parts.append(f"  verify: {_vf}")
+            parts.append("")
+
+        _events_block = (meta_facts or {}).get("__recent_events_prompt")
+        if isinstance(_events_block, str) and _events_block.strip():
+            parts.append("=== RECENT DISCLOSED EVENTS (the ONLY sanctioned catalyst source) ===")
+            parts.append(_events_block)
+            parts.append("")
 
         # Key metrics
         parts.append("=== KEY METRICS ===")

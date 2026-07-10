@@ -1,6 +1,34 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-10 第三批 (康达新材首次 DeepSeek 全量 LLM run 实证 + rule-based 模板中文化 + 两个实战新 bug 修复)
+> 最新更新: 2026-07-10 第四批 (**Aegis 2.0 Phase 0 落地**：预期优先框架，分支 claude/phase0-expectations 待验收合并)
+
+## 🚀 2026-07-10 Phase 0 · 预期优先框架（DESIGN_2.0.md 第一期，待用户验收）
+
+**分支 `claude/phase0-expectations`（已 push 未合并）。测试 970 → 1124 passed / 5 skipped。**
+
+### 三个新模块（Wave 1）
+- ✅ **[expectations_frontier.py](aegis/core/truth/scenario_engine/expectations_frontier.py)**（P0 旗舰）：条件化 (增速×利润率) 网格反解。每档利润率情景 × WACC−1%/基准/+1% 三列隐含增速；变号检测返回**全部**过零点（BUG-Y13 非单调根治——康达中值档天然双根 ~5.2%/~63.1% 全返回）；无解输出结构化诊断（「即使 +80% 增速该利润率档也撑不起现价」）；>30× 累计 scale 打 extreme 标志不 cap。全网格 1800 次 DCF 求值实测 ~0.05s。19 测试。
+- ✅ **[em_events_connector.py](aegis/core/acquisition/connectors/em_events_connector.py)**：A 股事件切片——近 90 天公告（东财 np-anotice 主源/巨潮备选）+ 业绩预告（datacenter RPT_PUBLIC_OP_NEWPREDICT，区间+类型）+ 一致预期（**红线 5 覆盖门槛 ≥3 家且 ≤90 天**，不满足显示「无有效一致预期」）。to_prompt_block() 中文事实块带反幻觉免责首行，注入全部 agent。实测康达：30 条公告 + FY2025 扭亏预告（归母 1.25~1.35 亿/扣非 2100~3100 万）+ 覆盖机构仅 1 家 → gate 正确拒绝。28 测试。
+- ✅ **[pricing_regime.py](aegis/core/truth/pricing_regime.py)**：连续权重体制感知（稳态/成长/转型/题材）+ 迟滞带（差 <0.15 → mixed）+ 可审计特征 dict。**红线 1 写进 docstring 并有测试断言**：只改叙事框架，永不抑制估值差展示。18 组手工标注混淆矩阵全对（茅台→稳态、寒武纪→题材、康达→mixed 转型/题材）。62 测试。
+- ✅ 删除 html_report_legacy.py（2711 行死代码）+ 3 个只测死代码的测试类。
+
+### 全链接线（Wave 2）
+- ✅ orchestrator Step 7d：margin 三档（当前/行业 pack/中点）→ 前沿求解 → meta_facts["__expectations_frontier"]（__ 前缀不撑爆 prompt，replay pickle 自动携带）；事件块注入 agent_macro；体制评估用 terminal_value_gate 单项预评估做种子特征
+- ✅ Director/Synthesizer/Editor prompt 换 EXPECTATIONS-FIRST 三段弧（市场隐含预期→预期 vs 可验证事实→验证/证伪信号）；禁裸「XX% 下行」headline；禁单点隐含增速
+- ✅ valuation/variant 规则模板条件化句式（zh/en），前沿缺席退回 legacy 单点 + A9 gate 原样
+- ✅ **红线 9**：前沿全部隐含增速 + margin 档百分数注册 scrubber sanctioned 白名单（extra_sanctioned_pcts 参数）
+- ✅ 渲染新区块「市场在定价什么」（第一公民，DCF 情景之前）：条件表 + 体制权重条 + 验证点清单（全部标「未核验」——核验能力是 Phase 1 交付物）+ 近 90 天事件摘要
+- ✅ blocked 语义：「预期无法验证 · 暂不评级」；中文 headline fallback 预期框架三分支
+- ✅ 44 个接线测试（test_phase0_wiring.py）+ react-dom 无头渲染 16 项 DOM 检查（含区块顺序与红线 1）
+
+### 康达 002669 smoke 验收（DESIGN_2.0 P0 验收标准逐项兑现）
+> 现价 ¥13.54 条件化反解：**维持 2.9% 利润率 → 需 +22.6%/年增速**（WACC±1%: +19.6~25.4%）；**行业中位 8% → 需 +8.9%**；中点 5.5% → +13.8%。体制 = mixed（题材 48.2% × 困境反转 45.8%）。DCF 差值 -82.1% 照旧展示（红线 1）。6 个验证点标「未核验」。事件区块含扭亏预告与增发修订公告。headline =「现价隐含预期显著高于可验证基本面，关键验证点见正文」——**裸「83% 下行」句式全文 0 处**。
+
+### 遗留/下一步
+- 全量 LLM run 验收进行中（验证三位首席的新叙事主轴在真 LLM 下生效）
+- 合并等用户验收
+- Wave2 自修 bug 一枚：wacc_delta==0.0 被 `or 1.0` 吞掉致基准列误判无解（已修+测试）
+- Phase 1 待办从 DESIGN_2.0.md 第五节接：季报 TTM/预告常态化/相对估值锚/验证点核验能力
 
 ## 🎯 2026-07-10 康达新材(002669) 首次 DeepSeek 全量 LLM run + 三项修复
 
