@@ -1092,6 +1092,12 @@ class AutoResearchOrchestrator:
                 if _ak_industry:
                     _log(f"  ↳ akshare industry empty; inferred '{_ak_industry}' "
                          f"from name '{_name}' (BUG-Y18 fallback)")
+            # AUDIT 2026-07: surface the resolved industry to the report
+            # layer (html_report_v2 reads meta_facts sector/industry —
+            # without this the report showed "—" even when the industry
+            # resolved fine and only the pack fell back to General).
+            if _ak_industry and not meta_facts.get("industry"):
+                meta_facts["industry"] = _ak_industry
         sector_pack = self._load_sector_pack(
             config.sector_pack_id, config.ticker, _ak_industry,
         )

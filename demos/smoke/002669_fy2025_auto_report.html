@@ -1,3 +1,341 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Aegis 投研 — 康达新材 (002669.SZ)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500;8..60,600;8..60,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  :root {
+    /* Near-black, cool-tinted */
+    --bg:       oklch(0.155 0.012 255);
+    --bg-elev:  oklch(0.185 0.013 255);
+    --surface:  oklch(0.205 0.014 255);
+    --surface-2: oklch(0.235 0.015 255);
+    --hairline: oklch(0.28 0.015 255 / 0.7);
+    --hairline-strong: oklch(0.34 0.018 255 / 0.9);
+
+    --text:     oklch(0.94 0.005 255);
+    --text-2:   oklch(0.72 0.008 255);
+    --text-3:   oklch(0.54 0.009 255);
+    --text-4:   oklch(0.40 0.010 255);
+
+    /* Muted, low-sat accents */
+    --accent:     oklch(0.72 0.075 210);   /* cool teal-slate */
+    --accent-dim: oklch(0.52 0.055 210);
+    --accent-bg:  oklch(0.28 0.04 210 / 0.35);
+
+    /* Default (US / global): green = up, red = down */
+    --up:        oklch(0.72 0.13 155);
+    --up-soft:   oklch(0.30 0.06 155 / 0.55);
+    --down:      oklch(0.68 0.17 25);
+    --down-soft: oklch(0.30 0.08 25 / 0.55);
+    --warn:      oklch(0.78 0.12 72);
+    --warn-soft: oklch(0.28 0.06 72 / 0.50);
+
+    --serif: "Source Serif 4", "Songti SC", "Noto Serif SC", Georgia, serif;
+    --sans:  "Inter", "PingFang SC", "HarmonyOS Sans SC", system-ui, -apple-system, sans-serif;
+    --mono:  "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  /* A-share override: red = up, green = down (China convention) */
+  body[data-market="CN"] {
+    --up:        oklch(0.68 0.17 25);
+    --up-soft:   oklch(0.30 0.08 25 / 0.55);
+    --down:      oklch(0.72 0.13 155);
+    --down-soft: oklch(0.30 0.06 155 / 0.55);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-feature-settings: "cv11","ss01","ss03"; }
+  a { color: inherit; text-decoration: none; }
+
+  /* Scroll progress hairline */
+  #scroll-progress { position: fixed; top:0; left:0; height:1px; background: var(--accent); z-index:100; width:0; transition: width 60ms linear; }
+
+  /* Top bar */
+  .topbar { position: sticky; top:0; z-index:40; height: 52px; display:flex; align-items:center; padding: 0 28px; background: color-mix(in oklab, var(--bg) 85%, transparent); backdrop-filter: blur(14px) saturate(1.1); -webkit-backdrop-filter: blur(14px) saturate(1.1); border-bottom: 1px solid var(--hairline); }
+  .topbar .brand { font-family: var(--serif); font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+  .topbar .brand .dim { color: var(--text-3); font-weight: 400; margin-left: 10px; }
+  .topbar .path { color: var(--text-3); font-size: 13px; margin-left: 20px; }
+  .topbar .right { margin-left: auto; display:flex; align-items:center; gap: 18px; font-size: 12.5px; color: var(--text-3); }
+  .kbd { font-family: var(--mono); font-size: 11px; color: var(--text-3); border:1px solid var(--hairline); padding: 2px 6px; border-radius: 4px; background: var(--bg-elev); }
+
+  /* Layout grid */
+  .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr) 280px; gap: 0; max-width: 1440px; margin: 0 auto; padding: 0 28px; }
+  .toc { position: sticky; top: 52px; align-self: start; height: calc(100vh - 52px); padding: 36px 20px 24px 0; overflow-y: auto; border-right: 1px solid var(--hairline); }
+  .toc::-webkit-scrollbar { width: 6px; } .toc::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
+  .main { padding: 36px 56px 160px; min-width: 0; }
+  .rail { position: sticky; top: 52px; align-self: start; height: calc(100vh - 52px); padding: 36px 0 24px 24px; overflow-y: auto; border-left: 1px solid var(--hairline); }
+  .rail::-webkit-scrollbar { width: 6px; } .rail::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 4px; }
+
+  @media (max-width: 1200px) { .layout { grid-template-columns: 240px 1fr; } .rail { display: none; } }
+  @media (max-width: 900px)  {
+    .layout { grid-template-columns: 1fr; padding: 0 20px; }
+    .toc { display:none; }
+    .main { padding: 24px 0 120px; }
+    /* Stack 2-col grids at mobile width */
+    .thesis-grid, .agent-points, .scen-grid { grid-template-columns: 1fr !important; }
+    /* Top-right dock buttons would overflow at 320px — shrink gaps */
+    .dock { right: 12px; bottom: 12px; font-size: 11.5px; }
+    /* Stat-strip auto-fit already collapses; no change needed */
+  }
+
+  /* Print: light theme, hide floating UI chrome */
+  @media print {
+    html, body { background: white !important; color: #0a0a0a !important; font-size: 11pt; }
+    .dock, .tweaks, #scroll-progress, .toc { display: none !important; }
+    .layout { grid-template-columns: 1fr !important; padding: 0 !important; }
+    .main { padding: 0 !important; max-width: 100% !important; }
+    .topbar { position: static !important; border-bottom: 1px solid #bbb !important; background: white !important; }
+    section { break-inside: avoid; page-break-inside: avoid; }
+    .scen-cell, .stat, .agent, table, .callout { break-inside: avoid; page-break-inside: avoid; }
+    .hero, .verdict, .scen-grid, .agent, .callout, .barlist, table.heat {
+      border-color: #ccc !important; background: white !important; color: #0a0a0a !important;
+    }
+    a { color: #0a0a0a !important; text-decoration: none !important; }
+    /* Keep semantic colors for up/down numbers */
+    .up, .price-change.up, .v.up, .word.buy { color: #0a7e4a !important; }
+    .down, .price-change.down, .v.down, .word.avoid { color: #c2302e !important; }
+    .warn, .word.hold { color: #a05c00 !important; }
+  }
+
+  /* TOC */
+  .toc-label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); margin: 18px 0 10px; font-weight: 500; }
+  .toc a { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px 6px 10px; border-radius: 6px; color: var(--text-3); font-size: 13.5px; line-height: 1.35; border-left: 1px solid transparent; margin-left: -1px; transition: color .15s, background .15s, border-color .15s; }
+  .toc a .num { font-family: var(--mono); font-size: 11px; color: var(--text-4); min-width: 22px; }
+  .toc a:hover { color: var(--text); background: color-mix(in oklab, var(--surface) 40%, transparent); }
+  .toc a.active { color: var(--text); border-left-color: var(--accent); background: color-mix(in oklab, var(--accent-bg) 40%, transparent); }
+  .toc a.active .num { color: var(--accent); }
+  .toc .meta { font-size: 11.5px; color: var(--text-4); line-height: 1.5; padding: 0 10px; }
+
+  /* Typography */
+  h1, h2, h3, h4 { font-family: var(--serif); font-weight: 500; color: var(--text); letter-spacing: -0.015em; text-wrap: pretty; }
+  .h-display { font-family: var(--serif); font-size: 44px; line-height: 1.08; font-weight: 500; letter-spacing: -0.022em; }
+  .h-section { font-family: var(--serif); font-size: 30px; line-height: 1.15; font-weight: 500; letter-spacing: -0.018em; margin: 0 0 6px; }
+  .h-sub { font-family: var(--serif); font-size: 20px; line-height: 1.25; font-weight: 500; letter-spacing: -0.012em; margin: 0 0 6px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-4); }
+  .lede { font-family: var(--serif); font-size: 19px; line-height: 1.55; color: var(--text-2); font-weight: 300; }
+  p { color: var(--text-2); margin: 0 0 14px; font-size: 15px; line-height: 1.72; }
+  .prose p { font-family: var(--serif); font-size: 16.5px; line-height: 1.78; color: var(--text); font-weight: 300; }
+  .prose p strong { font-weight: 500; color: var(--text); }
+  .num, .mono, .tabular { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Section spacing */
+  section { margin-top: 96px; scroll-margin-top: 72px; }
+  section:first-of-type { margin-top: 0; }
+  .section-head { display:flex; align-items: baseline; gap: 14px; margin-bottom: 28px; padding-bottom: 16px; }
+  .section-head .idx { font-family: var(--mono); font-size: 11px; color: var(--text-4); letter-spacing: 0.14em; }
+
+  /* Header region */
+  .hero { padding: 56px 0 40px; }
+  .ticker-row { display:flex; align-items: center; gap: 16px; margin-bottom: 22px; }
+  .ticker-mark { width: 44px; height: 44px; border-radius: 8px; background: linear-gradient(135deg, var(--accent-bg), transparent); border: 1px solid var(--hairline-strong); display:flex; align-items:center; justify-content:center; font-family: var(--serif); font-size: 20px; font-weight: 500; color: var(--accent); }
+  .ticker-meta { display:flex; flex-direction: column; gap: 2px; }
+  .ticker-meta .code { font-family: var(--mono); font-size: 12.5px; color: var(--text-3); letter-spacing: 0.04em; }
+  .ticker-meta .code .dot { margin: 0 6px; color: var(--text-4); }
+
+  .price-row { display:flex; align-items: baseline; gap: 22px; margin-top: 10px; }
+  .price { font-family: var(--mono); font-size: 40px; font-weight: 500; color: var(--text); letter-spacing: -0.02em; }
+  .price .curr { font-size: 20px; color: var(--text-3); margin-right: 6px; font-weight: 400; }
+  .price-change { font-family: var(--mono); font-size: 15px; padding: 3px 10px; border-radius: 4px; }
+  .price-change.up { color: var(--up); background: var(--up-soft); }
+  .price-change.down { color: var(--down); background: var(--down-soft); }
+  .price-meta { color: var(--text-3); font-size: 12.5px; }
+
+  .stale-banner { margin-top: 28px; display: flex; align-items:flex-start; gap: 14px; padding: 14px 18px; border: 1px solid color-mix(in oklab, var(--warn) 30%, transparent); background: var(--warn-soft); border-radius: 8px; }
+  .stale-banner .icon { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--warn); color: var(--warn); display:flex; align-items:center; justify-content:center; font-size: 11px; font-family: var(--mono); font-weight: 600; flex-shrink: 0; margin-top: 1px; }
+  .stale-banner .title { color: var(--warn); font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .stale-banner .body { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+
+  /* Quick stats strip */
+  /* Auto-fit grid so the border-right trim lands cleanly whether the
+     pipeline emits 3, 4, or 5 quick tiles. */
+  .stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0; margin-top: 34px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .stat { padding: 18px 20px 18px 0; border-right: 1px solid var(--hairline); }
+  .stat:last-child { border-right: none; }
+  .stat:last-child { border-right: none; padding-right: 0; }
+  .stat .lbl { font-size: 11.5px; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+  .stat .val { font-family: var(--mono); font-size: 22px; color: var(--text); letter-spacing: -0.01em; }
+  .stat .sub { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+
+  /* Lede card (recommendation band) */
+  .verdict { margin-top: 36px; display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; padding: 24px 28px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 10px; }
+  .verdict .rating { display:flex; flex-direction: column; align-items: center; gap: 4px; padding-right: 28px; border-right: 1px solid var(--hairline); }
+  .verdict .rating .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-4); }
+  /* Rating word semantics (both markets):
+     buy/overweight → bullish  (--up, green in US / red in CN)
+     hold/neutral   → caution  (--warn, amber)
+     avoid/reduce   → bearish  (--down, red in US / green in CN) */
+  .verdict .rating .word { font-family: var(--serif); font-size: 26px; color: var(--up); font-weight: 500; letter-spacing: -0.01em; }
+  .verdict .rating .word.buy   { color: var(--up); }
+  .verdict .rating .word.hold  { color: var(--warn); }
+  .verdict .rating .word.avoid { color: var(--down); }
+  .verdict .tgt { display:flex; flex-direction: column; gap: 3px; }
+  .verdict .tgt .lbl { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); font-family: var(--mono); }
+  .verdict .tgt .val { font-family: var(--mono); font-size: 22px; color: var(--text); }
+  .verdict .spread { font-family: var(--mono); font-size: 13px; color: var(--up); }
+
+  /* Prose */
+  .reading { max-width: 720px; }
+  .reading.wide { max-width: 820px; }
+
+  /* Pull quote */
+  .pullquote { font-family: var(--serif); font-size: 22px; line-height: 1.5; color: var(--text); padding: 4px 0 4px 24px; border-left: 1px solid var(--accent); margin: 28px 0; font-weight: 300; letter-spacing: -0.012em; }
+  .pullquote .attrib { display:block; margin-top: 10px; font-size: 12px; color: var(--text-4); font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+
+  /* Scenario card */
+  .scen-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--hairline); border: 1px solid var(--hairline); border-radius: 10px; overflow: hidden; }
+  .scen-cell { background: var(--bg-elev); padding: 22px 22px 24px; position: relative; }
+  .scen-cell .hd { display:flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .scen-cell .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); }
+  .scen-cell .prob { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+  .scen-cell .px { font-family: var(--mono); font-size: 32px; font-weight: 500; letter-spacing: -0.015em; margin-bottom: 2px; }
+  .scen-cell.bear .px { color: var(--down); }
+  .scen-cell.base .px { color: var(--text); }
+  .scen-cell.bull .px { color: var(--up); }
+  .scen-cell .delta { font-family: var(--mono); font-size: 12px; color: var(--text-3); margin-bottom: 14px; }
+  .scen-cell p { font-family: var(--serif); font-size: 14px; line-height: 1.65; color: var(--text-2); font-weight: 300; margin: 0; }
+
+  /* Probability bar under scenarios */
+  .prob-bar { display:flex; height: 3px; margin-top: 18px; border-radius: 2px; overflow: hidden; background: var(--surface-2); }
+  .prob-bar .seg { height: 100%; }
+  .prob-bar .seg.bear { background: var(--down); }
+  .prob-bar .seg.base { background: var(--accent); }
+  .prob-bar .seg.bull { background: var(--up); }
+  .prob-legend { display:flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--text-4); margin-top: 8px; letter-spacing: 0.06em; }
+
+  /* Weighted line */
+  .weighted { margin-top: 28px; display:flex; align-items: baseline; gap: 18px; padding: 20px 24px; background: color-mix(in oklab, var(--surface) 55%, transparent); border: 1px solid var(--hairline); border-radius: 8px; }
+  .weighted .k { font-size: 12px; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.12em; font-family: var(--mono); }
+  .weighted .v { font-family: var(--mono); font-size: 26px; color: var(--text); }
+  .weighted .delta { margin-left: auto; font-family: var(--mono); font-size: 13px; color: var(--up); }
+
+  /* Tables */
+  table.data { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.data th, table.data td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--hairline); }
+  table.data th { font-weight: 500; color: var(--text-4); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid var(--hairline-strong); }
+  table.data td.num, table.data th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  table.data tr:hover td { background: color-mix(in oklab, var(--surface) 30%, transparent); }
+  table.data tr.total td { border-top: 1px solid var(--hairline-strong); font-weight: 500; color: var(--text); }
+
+  /* Sensitivity heatmap */
+  table.heat { width:100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+  table.heat th, table.heat td { padding: 8px 10px; text-align: right; border: 1px solid var(--hairline); }
+  table.heat th { font-size: 11px; color: var(--text-4); font-weight: 500; background: var(--surface); }
+  table.heat td.rh { text-align: left; color: var(--text-3); background: var(--surface); }
+  table.heat td.hot { position: relative; }
+
+  /* Agent cards */
+  .agent-list { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .agent { padding: 22px 24px; background: var(--bg-elev); border: 1px solid var(--hairline); border-radius: 10px; transition: border-color .2s, background .2s; }
+  .agent:hover { border-color: var(--hairline-strong); }
+  .agent .hd { display:flex; align-items: baseline; gap: 16px; margin-bottom: 8px; }
+  .agent .role { font-family: var(--mono); font-size: 11px; color: var(--text-4); letter-spacing: 0.14em; text-transform: uppercase; min-width: 110px; }
+  .agent .name { font-family: var(--serif); font-size: 20px; font-weight: 500; color: var(--text); letter-spacing: -0.01em; flex: 1; }
+  .agent .stance { font-family: var(--mono); font-size: 11.5px; padding: 3px 9px; border-radius: 3px; letter-spacing: 0.06em; }
+  .agent .stance.bear { color: var(--down); background: var(--down-soft); }
+  .agent .stance.bull { color: var(--up); background: var(--up-soft); }
+  .agent .stance.neutral { color: var(--warn); background: var(--warn-soft); }
+  .agent .thesis { font-family: var(--serif); font-size: 15.5px; line-height: 1.72; color: var(--text-2); margin-bottom: 14px; font-weight: 300; }
+  .agent .thesis strong { color: var(--text); font-weight: 500; }
+  .agent-points { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding-top: 14px; border-top: 1px solid var(--hairline); }
+  .agent-points .col h5 { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-4); font-weight: 500; margin: 0 0 8px; }
+  .agent-points ul { margin: 0; padding: 0; list-style: none; }
+  .agent-points li { font-size: 13px; color: var(--text-2); line-height: 1.55; padding-left: 14px; position: relative; margin-bottom: 8px; }
+  .agent-points li::before { content: ""; position: absolute; left: 0; top: 9px; width: 4px; height: 1px; background: var(--text-4); }
+
+  /* Rail side-note */
+  .rail-block { margin-bottom: 32px; }
+  .rail-block .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-4); margin-bottom: 10px; }
+  .rail-kv { display:flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--hairline); font-size: 12.5px; }
+  .rail-kv:last-child { border-bottom: none; }
+  .rail-kv .k { color: var(--text-3); }
+  .rail-kv .v { font-family: var(--mono); color: var(--text); }
+  .rail-kv .v.up { color: var(--up); }
+  .rail-kv .v.down { color: var(--down); }
+
+  .critic-row { display:flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: 12px; }
+  .critic-row .cn { flex: 1; color: var(--text-3); }
+  .critic-row .cc { font-family: var(--mono); font-size: 11.5px; color: var(--text-4); }
+  /* Status dots use absolute colors — green = ok, red = err — irrespective
+     of market convention. (They're UI/system semantics, not up/down P&L.) */
+  .critic-row .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .critic-row .dot.ok   { background: oklch(0.72 0.13 155); }
+  .critic-row .dot.warn { background: var(--warn); }
+  .critic-row .dot.err  { background: oklch(0.68 0.17 25); }
+
+  /* Callouts */
+  .callout { margin: 22px 0; padding: 18px 22px; background: color-mix(in oklab, var(--accent-bg) 28%, transparent); border-left: 1px solid var(--accent); border-radius: 0 6px 6px 0; font-family: var(--serif); font-size: 15.5px; line-height: 1.7; color: var(--text); font-weight: 300; }
+  .callout strong { font-weight: 500; }
+
+  /* Thesis panel */
+  .thesis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px 48px; margin-top: 8px; }
+  .thesis-item { border-top: 1px solid var(--hairline); padding-top: 18px; }
+  .thesis-item h5 { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-4); font-weight: 500; margin: 0 0 10px; }
+  .thesis-item p { font-family: var(--serif); font-size: 15px; line-height: 1.7; color: var(--text-2); font-weight: 300; margin: 0; }
+
+  /* Floating action dock */
+  .dock { position: fixed; right: 28px; bottom: 28px; display:flex; gap: 1px; padding: 0; background: var(--hairline-strong); border-radius: 10px; overflow: hidden; box-shadow: 0 12px 32px -12px oklch(0 0 0 / 0.5), 0 0 0 1px var(--hairline); z-index: 50; }
+  .dock button { appearance: none; border: none; background: var(--bg-elev); color: var(--text-2); padding: 12px 18px; font-family: var(--sans); font-size: 13px; cursor: pointer; display:flex; align-items: center; gap: 8px; transition: background .15s, color .15s; }
+  .dock button:hover { background: var(--surface); color: var(--text); }
+  .dock button.primary { background: var(--surface); color: var(--text); }
+  .dock button svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 1.5; fill: none; }
+
+  /* Tweaks panel */
+  .tweaks { position: fixed; right: 28px; bottom: 80px; width: 280px; background: var(--bg-elev); border: 1px solid var(--hairline-strong); border-radius: 10px; padding: 16px 18px; z-index: 49; display: none; box-shadow: 0 12px 32px -8px oklch(0 0 0 / 0.6); }
+  .tweaks.on { display: block; }
+  .tweaks h4 { font-family: var(--serif); font-size: 14px; font-weight: 500; margin: 0 0 12px; color: var(--text); }
+  .tweak-row { display:flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 12.5px; color: var(--text-3); }
+  .swatches { display:flex; gap: 8px; }
+  .swatch { width: 20px; height: 20px; border-radius: 4px; border: 1px solid var(--hairline); cursor: pointer; }
+  .swatch.on { outline: 2px solid var(--text); outline-offset: 2px; }
+
+  /* Segmented */
+  .seg-ctl { display:inline-flex; background: var(--surface); border: 1px solid var(--hairline); border-radius: 6px; padding: 2px; }
+  .seg-ctl button { appearance: none; background: transparent; border: none; font-family: var(--sans); font-size: 11.5px; color: var(--text-3); padding: 4px 10px; cursor: pointer; border-radius: 4px; letter-spacing: 0.02em; }
+  .seg-ctl button.on { background: var(--bg-elev); color: var(--text); box-shadow: 0 0 0 1px var(--hairline); }
+
+  /* Footnote */
+  .footnote { font-size: 11.5px; color: var(--text-4); line-height: 1.6; margin-top: 16px; font-family: var(--mono); }
+
+  /* Chart placeholder blocks */
+  .chart { position: relative; width: 100%; background: var(--bg-elev); border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden; }
+  .chart .axis { position: absolute; color: var(--text-4); font-family: var(--mono); font-size: 10.5px; }
+
+  /* Bar list */
+  .barlist { display: grid; gap: 4px; }
+  .barlist-row { display: grid; grid-template-columns: 140px 1fr 64px; align-items: center; gap: 12px; padding: 6px 0; font-size: 12.5px; }
+  .barlist-row .label { color: var(--text-3); }
+  .barlist-row .track { position: relative; height: 5px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+  .barlist-row .fill { position: absolute; top:0; height: 100%; }
+  .barlist-row .fill.pos { background: var(--up); left: 50%; }
+  .barlist-row .fill.neg { background: var(--down); right: 50%; }
+  .barlist-row .midline { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--text-4); opacity: 0.4; }
+  .barlist-row .v { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--text-2); }
+  .barlist-row .v.up { color: var(--up); }
+  .barlist-row .v.down { color: var(--down); }
+</style>
+</head>
+<body>
+  <div id="scroll-progress"></div>
+  <div id="root"></div>
+
+  <!-- Tweaks defaults -->
+  <script>
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "accentHue": 210,
+      "readingWidth": "comfortable",
+      "showRail": false
+    }/*EDITMODE-END*/;
+  </script>
+
+  <script>window.REPORT = {"company": "康达新材", "companyFullName": "康达新材", "riskWarning": null, "code": "002669", "exchange": "SZ", "sector": "基础化工-化学制品-其他化学制品", "reportDate": "2026-07-10 02:27 UTC", "runId": "run_20260710_022724_38d48ae1", "period": "FY2025 年报", "tickerMark": "康", "confidence": "低", "bias": "passed", "pipelineDuration": "4s", "model": "sonnet", "staleBanner": null, "price": {"last": 13.83, "change": 0.0, "changePct": 0.0, "currency": "¥", "asOf": "2026-07-10 02:27 UTC", "market": "CN"}, "display": {"currency": "CNY", "symbol": "¥", "scale": 100000000.0, "unit": "亿", "bigScale": 1000000000000.0, "bigUnit": "万亿"}, "rating": {"word": "暂不评级", "tone": "hold", "target": 2.42, "weighted": "概率加权", "downgraded": false, "timeHorizon": "12 个月", "riskLevel": "中高", "dcfMeaningful": true, "bookValuePerShare": 10.14}, "headline": "康达新材：DCF 基准隐含 82.5% 下行空间（rule-based 摘要）", "lede": "", "executiveParagraphs": [], "coreCalloutHtml": "<strong>核心判断：<\/strong>基准 DCF 公允价值 ¥2.15；概率加权 ¥2.42，较现价 ¥13.83 存在 <strong>-82.5%<\/strong> 估值回归空间。", "quick": [{"lbl": "市值", "val": "¥42.0 亿", "sub": "市销率 0.8×"}, {"lbl": "市盈率 (TTM)", "val": "33.5×", "sub": "每股收益 0.43"}, {"lbl": "EV / EBITDA", "val": "18.0×", "sub": ""}, {"lbl": "营业利润率", "val": "2.9%", "sub": ""}, {"lbl": "自由现金流", "val": "¥-15.6 亿", "sub": "CFO / NI = -9.56"}], "scenarios": [{"key": "bear", "tag": "悲观情景", "prob": 0.25, "px": 1.07, "narrative": "⚠ 该情景值超出合理区间已保守夹逼（模型原始输出 ¥-8.53）", "clamped": true, "footnote": "⚠ 该情景值超出合理区间已保守夹逼（模型原始输出 ¥-8.53）", "rawPx": -8.53}, {"key": "base", "tag": "基准情景", "prob": 0.5, "px": 2.15, "narrative": "", "clamped": false}, {"key": "bull", "tag": "乐观情景", "prob": 0.25, "px": 4.3, "narrative": "⚠ 该情景值超出合理区间已保守夹逼（模型原始输出 ¥13.67）", "clamped": true, "footnote": "⚠ 该情景值超出合理区间已保守夹逼（模型原始输出 ¥13.67）", "rawPx": 13.67}], "valuationPullquote": null, "macro": null, "financials": {"title": "利润表 vs 现金流表", "subtitle": "会计分析师 · 业务分析师", "paragraphs": [], "revTitle": "年度营收 · 亿元人民币", "revHistory": [{"y": "2021", "v": 22.7}, {"y": "2022", "v": 24.7}, {"y": "2023", "v": 27.9}, {"y": "2024", "v": 31.0}, {"y": "2025", "v": 52.4}], "revHighlightYear": "2025", "revFootnote": "", "kpisTitle": "FY2025 关键指标", "kpis": [{"label": "营收", "value": "¥52.4 亿"}, {"label": "净利润", "value": "¥1.3 亿"}, {"label": "EBITDA", "value": "¥3.5 亿"}, {"label": "经营现金流", "value": "¥-12.0 亿", "tone": "down"}, {"label": "自由现金流", "value": "¥-15.6 亿", "tone": "down"}, {"label": "毛利率", "value": "14.1%", "total": true}, {"label": "营业利润率", "value": "2.9%"}, {"label": "ROIC", "value": "2.3%"}, {"label": "ROE", "value": "4.1%"}, {"label": "市盈率 (静态)", "value": "33.5×"}, {"label": "EV / EBITDA", "value": "18.0×"}], "calloutHtml": "<strong>会计分析师提示 · <\/strong>CFO / NI = <span class='mono'>-9.56<\/span>。"}, "dcf": {"title": "十年现金流桥接与企业价值拆解", "subtitle": "DCF 引擎 · FCFF 两阶段模型", "unit": "亿元人民币", "waccBase": 9.5, "gBase": 3.0, "sharesBase": 3.03, "paragraphHtml": "FCFF 两阶段模型：Y1–Y10 明细期 + 永续期（g = 3.0%, WACC = 9.5%）。", "projection": [[1, 62.84249810891999, 1.8350009447804638, 2.5458856928304585, 1.4003775863344659, 4.329848119704588, 0.10473749684819994, -0.4883223373878628, -0.4459564725003313], [2, 73.73310303119582, 2.2046197806327554, 3.219656918448134, 1.6824515191500768, 5.080210798849393, 0.1089060492227584, -0.287008410473941, -0.23936816202659744], [3, 84.54974924587226, 2.5787673519991037, 3.9586677302164914, 1.9679815481199492, 5.825477723040598, 0.10816646214676429, -0.006994906850922592, -0.005327697742941706], [4, 94.69571915537693, 2.95450643764776, 4.732397456694327, 2.2547261382788033, 6.524535049805471, 0.10145969909504671, 0.36112884607261286, 0.2511919419635193], [5, 103.53082975257358, 3.3026334691070973, 5.500487477828642, 2.520398640213746, 7.13327416995232, 0.08835110597196655, 0.7992608421181016, 0.5077125986898962], [6, 110.43633609707024, 3.5891809231547827, 6.2157087054974784, 2.7390768012310374, 7.609063557088139, 0.06905506344496651, 1.27666688619541, 0.7406156396900222], [7, 114.85378954095304, 3.8131458127596414, 6.826609315130949, 2.9099951936278545, 7.913426099371666, 0.04417453443882809, 1.7790038749483097, 0.9424928404418584], [8, 119.44794112259117, 4.04928520405584, 7.4764368396063015, 3.090204534534446, 8.229963143346533, 0.04594151581638126, 2.2907367149778337, 1.1083124789506469], [9, 124.22585876749483, 4.285792127478572, 8.167327991135476, 3.2706943569054854, 8.559161669080394, 0.0477791764490366, 2.8310815025115312, 1.2509077973365326], [10, 129.19489311819464, 4.547660237760452, 8.901528135843611, 3.47053852224916, 8.901528135843611, 0.049690343506998066, 3.420848178742162, 1.3803607708042536]], "summary": {"pvCashflows": 5.5, "pvTerminal": 21.9, "ev": 27.4, "netDebt": 20.8, "equity": 6.5, "shares": 3.03, "perShare": 2.15}}, "agents": [{"role": "会计分析师", "name": "财报质量与现金流真实性", "stance": "bear", "score": 3.8, "thesis": "Earnings quality is below par — reported earnings may overstate economic reality", "pros": ["Accruals ratio is 0.1454, indicating poor earnings quality", "CFO/Net Income ratio is -9.56 — below cash conversion floor"], "cons": ["High accruals may reflect legitimate growth investment (e.g., capitalized R&D under IFRS) rather than manipulation", "Cross-standard differences in revenue recognition, R&D treatment, and government subsidy classification may affect metric comparability"], "narrative": "", "fallback": false}, {"role": "业务分析师", "name": "产能利用率与资产错配", "stance": "bear", "score": 3.0, "thesis": "Business shows weak economic moat indicators — commodity-like returns", "pros": ["Gross margin is 14.07%", "ROIC is 2.34%, indicating marginal capital allocation"], "cons": ["Low margins may reflect deliberate growth investment rather than poor business quality — unit economics at scale could differ materially"], "narrative": "", "fallback": false}, {"role": "管理层分析师", "name": "资本配置与战略纪律", "stance": "bear", "score": 3.0, "thesis": "Management's capital allocation track record is poor — ROIC suggests value destruction", "pros": ["ROIC is 2.34% — reflects capital allocation effectiveness", "ROE is 4.08%"], "cons": ["Low ROIC may reflect deliberate growth-phase reinvestment that will generate returns over a longer horizon", "Quantitative track record alone cannot capture management quality — communication transparency and strategic consistency also matter"], "narrative": "", "fallback": false}, {"role": "估值分析师", "name": "DCF 与多组估值三角", "stance": "bear", "score": 3.4, "thesis": "Scenario spread (bull/bear): 300% — wide range of outcomes", "pros": ["P/E (FY static): 33.5x", "EV/EBITDA: 18.0x"], "cons": ["DCF valuation is highly sensitive to terminal growth and WACC assumptions — small changes drive large value swings"], "narrative": "", "fallback": false}, {"role": "变体分析师", "name": "市场共识与错价机制", "stance": "bear", "score": 3.4, "thesis": "Base case implies -84% downside — price above our intrinsic value estimate", "pros": ["Market-implied revenue growth: 20.06%", "Consensus revision momentum: neutral"], "cons": ["Variant thesis without near-term catalyst may fail to converge within horizon — 'the market can stay irrational longer than you can stay solvent'"], "narrative": "", "fallback": false}, {"role": "风险分析师", "name": "客户集中度与偿付能力", "stance": "bear", "score": 3.8, "thesis": "Balance sheet risk is elevated — Net Debt/EBITDA 6.0x limits strategic flexibility and increases downside in stress scenarios", "pros": ["Net Debt/EBITDA: 6.0x — leverage is elevated", "Current ratio: 1.14x"], "cons": ["High leverage may be temporary or strategic (e.g., post-acquisition) — management deleveraging plan should be assessed", "Risk assessment may be overly conservative — tail risks by definition have low probability"], "narrative": "", "fallback": false}, {"role": "宏观分析师", "name": "行业周期与政策环境", "stance": "neutral", "score": 3.0, "thesis": "Entity classified under sector: General (pack: sp_generic)", "pros": ["Entity classified under sector: General (pack: sp_generic)", "Sector cyclicality: moderate, primary driver: unknown"], "cons": ["Sector pack benchmarks are general — company-specific factors may justify deviation from sector norms"], "narrative": "", "fallback": false}], "critics": [{"name": "逻辑批评员", "issues": 0}, {"name": "财务批评员", "issues": 2}, {"name": "证据批评员", "issues": 3}, {"name": "行业批评员", "issues": 0}, {"name": "认知偏差批评员", "issues": 2}, {"name": "宏观一致性批评员", "issues": 1}, {"name": "市场批评员", "issues": 0}, {"name": "数值一致性批评员", "issues": 0}, {"name": "叙述事实核查员", "issues": 0}, {"name": "LLM 数值审核员", "issues": 1}], "thesis": {"core": "", "variant": "", "whyNow": "", "marketStory": "", "divergence": "", "counter": ""}, "sensitivity": {"paragraphs": ["下表为每个单因子 ±1σ 冲击对基准每股价值的弹性。"], "rows": [8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0], "cols": [2.0, 2.5, 3.0, 3.5, 4.0], "matrix": [[4.05, 4.9, 5.93, 7.18, 8.75], [2.91, 3.61, 4.43, 5.41, 6.61], [1.95, 2.52, 3.19, 3.98, 4.92], [1.13, 1.6, 2.15, 2.79, 3.54], [0.41, 0.81, 1.27, 1.79, 2.4], [0.0, 0.12, 0.51, 0.94, 1.45], [0.0, 0.0, 0.0, 0.22, 0.64]], "baseValue": 2.1487775545592886, "footnote": "红色表示高于基准（更乐观），绿色反之。"}, "driverSensitivity": [{"k": "加权资本成本 WACC", "delta": -73.1, "shock": 1}, {"k": "营业利润率", "delta": 56.8, "shock": 3}, {"k": "收入增速", "delta": 35.6, "shock": 3}, {"k": "资本开支 / 营收", "delta": -29.5, "shock": 2}, {"k": "有效税率", "delta": -17.6, "shock": 2}, {"k": "永续增长率", "delta": 17.3, "shock": 3}], "conclusion": {"title": "等待关键催化剂验证", "subtitle": "首席分析师 · 终稿", "paragraphs": [], "catalystsTitle": "未来 6 个月催化剂"}, "catalysts": [{"date": "2026-08-31", "title": "半年报披露截止", "impact": "中", "note": "报告期 2026-06-30，证监会披露截止日"}, {"date": "2026-10-31", "title": "三季报披露截止", "impact": "中", "note": "报告期 2026-09-30，证监会披露截止日"}, {"date": "2027-04-30", "title": "年报披露截止", "impact": "中", "note": "报告期 2026-12-31，证监会披露截止日"}], "rail": {"priceHistory": [13.14, 13.3, 13.22, 13.31, 13.96, 13.83, 14.1, 14.12, 13.75, 13.89, 14.27, 13.87, 13.48, 13.4, 13.47, 13.57, 14.27, 14.32, 14.11, 14.3, 13.92, 14.0, 13.7, 13.74, 13.8, 13.92, 14.61, 14.82, 14.93, 15.88, 17.47, 15.72, 15.91, 16.3, 16.04, 16.55, 16.62, 15.81, 17.39, 19.13, 17.22, 15.5, 16.28, 17.11, 17.38, 17.73, 18.8, 17.85, 17.6, 17.16, 16.57, 17.34, 17.09, 17.84, 18.4, 17.29, 15.66, 15.07, 14.13, 13.95], "marketKvs": [{"k": "市值", "v": "¥42.0 亿"}, {"k": "营收 (TTM)", "v": "¥52.4 亿"}, {"k": "现金及等价物", "v": "¥7.3 亿"}, {"k": "有息负债", "v": "¥28.2 亿"}, {"k": "净负债", "v": "¥20.8 亿", "tone": "down"}, {"k": "EV / EBITDA", "v": "18.0×"}, {"k": "52 周区间", "v": "¥10.93–¥19.13"}, {"k": "Beta", "v": "0.70"}, {"k": "股息率", "v": "0.57%"}, {"k": "日均成交量", "v": "2093.7万"}], "openQuestions": [], "biasStatus": "passed"}};</script>
+<script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo } = React;
 
 // ---------- Data ----------
@@ -1233,3 +1571,7 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+
+</script>
+</body>
+</html>

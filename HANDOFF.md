@@ -1,6 +1,29 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-09 (AUDIT_2026-07 路线图 A/B/C/D/E 五阶段 50 项批量修复 + 240 个回归测试)
+> 最新更新: 2026-07-10 (康达新材 002669 实盘验证 + A 股行业解析根因修复)
+
+## 🔍 2026-07-10 康达新材(002669) 实盘验证 + 行业解析根因修复
+
+**验证方法**：smoke 全管线 + akshare/eastmoney 独立拉数交叉对账。康达新材是天然压力标的：FY2024 亏 2.46 亿 → FY2025 营收 +69%（52.4 亿）、归母 1.25 亿但扣非仅 1672 万、资产负债率 66%、CFO −12 亿。
+
+**修复批次生效实证（对着 ground truth 逐项过）**：
+- ✅ A7 归母口径：Net Income ¥1.3亿 = 归母（P/E 33.6x = 市值42亿/归母1.25亿 自洽）
+- ✅ A6 债务口径：Total Debt ¥28.2亿（负债率 66% 下合理，含债券/一年内到期）
+- ✅ FCF −15.6亿 与原始现金流精确对账（CFO −11.99亿 − capex 3.61亿），不是 bug 是公司真实失血
+- ✅ A10 披露：bear ¥−8.53 / bull ¥13.67 双端夹逼，报告情景卡带中文脚注+原始值
+- ✅ blocked → 「暂不评级」（terminal_value_gate 拦下 DCF 2.15 vs 价格 13.9 的-85%缺口——市场定价军工转型预期，rule-based 模式保守 block 是正确行为）
+- ✅ headline 中文 abs 修复：「隐含 82.6% 下行空间」无双重否定
+
+**发现并修复的新问题**：
+- ✅ **A 股行业解析根因修复**（BUG-Y18 的治本版）：push2 不可达时行业解析只剩 30 个龙头名字白名单，康达新材等一切中盘股全掉 General pack（寒武纪 v2 的 25× DCF 偏差同款隐患）。修复：[akshare_connector.py](aegis/core/acquisition/connectors/akshare_connector.py) 新增 Method 1.5 —— eastmoney **datacenter F10 API**（`datacenter.eastmoney.com`，实测可达、0.1s）拉 EM2016 三级行业，同分类法兼容既有 substring 匹配。**拯救效应实证：圣邦股份 300661（白名单外）→「电子设备-半导体-集成电路」→ sp_semiconductor_v1**（修前掉 General）。康达新材本身正确落 General（无化工 pack，属预期）
+- ✅ 审计 P2 顺手修：Method 3 sina 全市场爬取死代码（裸代码匹配带前缀列 + 读不存在的列 + 封 IP 风险）→ 换成已验证的 `tencent_sina_quote.fetch_cn_quote`（一次调用拿价格+股本+市值）
+- ✅ 行业字符串透传 meta_facts["industry"] → 报告 sector 栏不再显示"—"
+- ✅ report.jsx 两处注释含 "Infinity" 字面量污染卫生 grep → 改措辞，HTML grep Infinity 回到 0
+
+**测试**：913 → 922 passed（新增 test_industry_fallback.py 9 例）。已知遗留：无化工/汽车零部件等 pack，特种材料类仍走 General（可按需补 pack）。
+
+---
+> 上一轮: 2026-07-09 (AUDIT_2026-07 路线图 A/B/C/D/E 五阶段 50 项批量修复 + 240 个回归测试)
 
 ## 🔧 2026-07-09 AUDIT_2026-07 批量修复（50 项，三波并行 + 全量验证）
 
