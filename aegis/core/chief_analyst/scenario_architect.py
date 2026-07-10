@@ -12,6 +12,7 @@ Each scenario is a complete business story, not a number adjustment:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -194,6 +195,65 @@ SIGN DISCIPLINE — ZERO TOLERANCE (the single most common failure mode):
   pick 0.0 — never invent a sign you're not sure of."""
 
 
+# ── Parse-side hardening (AUDIT-A5a / AUDIT-A5b, 2026-07) ────────────────
+
+# AUDIT-A5b: the LLM occasionally violates the name enum ("Bearish",
+# "Bear Case", Chinese labels — Y24 precedent). get_case() matches
+# strictly on the canonical name, so normalize at the parse boundary.
+_CASE_NAME_ALIASES = {
+    "bear": "bear", "bearish": "bear", "bear case": "bear",
+    "悲观": "bear", "悲观情景": "bear", "悲观情形": "bear", "熊市": "bear",
+    "bull": "bull", "bullish": "bull", "bull case": "bull",
+    "乐观": "bull", "乐观情景": "bull", "乐观情形": "bull", "牛市": "bull",
+    "base": "base", "base case": "base", "baseline": "base",
+    "neutral": "base", "基准": "base", "基准情景": "base",
+    "中性": "base", "中性情景": "base",
+}
+
+
+def _normalize_case_name(raw_name: Any) -> str | None:
+    """Map an LLM-returned case name to canonical bear/base/bull.
+
+    Returns None when the name is missing or unrecognizable — the caller
+    treats that as an incomplete case and raises.
+    """
+    if not isinstance(raw_name, str):
+        return None
+    name = raw_name.lower().strip()
+    if name in _CASE_NAME_ALIASES:
+        return _CASE_NAME_ALIASES[name]
+    # Substring fallback for variants like "bear scenario" / "偏悲观情景"
+    for alias, canonical in _CASE_NAME_ALIASES.items():
+        if alias in name:
+            return canonical
+    return None
+
+
+def _coerce_delta_path(raw: Any, n: int = 10) -> list[float]:
+    """AUDIT-A5a: coerce a delta array to exactly *n* numeric floats.
+
+    Truncated LLM responses rescued by _recovery.repair_truncated_array
+    (BUG-A20) can leave short arrays (e.g. 3 elements). Downstream,
+    ``zip(revenue_growth_path, delta)`` silently shortens the growth path
+    and dcf_engine's ``assert len(path) == n`` kills the whole run.
+    Pad with 0.0 / truncate to *n*; drop non-numeric and non-finite
+    elements (numeric strings are coerced).
+    """
+    from aegis.core._coerce import coerce_list
+    out: list[float] = []
+    for v in coerce_list(raw):
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, str):
+            try:
+                v = float(v)
+            except ValueError:
+                continue
+        if isinstance(v, (int, float)) and math.isfinite(v):
+            out.append(float(v))
+    return (out + [0.0] * n)[:n]
+
+
 class ScenarioArchitect:
     """LLM-driven narrative scenario construction."""
 
@@ -243,7 +303,18 @@ class ScenarioArchitect:
         return self._parse(raw)
 
     def _parse(self, raw: dict[str, Any]) -> ScenarioBlueprint:
-        """Parse LLM output into ScenarioBlueprint."""
+        """Parse LLM output into ScenarioBlueprint.
+
+        AUDIT-A5a/A5b (2026-07): validate structure at the boundary.
+        Delta arrays are padded/truncated to exactly 10 numeric elements
+        (short arrays from truncation-repair used to zip-shorten the DCF
+        growth path and crash dcf_engine's length assert). Case names are
+        normalized ("Bearish " / "悲观" → "bear") so get_case() matches.
+        Incomplete structure (≠ bear/base/bull, missing name, non-numeric
+        probability) raises ValueError so the orchestrator's mechanical
+        fallback (auto_research.py) takes over instead of receiving a
+        half-broken blueprint.
+        """
         # BUG-Y26 (2026-05-06): coerce list-typed fields at the boundary so
         # a JSON-encoded-string `scenarios` field doesn't get char-iterated
         # into bogus single-letter Scenario objects.
@@ -252,10 +323,30 @@ class ScenarioArchitect:
         for s in coerce_list(raw.get("scenarios", [])):
             if not isinstance(s, dict):
                 continue  # JSON-string element that survived coercion as-is
+            # AUDIT-A5b: missing/unrecognizable name → incomplete case
+            raw_name = s.get("name")
+            name = _normalize_case_name(raw_name)
+            if name is None:
+                raise ValueError(
+                    f"scenario case has missing/unrecognized name: {raw_name!r}"
+                )
+            # AUDIT-A5b: probability must be numeric (numeric strings coerced)
+            prob = s.get("probability")
+            if isinstance(prob, str):
+                try:
+                    prob = float(prob)
+                except ValueError:
+                    pass
+            if (isinstance(prob, bool) or not isinstance(prob, (int, float))
+                    or not math.isfinite(prob)):
+                raise ValueError(
+                    f"scenario '{name}' probability is not numeric: {prob!r}"
+                )
+
+            # AUDIT-A5a: pad/truncate every delta array to exactly 10
+            growth_delta = _coerce_delta_path(s.get("revenue_growth_delta"))
+            margin_delta = _coerce_delta_path(s.get("margin_delta"))
             # Ensure base deltas are zeros
-            name = s.get("name", "base")
-            growth_delta = s.get("revenue_growth_delta", [0.0] * 10)
-            margin_delta = s.get("margin_delta", [0.0] * 10)
             if name == "base":
                 growth_delta = [0.0] * 10
                 margin_delta = [0.0] * 10
@@ -265,21 +356,32 @@ class ScenarioArchitect:
             driver_deltas: dict[str, list[float]] = {}
             if isinstance(raw_driver_deltas, dict):
                 for drv_name, drv_delta in raw_driver_deltas.items():
-                    if isinstance(drv_delta, list):
-                        driver_deltas[drv_name] = drv_delta[:10]
+                    driver_deltas[drv_name] = _coerce_delta_path(drv_delta)
 
             cases.append(ScenarioCase(
                 name=name,
-                probability=s.get("probability", 0.33),
+                probability=max(float(prob), 0.0),
                 narrative=s.get("narrative", ""),
                 key_driver=s.get("key_driver", ""),
-                revenue_growth_delta=growth_delta[:10],
-                margin_delta=margin_delta[:10],
+                revenue_growth_delta=growth_delta,
+                margin_delta=margin_delta,
                 driver_deltas=driver_deltas,
             ))
 
+        # AUDIT-A5b: exactly one of each canonical case, or bail to the
+        # orchestrator's mechanical fallback — a missing case would leave
+        # its default probability in place downstream and silently skew
+        # the probability-weighted target price.
+        if sorted(c.name for c in cases) != ["base", "bear", "bull"]:
+            raise ValueError(
+                "scenario cases incomplete: expected exactly bear/base/bull, "
+                f"got {[c.name for c in cases]}"
+            )
+
         # Normalize probabilities to sum to 1.0
-        total_prob = sum(c.probability for c in cases) or 1.0
+        total_prob = sum(c.probability for c in cases)
+        if total_prob <= 0:
+            raise ValueError("scenario probabilities sum to zero")
         if abs(total_prob - 1.0) > 0.01:
             for c in cases:
                 c.probability = c.probability / total_prob

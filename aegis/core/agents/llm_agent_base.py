@@ -204,6 +204,93 @@ INFERENCES_FROM_OBSERVATIONS_SCHEMA_DEEP = {
 }
 
 
+# AUDIT-D3: starting output-token budget by Director depth tier, passed to
+# the LLM client as `max_tokens_hint`. DeepSeek honours it (the shrink/grow
+# recovery ladder re-anchors on it); other clients ignore it via **kwargs.
+# Bigger budgets make reasoning models think longer (BUG-A20), so
+# light/standard calls should not pay for deep-tier headroom.
+DEPTH_MAX_TOKENS_HINT: dict[str, int] = {
+    "light": 8192,
+    "standard": 16384,
+    "deep": 32768,
+}
+
+
+def _client_accepts_max_tokens_hint(client: Any) -> bool:
+    """AUDIT-D3: only pass max_tokens_hint to clients whose call_structured
+    can absorb it (explicit param or **kwargs). LLMClient (LIVE mode) has a
+    closed signature — passing the hint there would TypeError and dump an
+    otherwise-healthy call into the mock-fallback path."""
+    import inspect
+    try:
+        sig = inspect.signature(client.call_structured)
+    except (TypeError, ValueError):
+        return False
+    return any(
+        p.kind is inspect.Parameter.VAR_KEYWORD or p.name == "max_tokens_hint"
+        for p in sig.parameters.values()
+    )
+
+
+def _strip_sensitive(text: str) -> str:
+    """Remove or soften phrases that commonly trip the LLM provider's content filter.
+    Keeps financial substance, removes geopolitical/regulatory framings.
+
+    AUDIT-B6 (2026-07-09): the original 10 rules were EN-only with ``\\b``
+    boundaries. Python ``re`` counts CJK as ``\\w``, so '与Huawei' / '受Taiwan'
+    have no word boundary and never matched — the A-share content-filter
+    retry path was a no-op (3 tested CJK sentences all came back UNCHANGED).
+    Fix: English terms use ``(?<![A-Za-z])…(?![A-Za-z])`` letter-boundary
+    lookarounds (CJK-adjacency safe); Chinese pairs match as plain substrings
+    (no ``\\b`` at all). Promoted from a ``run()`` closure to module level
+    for direct unit-testability (AUDIT-E1).
+    """
+    import re
+    replacements = [
+        # English terms — letter-boundary lookarounds instead of \b so a
+        # brand name embedded in a Chinese sentence still matches.
+        (r"(?<![A-Za-z])[Ee]xport control[s]?(?![A-Za-z])", "trade restrictions"),
+        (r"(?<![A-Za-z])[Ss]anction[s]?(?![A-Za-z])", "trade restrictions"),
+        (r"(?<![A-Za-z])[Hh]uawei(?![A-Za-z])", "a regional competitor"),
+        (r"(?<![A-Za-z])[Tt]aiwan(?![A-Za-z])(?!\s*Semiconductor)", "the region"),
+        (r"(?<![A-Za-z])CCP(?![A-Za-z])", "the government"),
+        (r"(?<![A-Za-z])Chinese Communist Party(?![A-Za-z])", "the government"),
+        (r"(?<![A-Za-z])Chinese military(?![A-Za-z])", "state entities"),
+        (r"(?<![A-Za-z])[Mm]ilitary use(?![A-Za-z])", "restricted use"),
+        (r"(?<![A-Za-z])BIS(?![A-Za-z])", "regulators"),
+        (r"(?<![A-Za-z])Entity List(?![A-Za-z])", "restricted-party list"),
+        # 中文敏感词 — 直接子串匹配（\b 对 CJK 无效，不可用）。仅影响
+        # content-filter 重试时发给 LLM 的 prompt，不进报告正文。
+        (r"出口管制", "贸易限制"),
+        (r"制裁", "贸易限制"),
+        (r"华为", "某区域竞争对手"),
+        (r"台湾(?!积体)", "该地区"),  # 负向前瞻避开"台湾积体电路"(台积电全称)
+        (r"实体清单", "受限名单"),
+        (r"军用|军工|军方", "受限用途"),
+    ]
+    for pat, repl in replacements:
+        text = re.sub(pat, repl, text)
+    return text
+
+
+def _is_content_filter_error(e: Exception) -> bool:
+    """Classify an LLM exception as a content-filter rejection.
+
+    AUDIT-B7 (2026-07-09): the old check (``"400" in msg[:30]``) marked ANY
+    400 — schema-invalid, oversized request body — as content_filter, which
+    burned a pointless strip-retry and mislabeled ``_failure_reason`` as
+    'content_filter+…' (metadata lying to the operator, bug type #6). Now:
+    semantic keywords are authoritative; a bare 400 only counts when the
+    body actually mentions content/risk/filter.
+    """
+    msg = str(e).lower()
+    if "content_filter" in msg or "high risk" in msg or "contentpolicy" in msg or "content policy" in msg:
+        return True
+    if "400" in msg[:30]:
+        return any(k in msg for k in ("content", "risk", "filter"))
+    return False
+
+
 class LLMAgentBase(AgentBase):
     """Base class for LLM-powered agents.
 
@@ -233,34 +320,26 @@ class LLMAgentBase(AgentBase):
         is_deep = rd and rd.get("_depth") == "deep"
         schema = JUDGMENT_TOOL_SCHEMA_DEEP if is_deep else JUDGMENT_TOOL_SCHEMA
 
+        # AUDIT-D3: depth → starting output-token budget for every structured
+        # call this run makes (initial, strip-retry, split steps, rescue).
+        # Kwargs-gated so clients with a closed call_structured signature
+        # (LLMClient) never see the extra keyword.
+        _depth = rd.get("_depth", "standard") if rd else "standard"
+        _hint_kwargs: dict[str, int] = {}
+        if _client_accepts_max_tokens_hint(self._llm):
+            _hint_kwargs = {
+                "max_tokens_hint": DEPTH_MAX_TOKENS_HINT.get(
+                    _depth, DEPTH_MAX_TOKENS_HINT["standard"],
+                ),
+            }
+
         # Call LLM with tiered fallback on failure:
         # 1. primary LLM (DeepSeek)
         # 2. if content_filter: strip geopolitically-sensitive phrases, retry primary
         # 3. last resort: mock fallback (produces thin output, flag as degraded)
-        def _strip_sensitive(text: str) -> str:
-            """Remove or soften phrases that commonly trip the LLM provider's content filter.
-            Keeps financial substance, removes geopolitical/regulatory framings."""
-            import re
-            replacements = [
-                (r"\b[Ee]xport control[s]?\b", "trade restrictions"),
-                (r"\b[Ss]anction[s]?\b", "trade restrictions"),
-                (r"\b[Hh]uawei\b", "a regional competitor"),
-                (r"\b[Tt]aiwan\b(?!\s*Semiconductor)", "the region"),
-                (r"\bCCP\b", "the government"),
-                (r"\bChinese Communist Party\b", "the government"),
-                (r"\bChinese military\b", "state entities"),
-                (r"\bmilitary use\b", "restricted use"),
-                (r"\bBIS\b", "regulators"),
-                (r"\bEntity List\b", "restricted-party list"),
-            ]
-            for pat, repl in replacements:
-                text = re.sub(pat, repl, text)
-            return text
-
-        def _is_content_filter_error(e: Exception) -> bool:
-            msg = str(e).lower()
-            return "content_filter" in msg or "high risk" in msg or "400" in msg[:30]
-
+        # AUDIT-B6/B7 (2026-07-09): _strip_sensitive / _is_content_filter_error
+        # promoted to module level (CJK-aware stripping + tightened 400
+        # classification); see definitions above the class.
         import sys
         raw = None
         system_prompt = self._build_system_prompt(agent_input)
@@ -295,7 +374,7 @@ class LLMAgentBase(AgentBase):
             if _split_prompts:
                 _llm_attempts = 1
                 raw = self._call_split(
-                    system_prompt, user_message, is_deep,
+                    system_prompt, user_message, is_deep, _hint_kwargs,
                 )
             else:
                 _llm_attempts = 1
@@ -305,6 +384,7 @@ class LLMAgentBase(AgentBase):
                     tool_schema=schema,
                     tool_name="judgment",
                     role=self.AGENT_NAME,
+                    **_hint_kwargs,
                 )
         except Exception as e:
             if _is_content_filter_error(e):
@@ -321,6 +401,7 @@ class LLMAgentBase(AgentBase):
                         tool_schema=schema,
                         tool_name="judgment",
                         role=self.AGENT_NAME,
+                        **_hint_kwargs,
                     )
                 except Exception as e2:
                     _failure_reason = f"content_filter+strip_retry_failed: {e2!s}"
@@ -432,6 +513,7 @@ class LLMAgentBase(AgentBase):
                     tool_schema=rescue_inf_schema,
                     tool_name="inferences_rescue",
                     role=self.AGENT_NAME,
+                    **_hint_kwargs,
                 )
                 # Merge: observations from first pass, everything else from
                 # rescue. Keep first pass's follow_up_questions if it had any.
@@ -467,43 +549,73 @@ class LLMAgentBase(AgentBase):
         # match the strict `^(low|medium|high)$` Pydantic patterns
         # used on Inference.confidence and on all 4 CognitiveBiasSelfCheck
         # risk fields. Without normalization the entire agent falls back to
-        # mock — losing the substantive output. Coerce to the closest
-        # pattern-valid bucket. Returns the input as-is (cast to str) when
-        # already valid; defaults unknown values to "medium".
-        def _normalize_low_med_high(val: Any) -> str:
-            v = str(val or "").strip().lower().replace("-", "_").replace(" ", "_")
-            if v in ("low", "medium", "high"):
-                return v
-            if v in ("medium_high", "high_medium", "med_high", "high_med", "mediumhigh", "very_high"):
-                return "high"
-            if v in ("medium_low", "low_medium", "med_low", "low_med", "mediumlow", "very_low"):
-                return "low"
-            return "medium"  # safe default
-
+        # mock — losing the substantive output.
+        # AUDIT-E1/B4 (2026-07-09): the low/med/high normalizer moved to
+        # aegis.core._coerce (shared + unit-testable); normalize_strength is
+        # the same treatment for Counterargument.strength, whose
+        # weak|moderate|strong enum LLMs mix up with low|medium|high.
+        #
         # BUG-Y26 (2026-05-06): coerce list-typed fields at the parse
         # boundary so a JSON-encoded-string list doesn't get char-iterated.
         # Without this, an `observations` field returned as a string would
         # produce one Observation per character (and every Observation
         # would be a single-char string, which then fails Observation's
         # `text: min_length=1` and aborts the whole agent).
-        from aegis.core._coerce import coerce_list
+        from aegis.core._coerce import (
+            coerce_list,
+            normalize_low_med_high as _normalize_low_med_high,
+            normalize_strength as _normalize_strength,
+        )
+
+        def _coerce_str_list(val: Any) -> list[str]:
+            # AUDIT-B5 (2026-07-09): nested list[str] fields (Observation.
+            # source_ids, Counterargument.evidence_ids, uncertainties,
+            # mitigation steps) share BUG-Y25/Y26's string-for-list quirk one
+            # level deeper — 'm_revenue' instead of ['m_revenue'] used to
+            # ValidationError the whole agent. coerce_list + stringify
+            # scalars, drop nested containers.
+            return [str(x) for x in coerce_list(val) if isinstance(x, (str, int, float))]
+
+        def _log_dropped(kind: str, err: Exception) -> None:
+            # AUDIT-B5: per-item drop log — a single malformed element is
+            # discarded instead of letting the ValidationError escape run()
+            # (the orchestrator's broad except would silently swap the WHOLE
+            # agent for the rule-based template, skipping the quality-gate
+            # LLM retry).
+            print(
+                f"  ⚠ {self.AGENT_NAME} dropped malformed {kind}: "
+                f"{type(err).__name__}: {str(err)[:160]}",
+                file=sys.stderr,
+            )
+
         # Skip non-dict elements (the JSON-string-as-list-of-strings case
         # produces single strings, which would fail Observation/Inference
         # construction — better to drop than crash).
         _obs_raw = [o for o in coerce_list(raw.get("observations", [])) if isinstance(o, dict)]
-        observations = [Observation(**_strip_extra(o, Observation)) for o in _obs_raw]
+        observations: list[Observation] = []
+        for o in _obs_raw:
+            _o = _strip_extra(o, Observation)
+            _o["source_ids"] = _coerce_str_list(_o.get("source_ids"))
+            try:
+                observations.append(Observation(**_o))
+            except Exception as _bad:  # AUDIT-B5: drop item, keep the agent
+                _log_dropped("observation", _bad)
         obs_count = len(observations)
 
-        def _coerce_inference(data: dict) -> dict:
+        def _coerce_inference(data: dict) -> dict | None:
             """Coerce loose inference data shapes to match schema types.
 
+            - Scalar indices → list (AUDIT-B5: `"based_on_observation_indices": 2`
+              used to raise `TypeError: 'int' object is not iterable`)
             - Strings → ints (LLMs sometimes return "3" instead of 3)
             - Out-of-range indices clamped to valid bounds:
               · idx == obs_count (1-indexed LLM) → obs_count - 1
               · idx > obs_count (hallucinated) → dropped
               · idx < 0 → dropped
-            - Empty result defaults to [0] (so logic_critic doesn't block on
-              "no grounding") only when there's at least one observation.
+            - Empty/missing result defaults to [0] (so logic_critic doesn't
+              block on "no grounding") only when there's at least one
+              observation; with zero observations the inference is dropped
+              (return None) instead of failing min_length=1 (AUDIT-B5).
 
             Without this clamping, an LLM quirk of 1-indexed references
             produces 3+ false-positive LOGIC_UNGROUNDED_INFERENCE blocks per
@@ -511,59 +623,104 @@ class LLMAgentBase(AgentBase):
             otherwise-good reports into 'downgraded' status.
             """
             cleaned = _strip_extra(data, Inference)
-            if "based_on_observation_indices" in cleaned:
-                indices = cleaned["based_on_observation_indices"]
-                coerced: list[int] = []
-                for idx in indices:
-                    if isinstance(idx, int):
-                        v = idx
-                    elif isinstance(idx, str) and idx.lstrip("-").isdigit():
-                        v = int(idx)
-                    else:
-                        continue  # Skip non-integer values
-                    if obs_count == 0:
-                        continue
-                    if 0 <= v < obs_count:
-                        coerced.append(v)
-                    elif v == obs_count:
-                        # Off-by-one: LLM is 1-indexed, clamp to last obs
-                        coerced.append(obs_count - 1)
-                    # else: out-of-range hallucination, drop silently
-                # Dedupe while preserving order
-                seen: set[int] = set()
-                deduped = [x for x in coerced if not (x in seen or seen.add(x))]
-                if not deduped and obs_count > 0:
+            indices = coerce_list(cleaned.get("based_on_observation_indices"))
+            coerced: list[int] = []
+            for idx in indices:
+                if isinstance(idx, int):
+                    v = idx
+                elif isinstance(idx, str) and idx.lstrip("-").isdigit():
+                    v = int(idx)
+                else:
+                    continue  # Skip non-integer values
+                if obs_count == 0:
+                    continue
+                if 0 <= v < obs_count:
+                    coerced.append(v)
+                elif v == obs_count:
+                    # Off-by-one: LLM is 1-indexed, clamp to last obs
+                    coerced.append(obs_count - 1)
+                # else: out-of-range hallucination, drop silently
+            # Dedupe while preserving order
+            seen: set[int] = set()
+            deduped = [x for x in coerced if not (x in seen or seen.add(x))]
+            if not deduped:
+                if obs_count > 0:
                     deduped = [0]
-                cleaned["based_on_observation_indices"] = deduped
+                else:
+                    # AUDIT-B5: nothing to ground on — an empty list would
+                    # fail Inference's min_length=1; drop this inference.
+                    return None
+            cleaned["based_on_observation_indices"] = deduped
             # BUG-Y24 (2026-05-06): LLM occasionally emits compound
             # confidence values like `medium_high` / `high_medium` /
             # `mediumlow`. Pydantic strict pattern `^(low|medium|high)$`
             # rejects them → whole agent falls back to mock. Coerce to
             # the closest pattern-valid bucket so the LLM's substantive
-            # output (text + indices) survives.
-            if "confidence" in cleaned:
-                cleaned["confidence"] = _normalize_low_med_high(cleaned.get("confidence"))
+            # output (text + indices) survives. Missing confidence lands
+            # on the "medium" default instead of a ValidationError.
+            cleaned["confidence"] = _normalize_low_med_high(cleaned.get("confidence", "medium"))
             return cleaned
 
         # BUG-Y26: same coercion for the rest of the list-typed fields.
+        # AUDIT-B5: construction is per-item try/except now — one malformed
+        # element gets dropped instead of discarding the agent's entire
+        # real LLM output.
         _inf_raw = [i for i in coerce_list(raw.get("inferences", [])) if isinstance(i, dict)]
         _ca_raw = [c for c in coerce_list(raw.get("counterarguments", [])) if isinstance(c, dict)]
         _dc_raw = [d for d in coerce_list(raw.get("disconfirming_triggers", [])) if isinstance(d, dict)]
-        inferences = [Inference(**_coerce_inference(i)) for i in _inf_raw]
-        counterarguments = [Counterargument(**_strip_extra(c, Counterargument)) for c in _ca_raw]
-        disconfirming = [DisconfirmingTrigger(**_strip_extra(d, DisconfirmingTrigger)) for d in _dc_raw]
-        uncertainties = coerce_list(raw.get("self_reported_uncertainties", []))
+        inferences: list[Inference] = []
+        for i in _inf_raw:
+            _ci = _coerce_inference(i)
+            if _ci is None:
+                continue  # AUDIT-B5: ungroundable (obs_count == 0)
+            try:
+                inferences.append(Inference(**_ci))
+            except Exception as _bad:
+                _log_dropped("inference", _bad)
+        counterarguments: list[Counterargument] = []
+        for c in _ca_raw:
+            _cc = _strip_extra(c, Counterargument)
+            # AUDIT-B4 (2026-07-09): normalize strength — schema pattern is
+            # ^(weak|moderate|strong)$ but LLMs mix it up with the sibling
+            # low|medium|high confidence enum ("medium"/"very strong"/"STRONG"
+            # all ValidationError'd the whole agent back to rule-based).
+            _cc["strength"] = _normalize_strength(_cc.get("strength"))
+            _cc["evidence_ids"] = _coerce_str_list(_cc.get("evidence_ids"))
+            try:
+                counterarguments.append(Counterargument(**_cc))
+            except Exception as _bad:
+                _log_dropped("counterargument", _bad)
+        disconfirming: list[DisconfirmingTrigger] = []
+        for d in _dc_raw:
+            try:
+                disconfirming.append(DisconfirmingTrigger(**_strip_extra(d, DisconfirmingTrigger)))
+            except Exception as _bad:
+                _log_dropped("disconfirming_trigger", _bad)
+        # AUDIT-B5: JudgmentContract wants list[str] — stringify scalars so a
+        # stray int doesn't fail the whole contract.
+        uncertainties = _coerce_str_list(raw.get("self_reported_uncertainties", []))
 
         # BUG-Y27: same `medium_high` failure mode applies to all 4 bias
         # risk fields. Normalize at boundary so a single LLM-side compound
         # value doesn't collapse the whole agent.
         bias_data = raw.get("cognitive_bias_self_check", {})
+        # AUDIT-B5 (2026-07-09): LLMs occasionally serialize the whole bias
+        # object as a JSON STRING — calling .get() on it raised
+        # AttributeError. Try json.loads once to rescue it; anything still
+        # non-dict falls back to {} (all fields land on safe defaults).
+        if isinstance(bias_data, str):
+            try:
+                bias_data = json.loads(bias_data)
+            except (json.JSONDecodeError, ValueError):
+                bias_data = {}
+        if not isinstance(bias_data, dict):
+            bias_data = {}
         bias_check = CognitiveBiasSelfCheck(
             anchoring_risk=_normalize_low_med_high(bias_data.get("anchoring_risk", "medium")),
             confirmation_bias_risk=_normalize_low_med_high(bias_data.get("confirmation_bias_risk", "medium")),
             recency_bias_risk=_normalize_low_med_high(bias_data.get("recency_bias_risk", "medium")),
             narrative_fallacy_risk=_normalize_low_med_high(bias_data.get("narrative_fallacy_risk", "medium")),
-            mitigation_steps_taken=coerce_list(bias_data.get("mitigation_steps_taken", [])),
+            mitigation_steps_taken=_coerce_str_list(bias_data.get("mitigation_steps_taken", [])),
         )
 
         # Parse follow-up questions (BUG-Y26: harden list boundary;
@@ -624,8 +781,13 @@ class LLMAgentBase(AgentBase):
 
     def _call_split(
         self, system_prompt: str, user_message: str, is_deep: bool,
+        hint_kwargs: dict[str, int] | None = None,
     ) -> dict:
         """TODO-6 two-step LLM call: observations first, then everything else.
+
+        AUDIT-D3: `hint_kwargs` carries the caller's depth-tiered
+        `max_tokens_hint` (or is empty for clients that can't absorb it) and
+        is forwarded to both steps.
 
         Step 1: tight schema (observations only) → faster output, less
         thinking budget consumed by formatting.
@@ -650,6 +812,7 @@ class LLMAgentBase(AgentBase):
             tool_schema=OBSERVATIONS_ONLY_SCHEMA,
             tool_name="observations_only",
             role=self.AGENT_NAME,
+            **(hint_kwargs or {}),
         )
         observations = step1.get("observations") or []
 
@@ -682,6 +845,7 @@ class LLMAgentBase(AgentBase):
             tool_schema=step2_schema,
             tool_name="judgment_leap",
             role=self.AGENT_NAME,
+            **(hint_kwargs or {}),
         )
 
         # Stitch — observations from step1, everything else from step2.

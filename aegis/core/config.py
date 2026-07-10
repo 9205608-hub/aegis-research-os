@@ -69,3 +69,54 @@ AGENT_WATCHDOG_TIMEOUT_S: int = _env_int("AEGIS_AGENT_WATCHDOG_S", 1800)
 # 50 req/min; each agent fires 2-3 calls back-to-back so 4-way concurrency
 # routinely tripped 429. Default 2 is the empirically safe ceiling.
 AGENT_MAX_PARALLEL: int = _env_int("AEGIS_AGENT_MAX_PARALLEL", 2)
+
+# ── Backend-tiered knobs (AUDIT-D1 / AUDIT-D4) ──────────────────────────
+# The batch/watchdog/parallel values above were all sized for the
+# subprocess/Claude-CLI path (tens-of-minutes calls, hard 50 req/min
+# ceiling). The API backends (deepseek / sdk) are minutes-per-call
+# and rate-limited far above our worst-case 4-agent fan-out, yet the same
+# cap=2 forced batch 1 (4 agents) into two serial waves and the same 80-min
+# batch timeout let a single hung network call eat the whole afternoon.
+# API tier defaults:
+#   - parallel 4    → batch 1 runs in ONE wave (agent phase −30~40%)
+#   - batch 1800s   → hung batch surfaces in 30 min, not 80
+#   - watchdog 900s → hung single agent surfaces in 15 min, not 30
+API_BACKENDS: frozenset[str] = frozenset({"deepseek", "sdk"})
+
+AGENT_MAX_PARALLEL_API: int = _env_int("AEGIS_AGENT_MAX_PARALLEL_API", 4)
+AGENT_BATCH_TIMEOUT_API_S: int = _env_int("AEGIS_AGENT_BATCH_TIMEOUT_API_S", 1800)
+AGENT_WATCHDOG_TIMEOUT_API_S: int = _env_int("AEGIS_AGENT_WATCHDOG_API_S", 900)
+
+
+def _tiered_int(backend: str, api_env: str, api_value: int,
+                legacy_env: str, legacy_value: int) -> int:
+    """Pick the API-tier value for API backends, the legacy value otherwise.
+
+    Env-override semantics (AUDIT-D1): the legacy env vars kept their
+    pre-split meaning — if the operator set e.g. AEGIS_AGENT_MAX_PARALLEL
+    explicitly and did NOT set the API-specific env, the legacy override
+    still governs every backend (a deliberate throttle stays a throttle).
+    """
+    if backend not in API_BACKENDS:
+        return legacy_value
+    if os.environ.get(legacy_env) and not os.environ.get(api_env):
+        return legacy_value
+    return api_value
+
+
+def agent_max_parallel_for(backend: str) -> int:
+    """AUDIT-D1: ThreadPoolExecutor cap for the parallel agent batches."""
+    return _tiered_int(backend, "AEGIS_AGENT_MAX_PARALLEL_API", AGENT_MAX_PARALLEL_API,
+                       "AEGIS_AGENT_MAX_PARALLEL", AGENT_MAX_PARALLEL)
+
+
+def agent_batch_timeout_for(backend: str) -> int:
+    """AUDIT-D4: wall-clock budget for one parallel agent batch."""
+    return _tiered_int(backend, "AEGIS_AGENT_BATCH_TIMEOUT_API_S", AGENT_BATCH_TIMEOUT_API_S,
+                       "AEGIS_AGENT_BATCH_TIMEOUT_S", AGENT_BATCH_TIMEOUT_S)
+
+
+def agent_watchdog_timeout_for(backend: str) -> int:
+    """AUDIT-D4: per-agent watchdog (sector_context / synthesizer / editor)."""
+    return _tiered_int(backend, "AEGIS_AGENT_WATCHDOG_API_S", AGENT_WATCHDOG_TIMEOUT_API_S,
+                       "AEGIS_AGENT_WATCHDOG_S", AGENT_WATCHDOG_TIMEOUT_S)

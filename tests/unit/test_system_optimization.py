@@ -175,30 +175,39 @@ class TestASharePeerMapping:
 # ============================================================
 
 class TestReportCurrencySymbol:
+    """AUDIT-E3 (2026-07): this suite previously compared two hardcoded
+    literal dicts against each other and never called production code —
+    it could not fail. It now exercises the real currency derivation used
+    by the v2 renderer (_detect_market / _resolve_display_ctx)."""
 
-    def test_ccy_variable_computed(self):
-        """Report should compute ccy from decision.scenarios.currency."""
-        # This tests the logic inline in generate_html_report
-        currencies = {
-            "USD": "$", "CNY": "¥", "EUR": "€", "GBP": "£",
-            "JPY": "¥", "HKD": "HK$",
-        }
-        for code, expected in currencies.items():
-            actual = {"USD": "$", "CNY": "¥", "EUR": "€", "GBP": "£",
-                      "JPY": "¥", "HKD": "HK$"}.get(code, "$")
-            assert actual == expected
+    def test_symbol_follows_scenarios_currency(self):
+        from aegis.core.reports.html_report_v2 import _detect_market
+        expected = {"USD": "$", "CNY": "¥", "EUR": "€", "GBP": "£",
+                    "JPY": "¥", "HKD": "HK$"}
+        for code, sym in expected.items():
+            currency, symbol, _market = _detect_market("XYZ", {"currency": code})
+            assert currency == code
+            assert symbol == sym
 
-    def test_ccy_unit_for_cny(self):
-        """CNY should use 亿 (100M) as unit, not B."""
-        _currency = "CNY"
-        ccy_unit = "B" if _currency == "USD" else ("亿" if _currency == "CNY" else "B")
-        ccy_divisor = 1e9 if _currency != "CNY" else 1e8
-        assert ccy_unit == "亿"
-        assert ccy_divisor == 1e8
+    def test_entity_id_heuristic(self):
+        """No currency metadata → 6-digit numeric id = A-share (CNY)."""
+        from aegis.core.reports.html_report_v2 import _detect_market
+        assert _detect_market("600519", None) == ("CNY", "¥", "CN")
+        assert _detect_market("301358.SZ", None) == ("CNY", "¥", "CN")
+        assert _detect_market("AAPL", None) == ("USD", "$", "US")
 
-    def test_ccy_unit_for_usd(self):
-        _currency = "USD"
-        ccy_unit = "B" if _currency == "USD" else ("亿" if _currency == "CNY" else "B")
-        ccy_divisor = 1e9 if _currency != "CNY" else 1e8
-        assert ccy_unit == "B"
-        assert ccy_divisor == 1e9
+    def test_meta_facts_display_takes_precedence(self):
+        """Filing-level currency (fact_bridge __display) beats scenarios."""
+        from aegis.core.reports.html_report_v2 import _detect_market
+        meta = {"__display": {"currency": "USD"}}
+        assert _detect_market("600519", {"currency": "CNY"}, meta)[0] == "USD"
+
+    def test_display_ctx_units(self):
+        """CNY renders in 亿 (1e8); USD in B (1e9)."""
+        from aegis.core.reports.html_report_v2 import _resolve_display_ctx
+        cny = _resolve_display_ctx(None, "CNY")
+        assert cny["unit"] == "亿"
+        assert cny["scale"] == 1e8
+        usd = _resolve_display_ctx(None, "USD")
+        assert usd["unit"] == "B"
+        assert usd["scale"] == 1e9

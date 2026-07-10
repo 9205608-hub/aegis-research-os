@@ -81,7 +81,13 @@ _YEAR_NUM = r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
 _CAGR_PATTERN = re.compile(
     rf"(?:{_YEAR_NUM}-year\s+(?:revenue\s+)?CAGR|"              # "3-year CAGR"
     rf"CAGR\s+(?:of\s+)?(?:over\s+)?(?:the\s+)?(?:past\s+|last\s+)?{_YEAR_NUM}\s+years?|"  # "CAGR over 3 years"
-    rf"(\d+)年\s*(?:收入\s*)?CAGR|"                               # "3年CAGR"
+    # AUDIT (2026-07): Chinese CAGR aliases — LLM narratives usually write
+    # "复合增长率" / "年均复合增长率" instead of the literal "CAGR", so the
+    # most dangerous block-level check (CAGR window mislabel) was dead for
+    # natural Chinese phrasing. Longer aliases listed first.
+    rf"(\d+)年\s*(?:营收\s*|收入\s*)?"                             # "3年CAGR" / "3年复合增长率"
+    r"(?:年均复合增长率|复合年均增长率|年均复合增速|复合年均增速|"
+    r"年复合增长率|年复合增速|复合增长率|复合增速|CAGR)|"
     rf"(?:past|last|trailing|over\s+the\s+(?:past|last))\s+{_YEAR_NUM}\s+years?[^0-9]{{0,60}}?CAGR"  # "past three years...CAGR"
     r")"
     r"[^0-9]{0,40}?"  # filler (up to 40 chars)
@@ -136,8 +142,13 @@ for _metric_name, _keys in [
 ]:
     for _kw in _keys:
         _esc = re.escape(_kw)
+        # AUDIT (2026-07, narrative_fact_critic:140): the connector group
+        # used \s+ — Chinese has no space before 为/达到/约, so the most
+        # common CN phrasings ("总营收为65.0亿" / "净利润达到10.5亿") never
+        # matched and the whole check was dead for them. \s* keeps the
+        # English forms working while letting CN connectors bind directly.
         _pat = re.compile(
-            rf"(?<![a-zA-Z]){_esc}(?:\s+(?:of|is|was|at|=|was approximately|approximately|约|约为|达到|为))?\s*"
+            rf"(?<![a-zA-Z]){_esc}(?:\s*(?:of|is|was|at|=|was approximately|approximately|约为|约|达到|为))?\s*"
             rf"(?:[\$¥€£]|HK\$|US\$|RMB)?\s*(-?\d+(?:\.\d+)?)\s*"
             rf"(万亿|亿|万|B(?![a-zA-Z])|billion|bn|M(?![a-zA-Z])|million|mn|T(?![a-zA-Z])|trillion)",
             re.IGNORECASE,
@@ -200,8 +211,14 @@ def _parse_dollar(num_str: str, unit_str: str) -> float | None:
     except (TypeError, ValueError):
         return None
     unit_clean = unit_str.strip().rstrip(".")
+    # AUDIT-C3 (2026-07): was `re.search(suffix + "$")` over dict insertion
+    # order — "万亿" ends in "亿", so the 1e8 entry matched first and
+    # "2.4万亿" parsed as 2.4e8 (10,000× low). Every correct trillion-CNY
+    # citation (工商银行/中石油/平安…) then tripped METRIC_MISMATCH /
+    # FY_REVENUE_MISMATCH with absurd warning text. fullmatch kills the
+    # suffix aliasing — the regex capture is always an exact unit token.
     for suffix, mult in _DOLLAR_MAG.items():
-        if re.search(re.escape(suffix) + r"$", unit_clean, re.IGNORECASE):
+        if re.fullmatch(re.escape(suffix), unit_clean, re.IGNORECASE):
             return val * mult
     return None
 

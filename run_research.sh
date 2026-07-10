@@ -8,10 +8,27 @@
 #   ./run_research.sh NVDA 110 --no-llm       # rule-based mode, pinned price
 #   ./run_research.sh --smoke NVDA            # smoke mode (rule-based, <5min)
 #   ./run_research.sh --strict-llm NVDA       # fail hard on agent mock fallback
+#   FAST_AGENTS=1 ./run_research.sh NVDA      # hybrid flash routing (see below)
 #
 # Price and period defaults:
 #   - If PRICE arg is empty or not passed, yfinance auto-fetches current price
 #   - Period defaults to 'latest' which probes EDGAR for the most recent 10-K
+#
+# Env switches (AUDIT-D2, 2026-07-09):
+#   AEGIS_LLM_CACHE   LLM disk cache. Default ON (=1): re-runs of the same
+#                     ticker reuse cached LLM calls for free (~1s vs minutes
+#                     per unchanged call). Set AEGIS_LLM_CACHE=0 to force
+#                     fresh LLM calls (e.g. after a prompt change).
+#   FAST_AGENTS       Set =1 to pass --fast-agents: 4 of 7 specialist agents
+#                     drop from deepseek-v4-pro to -flash (valuation/variant/
+#                     accounting + chief-analyst roles stay on pro). Expected
+#                     pipeline time ~40min → ~22min. DEFAULT OFF because the
+#                     flash tier's output quality has not yet been validated
+#                     on real tickers — flip it on for iteration runs, keep
+#                     it off for reports you intend to publish.
+#   (--fast, DEEP→standard depth downgrade, remains an explicit CLI opt-in
+#   on demos/auto_research_demo.py — it trades away narrative_supplement
+#   content, which is not a pure performance knob.)
 
 set -e
 
@@ -42,6 +59,19 @@ export DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-}"
 export FMP_API_KEY="${FMP_API_KEY:-}"
 export FRED_API_KEY="${FRED_API_KEY:-}"
 
+# AUDIT-D2: LLM disk cache defaults ON. The cache layer was implemented
+# (cached_client.py) but the documented entrypoint never exported the env
+# gate, so every "production" run paid full price even on identical reruns.
+# Override with AEGIS_LLM_CACHE=0 for a guaranteed-fresh run.
+export AEGIS_LLM_CACHE="${AEGIS_LLM_CACHE:-1}"
+
+# AUDIT-D2: hybrid flash routing opt-in (see header comment for why this
+# is not the default yet).
+FAST_AGENTS_ARG=""
+if [ "${FAST_AGENTS:-0}" = "1" ]; then
+    FAST_AGENTS_ARG="--fast-agents"
+fi
+
 # Build price arg: only pass --price if user provided one
 PRICE_ARG=""
 if [ -n "$PRICE" ]; then
@@ -64,5 +94,5 @@ else
     MODEL="${MODEL:-deepseek-v4-pro}"
     echo "Running with LLM agents (backend=$BACKEND model=$MODEL) — period=latest, auto-price..."
     python demos/auto_research_demo.py "$TICKER" $PRICE_ARG --wacc 0.095 --period latest \
-        --llm --backend "$BACKEND" --model "$MODEL" $STRICT_LLM
+        --llm --backend "$BACKEND" --model "$MODEL" $STRICT_LLM $FAST_AGENTS_ARG
 fi

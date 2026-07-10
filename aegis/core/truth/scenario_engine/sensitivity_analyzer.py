@@ -31,7 +31,11 @@ class SensitivityTable:
     variable_2: str
     var1_values: list[float]
     var2_values: list[float]
-    matrix: list[list[float]]  # matrix[i][j] = per_share_value at var1[i], var2[j]
+    # matrix[i][j] = per_share_value at var1[i], var2[j].
+    # AUDIT (sensitivity two-way guard, 2026-07): a cell is None when the
+    # combination is mathematically undefined (e.g. terminal growth ≥ WACC
+    # diverges the Gordon terminal value) — render as "n/m".
+    matrix: list[list[float | None]]
 
 
 class SensitivityAnalyzer:
@@ -138,16 +142,26 @@ class SensitivityAnalyzer:
         var2_range: list[float],
     ) -> SensitivityTable:
         """Generate a 2D sensitivity table."""
-        matrix: list[list[float]] = []
+        matrix: list[list[float | None]] = []
 
         for v1 in var1_range:
-            row: list[float] = []
+            row: list[float | None] = []
             for v2 in var2_range:
                 modified = self._set_assumption(base_inputs, var1_name, v1)
                 modified = self._set_assumption(modified, var2_name, v2)
-                output = self._dcf.compute_dcf(modified)
-                # BUG-55: floor at 0 — negative per-share equity is nonsensical
-                row.append(round(max(output.per_share_value, 0.0), 2))
+                # AUDIT (2026-07): wacc/terminal-growth grids can contain
+                # cells where tg ≥ wacc — compute_dcf raises ValueError
+                # (divergent Gordon terminal value) and previously killed
+                # the whole pipeline at the sensitivity step (e.g.
+                # `--wacc 0.05` with the default tg=0.03 grid). Fill None
+                # for undefined cells (rank_assumptions already catches).
+                try:
+                    output = self._dcf.compute_dcf(modified)
+                    # BUG-55: floor at 0 — negative per-share equity is
+                    # nonsensical
+                    row.append(round(max(output.per_share_value, 0.0), 2))
+                except ValueError:
+                    row.append(None)
             matrix.append(row)
 
         return SensitivityTable(
