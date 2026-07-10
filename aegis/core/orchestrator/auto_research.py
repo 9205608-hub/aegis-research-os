@@ -307,6 +307,194 @@ def compute_pricing_regime_inputs(
     }
 
 
+# ═══ Aegis 2.0 Phase 1 — A 股季报 PIT / TTM / 数据时效接线辅助 ══════════
+#
+# DESIGN_2.0 §三.B（信息架构）：新数据从第一天写 PIT 层（sqlite3），
+# 不进 meta_facts 自由键。唯一例外（红线 8 的显式豁免，见任务 D1）：
+# 衍生 TTM 汇总值走 3 个固定键 ttm_revenue / ttm_net_income /
+# ttm_net_income_deducted，外加 __data_freshness 时效标注——除此之外
+# 本步骤不得再新增任何 meta_facts 键。
+# 全部函数永不 raise（静默降级铁律：无季报 → 年报口径照旧）。
+
+#: 红线 8 豁免清单——Phase 1 允许新增的 meta_facts 固定键（衍生 TTM 汇总值）。
+TTM_META_KEYS = ("ttm_revenue", "ttm_net_income", "ttm_net_income_deducted")
+
+
+def build_data_freshness(
+    latest_period: str, *, basis: str, announce_date: str | None = None,
+) -> dict[str, Any]:
+    """构造 ``meta_facts["__data_freshness"]``（最新报告期 + 时效天数）。
+
+    basis: ``"quarterly"``（季报口径）| ``"annual"``（降级：年报口径）。
+
+    时效口径（红线 #3 的披露日语义）：``announce_date``（披露日）可得时
+    days_since 按披露日计——「时效」回答的是「我们手里最新的公开信息
+    面世多久了」。季报期末 +90 天到下一次披露之间，期末口径必然 >90 天，
+    但只要最新披露仍是市场上最新的可得信息，数据并不陈旧；反之披露口径
+    一旦 >90 天说明真错过了披露节点，才是该报警的情形。披露日缺失退回
+    报告期末口径。解析失败 days_since=None（渲染层显示「暂无」不烂值）。
+    """
+    from datetime import date as _date
+    period_s = str(latest_period)[:10]
+    announce_s = str(announce_date)[:10] if announce_date else None
+    days: int | None = None
+    for anchor in (announce_s, period_s):
+        if not anchor:
+            continue
+        try:
+            days = (_date.today() - _date.fromisoformat(anchor)).days
+            break
+        except ValueError:
+            continue
+    out: dict[str, Any] = {
+        "latest_period": period_s, "basis": basis, "days_since": days,
+    }
+    if announce_s:
+        out["announce_date"] = announce_s
+    return out
+
+
+def _latest_announce_date(store: Any, entity_id: str, period: str) -> str | None:
+    """PIT 库中该报告期事实的最新披露日（无库/无值/失败 → None）。"""
+    if store is None:
+        return None
+    try:
+        dates = [
+            f.announce_date for f in store.get_facts(entity_id)
+            if f.period == str(period)[:10] and f.announce_date
+        ]
+        return max(dates) if dates else None
+    except Exception:  # noqa: BLE001 — 只读辅助，失败静默降级
+        return None
+
+
+def _coerce_ttm_snapshot(snap: Any) -> dict[str, Any]:
+    """把 TTM 引擎返回值（dataclass / dict / None）容错归一成 plain dict。"""
+    if snap is None:
+        return {}
+    if isinstance(snap, dict):
+        return snap
+    if hasattr(snap, "to_dict"):
+        try:
+            d = snap.to_dict()
+            if isinstance(d, dict):
+                return d
+        except Exception:
+            pass
+    out: dict[str, Any] = {}
+    for key in (*TTM_META_KEYS, "latest_period", "as_of_period"):
+        val = getattr(snap, key, None)
+        if val is not None:
+            out[key] = val
+    return out
+
+
+def _default_ttm_snapshot(store: Any, entity_id: str) -> Any:
+    """TTM 引擎适配器（Wave 3 seam）。
+
+    期望接口：``aegis.core.truth.ttm_engine`` 暴露
+    ``ttm_snapshot(store, entity_id)``（或 compute_/build_ 前缀变体），
+    返回含 ttm_revenue / ttm_net_income / ttm_net_income_deducted /
+    latest_period 的 dataclass 或 dict（红线 4：只对流量科目、累计差分、
+    归母/扣非双轨——口径由引擎负责，这里只做读出）。
+    引擎尚未落地（ImportError）→ 返回 None，管线降级为年报口径。
+    """
+    try:
+        from aegis.core.truth import ttm_engine  # type: ignore[attr-defined]
+    except ImportError:
+        return None
+    for name in ("ttm_snapshot", "compute_ttm_snapshot", "build_ttm_snapshot"):
+        fn = getattr(ttm_engine, name, None)
+        if callable(fn):
+            return fn(store, entity_id)
+    return None
+
+
+def run_quarterly_pit_step(
+    ticker: str,
+    *,
+    smoke_mode: bool = False,
+    store: Any | None = None,
+    ingest_fn: Callable[..., Any] | None = None,
+    ttm_fn: Callable[[Any, str], Any] | None = None,
+    log: Callable[[str], None] = lambda _m: None,
+) -> tuple[Any | None, dict[str, Any]]:
+    """A 股季报连接器拉数写 PIT → TTM 快照读出（任务 D1 的可测缝）。
+
+    Returns ``(pit_store, meta_updates)``。**永不 raise**：
+    - PIT store 建库失败 → ``(None, {})``；
+    - 摄取失败 → store 照常返回（供验证点核验读历史库），无 TTM 键；
+    - TTM 引擎缺席/失败 → 只缺 ttm_* 键，__data_freshness 仍可由
+      摄取到的最新报告期派生。
+    meta_updates 只含 :data:`TTM_META_KEYS` + ``__data_freshness``（红线 8）。
+
+    Parameters
+    ----------
+    store / ingest_fn / ttm_fn: 测试注入缝；生产默认分别为
+        PITStore(.cache/pit.db)、quarterly_cn.ingest_quarterly、
+        :func:`_default_ttm_snapshot`。
+    """
+    import math as _math
+
+    updates: dict[str, Any] = {}
+    clean = ticker.strip().upper()
+    for suffix in (".SZ", ".SS", ".SH"):
+        clean = clean.replace(suffix, "")
+
+    if store is None:
+        try:
+            from aegis.pit.store import DEFAULT_DB_PATH, PITStore
+            db_path = (
+                Path(".cache") / "smoke" / "pit.db" if smoke_mode
+                else DEFAULT_DB_PATH
+            )
+            store = PITStore(db_path)
+        except Exception as e:  # noqa: BLE001 — 静默降级铁律
+            log(f"  ⚠ PIT store unavailable ({type(e).__name__}: {e}) — "
+                f"quarterly step skipped, annual-report basis retained")
+            return None, updates
+
+    periods: list[str] = []
+    try:
+        if ingest_fn is None:
+            from aegis.core.acquisition.connectors.quarterly_cn import (
+                ingest_quarterly as ingest_fn,
+            )
+        res = ingest_fn(store, clean)
+        periods = [str(p) for p in (getattr(res, "periods", None) or [])]
+        errors = getattr(res, "errors", None) or []
+        log(f"Quarterly PIT: {getattr(res, 'facts_written', 0)} facts across "
+            f"{len(periods)} periods (errors={len(errors)})")
+    except Exception as e:  # noqa: BLE001 — 静默降级铁律
+        log(f"  ⚠ Quarterly ingest failed ({type(e).__name__}: {e}) — "
+            f"annual-report basis retained")
+
+    snap_dict: dict[str, Any] = {}
+    try:
+        snap = (ttm_fn or _default_ttm_snapshot)(store, clean)
+        snap_dict = _coerce_ttm_snapshot(snap)
+        if not snap_dict:
+            log("  ⚠ TTM engine unavailable — ttm_* keys skipped "
+                "(Wave 3 seam, degrades to annual basis)")
+    except Exception as e:  # noqa: BLE001 — 静默降级铁律
+        log(f"  ⚠ TTM snapshot failed ({type(e).__name__}: {e})")
+
+    for key in TTM_META_KEYS:
+        val = snap_dict.get(key)
+        if isinstance(val, (int, float)) and _math.isfinite(val):
+            updates[key] = float(val)
+
+    latest_period = snap_dict.get("latest_period") or snap_dict.get("as_of_period")
+    if not latest_period and periods:
+        latest_period = max(periods)
+    if latest_period:
+        updates["__data_freshness"] = build_data_freshness(
+            str(latest_period), basis="quarterly",
+            announce_date=_latest_announce_date(store, clean, str(latest_period)),
+        )
+    return store, updates
+
+
 @dataclass
 class ResearchConfig:
     """Configuration for an automated research run."""
@@ -386,6 +574,10 @@ class ResearchConfig:
     # Aegis 2.0 Phase 0: A 股近事件切片（公告标题 + 业绩预告 + 一致预期）。
     # 事实源注入 agent prompt，防止 LLM 幻觉「并购故事」。离线测试可关。
     enable_recent_events: bool = True
+
+    # Aegis 2.0 Phase 1: A 股季报 PIT + TTM + 相对估值锚 + 验证点核验。
+    # 失败静默降级为年报口径（报告标注数据截至年报）。离线测试可关。
+    enable_quarterly: bool = True
 
 
 @dataclass
@@ -1035,6 +1227,58 @@ class AutoResearchOrchestrator:
 
         if historical_data:
             meta_facts["__historical_data"] = historical_data
+
+        # ── Step 4c (Aegis 2.0 Phase 1): A 股季报 PIT + TTM + 相对估值 ──
+        # DESIGN_2.0 §三.B / §五 Phase 1：季报连接器直写 PIT（sqlite3）→
+        # TTM 快照读出（红线 8 豁免的固定键）→ 数据时效标注 → 相对估值锚。
+        # 全部失败静默降级：无季报 → 年报口径照旧，报告标注数据截至年报。
+        _pit_store: Any = None
+        relative_valuation: Any = None  # RelativeValuation | None
+        if is_a_share and getattr(config, "enable_quarterly", True):
+            _pit_store, _ttm_updates = run_quarterly_pit_step(
+                config.ticker,
+                smoke_mode=getattr(config, "smoke_mode", False),
+                log=_log,
+            )
+            meta_facts.update(_ttm_updates)
+            if "ttm_revenue" in meta_facts or "ttm_net_income" in meta_facts:
+                _sym = _currency_symbol_for_logs(meta_facts)
+                _log(
+                    "TTM (rolling 4Q): "
+                    + ", ".join(
+                        f"{k}={_sym}{meta_facts[k] / 1e8:.2f}亿"
+                        for k in TTM_META_KEYS if k in meta_facts
+                    )
+                )
+            # 相对估值锚（东财同业 PE/PB 分位；compute_relative_valuation
+            # 契约上永不 raise，import 失败也不许打断主流程）。
+            try:
+                from aegis.core.truth.relative_valuation import (
+                    compute_relative_valuation,
+                )
+                relative_valuation = compute_relative_valuation(config.ticker)
+                meta_facts["__relative_valuation"] = relative_valuation.to_dict()
+                if relative_valuation.insufficient_peers:
+                    _log("Relative valuation: 同业样本不足（锚不可用，红线 5 gate）")
+                else:
+                    _log(
+                        f"Relative valuation: 「{relative_valuation.industry}」"
+                        f"PE(TTM) {relative_valuation.target_pe_ttm} vs 中位 "
+                        f"{relative_valuation.peer_pe_median} / PB "
+                        f"{relative_valuation.target_pb} vs 中位 "
+                        f"{relative_valuation.peer_pb_median} "
+                        f"(peers={relative_valuation.peer_count})"
+                    )
+            except Exception as e:
+                _log(f"  ⚠ Relative valuation skipped: {e}")
+        if is_a_share and "__data_freshness" not in meta_facts:
+            # 降级路径（任务 D1）：无季报 → 数据截至年报（A 股 FY 固定
+            # 12-31 期末），渲染层「数据截至」行据此标注年报口径。
+            try:
+                meta_facts["__data_freshness"] = build_data_freshness(
+                    f"{int(config.period[2:])}-12-31", basis="annual")
+            except (TypeError, ValueError):
+                pass
 
         # ── Step 5: Compute metrics ──────────────────────────────────
         from aegis.core.truth.registry.metric_registry import MetricRegistry
@@ -2245,6 +2489,35 @@ class AutoResearchOrchestrator:
             except Exception as e:
                 _log(f"  ⚠ Recent events fetch skipped: {e}")
 
+        # ── Step 8c (Aegis 2.0 Phase 1 任务 D2): 验证点核验 ─────────────
+        # 封闭目录检查器（LLM 不参与，纯数据规则）：PIT 季报库 + 近事件
+        # 切片 → 6 项核验结果。渲染层据此把 pricing_regime 的验证点清单
+        # 从「未核验」升级为「已核验·通过/未通过」+依据。
+        if is_a_share:
+            try:
+                from aegis.core.truth.verification import run_verification
+                _ver_results = run_verification(
+                    store=_pit_store,
+                    entity_id=entity_id,
+                    recent_events=meta_facts.get("__recent_events"),
+                )
+                if _ver_results:
+                    meta_facts["__verification"] = [
+                        v.to_dict() for v in _ver_results
+                    ]
+                    _log("Verification: " + ", ".join(
+                        f"{v.name_zh}={v.status_zh}" for v in _ver_results))
+            except Exception as e:
+                _log(f"  ⚠ Verification checks skipped: {e}")
+            finally:
+                # PIT 库读写均已完成，尽早释放 sqlite 连接。
+                if _pit_store is not None:
+                    try:
+                        _pit_store.close()
+                    except Exception:
+                        pass
+                    _pit_store = None
+
         _ig_unreliable_for_agents = bool(meta_facts.get("__implied_growth_unreliable"))
         agent_macro = {
             "cycle_phase": config.cycle_phase,
@@ -2286,6 +2559,17 @@ class AutoResearchOrchestrator:
         # 首行即「禁止引用未在此列出的催化剂」硬约束，全 agent 可见。
         if recent_events_prompt:
             agent_macro["recent_events"] = recent_events_prompt
+
+        # Aegis 2.0 Phase 1（任务 D1/D4）：相对估值锚 zh_lines 注入全 agent
+        # prompt（样本不足时的行本身就是「禁止引用同业倍数」硬约束）。
+        # 红线 9：面世数字已由 synthesizer/editor 的 scrubber 白名单同步
+        # 注册（relative_valuation_sanctioned_pcts，读 __relative_valuation）。
+        if relative_valuation is not None:
+            try:
+                agent_macro["relative_valuation"] = "\n".join(
+                    relative_valuation.zh_lines())
+            except Exception as e:
+                _log(f"  ⚠ Relative valuation prompt lines skipped: {e}")
 
         # Aegis 2.0 Phase 0：定价体制（设计红线 1——只用于叙事框架与验证
         # 点选择，禁止任何消费方据此隐藏 / 折扣 DCF-vs-price 差值展示）。
