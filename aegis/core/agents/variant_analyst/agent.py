@@ -39,7 +39,13 @@ class VariantAnalyst(AgentBase):
         # Priced-in assumptions from macro context
         priced_in = (inp.macro_context or {}).get("priced_in", {})
         if priced_in:
-            if priced_in.get("implied_revenue_growth") is not None:
+            # AUDIT-A9 (BUG-Y20 third path): when the reverse DCF hit a
+            # bisection boundary the implied growth is a fake-clean edge
+            # value (e.g. 0.50). The orchestrator now nulls it out and sets
+            # `implied_growth_unreliable`; guard here too so a stale/other
+            # caller can never turn the artifact into a rendered Observation.
+            if (priced_in.get("implied_revenue_growth") is not None
+                    and not priced_in.get("implied_growth_unreliable")):
                 observations.append(Observation(
                     text=f"Market-implied revenue growth: {priced_in['implied_revenue_growth']:.2%}",
                     source_ids=["reverse_dcf:implied_growth"],

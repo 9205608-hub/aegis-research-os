@@ -40,6 +40,10 @@ class CNMarketAdapter(MarketAdapter):
         "营业总成本": "total_operating_cost",
         "营业利润": "operating_income",
         "利润总额": "profit_before_tax",
+        # AUDIT-A8: 所得税费用 was unmapped → all A-share DCFs silently used
+        # the US 21% default tax rate. fact_bridge now derives
+        # effective_tax_rate = income_tax_expense / profit_before_tax.
+        "所得税费用": "income_tax_expense",
         "净利润": "net_income",
         "归属于母公司所有者的净利润": "net_income_to_parent",
         "基本每股收益": "eps_basic",
@@ -54,6 +58,10 @@ class CNMarketAdapter(MarketAdapter):
         "短期借款": "short_term_debt",
         "长期借款": "long_term_debt",
         "应付债券": "bonds_payable",
+        # AUDIT-A6: 一年内到期的非流动负债 (current portion of long-term
+        # borrowings/bonds — a SEPARATE line item, NOT included in 长期借款).
+        # fact_bridge's total_debt fallback sums it for CN alongside 长期借款.
+        "一年内到期的非流动负债": "long_term_debt_current",
         "流动资产合计": "current_assets",
         "流动负债合计": "current_liabilities",
         "少数股东权益": "minority_interest",
@@ -78,6 +86,16 @@ class CNMarketAdapter(MarketAdapter):
         "应收账款": "accounts_receivable",
         "应收票据及应收账款": "notes_and_accounts_receivable",
         "存货": "inventory",
+        # AUDIT-A6-bonus: cninfo_connector's yfinance fallback emits these
+        # CAS names (Reconciled Depreciation/Total Debt/EBITDA/Free Cash
+        # Flow/Interest Expense) — without entries here they passed through
+        # as raw Chinese keys and were silently dropped, degrading D&A to
+        # the capex×0.5 proxy and understating total_debt.
+        "折旧摊销": "depreciation_amortization",
+        "有息负债合计": "total_debt",
+        "EBITDA": "ebitda",
+        "自由现金流": "free_cash_flow",
+        "利息支出": "interest_expense",
     }
 
     # CAS-specific items that need special attention in cross-standard comparison

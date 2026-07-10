@@ -130,6 +130,23 @@ class FactNormalizationBridge:
             elif canonical in meta_facts and alias not in meta_facts:
                 meta_facts[alias] = meta_facts[canonical]
 
+        # Step 2b: A-share net income scope — prefer 归母 (parent attributable).
+        # AUDIT-A7 (2026-07): CN adapter maps akshare NETPROFIT (consolidated,
+        # includes minority interest) → net_income and PARENT_NETPROFIT →
+        # net_income_to_parent, but downstream (net_margin/ROE/EPS/PE, agent
+        # KEY FINANCIALS) all consumed the consolidated figure while akshare's
+        # eps_basic is 归母口径 — overstating earnings for companies with
+        # large minority interests (归母/合并 can be 60-80%). Sell-side
+        # convention is 归母口径: promote it to net_income, keeping the
+        # consolidated figure available as net_income_incl_minority.
+        if market_id == "cn":
+            ni_parent = meta_facts.get("net_income_to_parent")
+            if isinstance(ni_parent, (int, float)):
+                ni_total = meta_facts.get("net_income")
+                if isinstance(ni_total, (int, float)):
+                    meta_facts["net_income_incl_minority"] = ni_total
+                meta_facts["net_income"] = ni_parent
+
         # Step 3: Compute total_debt — prefer carrying amount, fallback to components
         if "total_debt" not in meta_facts:
             # Try total_debt_carrying first (DebtInstrumentCarryingAmount — most accurate)
@@ -138,11 +155,29 @@ class FactNormalizationBridge:
                 meta_facts["total_debt"] = carrying
                 derived.append("total_debt")
             else:
-                # Fallback: long_term_debt + short_term_debt + commercial_paper
-                ltd = meta_facts.get("long_term_debt", 0)
-                std = meta_facts.get("short_term_debt", 0)
-                cp = meta_facts.get("commercial_paper", 0)
-                total = ltd + std + cp
+                # Fallback: sum debt components.
+                # AUDIT-A6 (2026-07): previously only ltd + std + cp, dropping
+                # bonds_payable (CN 应付债券) and the LongTermDebtCurrent/
+                # Noncurrent split concepts (filings like NVDA tag only the
+                # split, not us-gaap:LongTermDebt) → total_debt missing/low →
+                # net_debt deeply negative → DCF equity value inflated and a
+                # false "net cash" narrative for bond-financed issuers.
+                ltd = meta_facts.get("long_term_debt") or 0
+                ltd_cur = meta_facts.get("long_term_debt_current") or 0
+                ltd_noncur = meta_facts.get("long_term_debt_noncurrent") or 0
+                if ltd > 0:
+                    # Whole-value concept present — use it and ignore the split
+                    # concepts (US: us-gaap:LongTermDebt already includes the
+                    # current portion). CN exception: 长期借款 EXCLUDES
+                    # 一年内到期的非流动负债 (separate line item mapped to
+                    # long_term_debt_current), so add it back.
+                    ltd_total = ltd + (ltd_cur if market_id == "cn" else 0)
+                else:
+                    ltd_total = ltd_noncur + ltd_cur
+                std = meta_facts.get("short_term_debt") or 0
+                cp = meta_facts.get("commercial_paper") or 0
+                bonds = meta_facts.get("bonds_payable") or 0  # CN 应付债券
+                total = ltd_total + std + cp + bonds
                 if total > 0:
                     meta_facts["total_debt"] = total
                     derived.append("total_debt")
@@ -229,6 +264,25 @@ class FactNormalizationBridge:
             if dep or amort:
                 meta_facts["depreciation_amortization"] = dep + amort
                 derived.append("depreciation_amortization")
+
+        # Step 5e: Derive effective_tax_rate from the income statement when
+        # the filing doesn't report a rate concept directly.
+        # AUDIT-A8 (2026-07): us-gaap:EffectiveIncomeTaxRateContinuingOperations
+        # only exists on the US/XBRL path — A-share filings report 所得税费用/
+        # 利润总额 but no rate, so every CN DCF silently fell back to the US
+        # 21% default (config.effective_tax_rate), a ±5-7% FCFF bias. Derive
+        # the rate here; consumed by auto_research's tax-rate resolution via
+        # facts["effective_tax_rate"] (same consumption point as US path).
+        if "effective_tax_rate" not in meta_facts:
+            tax = meta_facts.get("income_tax_expense")
+            pbt = meta_facts.get("profit_before_tax")
+            if (isinstance(tax, (int, float)) and isinstance(pbt, (int, float))
+                    and pbt > 0):
+                rate = tax / pbt
+                # Clamp to a sane corporate band — one-off credits/distortions
+                # shouldn't push the DCF to extremes.
+                meta_facts["effective_tax_rate"] = min(max(rate, 0.05), 0.50)
+                derived.append("effective_tax_rate")
 
         # Step 6: Process segments
         segment_data: dict[str, dict[str, Any]] = {}
@@ -417,6 +471,21 @@ def _run_data_quality_checks(facts: dict[str, Any]) -> list[dict[str, Any]]:
             _add("DQ_HIGH_NI_MARGIN", "info",
                  f"Net margin {ni_margin:.0%} >60% — verify (rare outside finance/IP)",
                  field="net_income")
+
+    # AUDIT-A6: total_debt must be >= any single debt component — a smaller
+    # total means the aggregation (carrying amount / fallback sum) missed a
+    # component (e.g. 应付债券 unmapped) and net_debt is understated.
+    if total_debt:
+        for comp_field in ("long_term_debt", "short_term_debt",
+                           "commercial_paper", "bonds_payable",
+                           "long_term_debt_noncurrent", "long_term_debt_current"):
+            comp = facts.get(comp_field) or 0
+            if comp > total_debt * 1.001:  # slack for rounding
+                _add("DQ_TOTAL_DEBT_LT_COMPONENT", "warn",
+                     f"total_debt ({total_debt:,.0f}) < {comp_field} "
+                     f"({comp:,.0f}) — debt aggregation is missing components, "
+                     f"net_debt will be understated",
+                     field="total_debt")
 
     # Total debt vs assets: very leveraged structures get flagged for context
     if total_debt and total_assets and total_assets > 0:

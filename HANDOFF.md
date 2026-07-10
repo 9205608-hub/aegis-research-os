@@ -1,6 +1,88 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-05-06 (会话7 续 — TODO-Y1-Y20 18 项修复 + 寒武纪 v1/v2/v3 端到端实证)
+> 最新更新: 2026-07-10 (康达新材 002669 实盘验证 + A 股行业解析根因修复)
+
+## 🔍 2026-07-10 康达新材(002669) 实盘验证 + 行业解析根因修复
+
+**验证方法**：smoke 全管线 + akshare/eastmoney 独立拉数交叉对账。康达新材是天然压力标的：FY2024 亏 2.46 亿 → FY2025 营收 +69%（52.4 亿）、归母 1.25 亿但扣非仅 1672 万、资产负债率 66%、CFO −12 亿。
+
+**修复批次生效实证（对着 ground truth 逐项过）**：
+- ✅ A7 归母口径：Net Income ¥1.3亿 = 归母（P/E 33.6x = 市值42亿/归母1.25亿 自洽）
+- ✅ A6 债务口径：Total Debt ¥28.2亿（负债率 66% 下合理，含债券/一年内到期）
+- ✅ FCF −15.6亿 与原始现金流精确对账（CFO −11.99亿 − capex 3.61亿），不是 bug 是公司真实失血
+- ✅ A10 披露：bear ¥−8.53 / bull ¥13.67 双端夹逼，报告情景卡带中文脚注+原始值
+- ✅ blocked → 「暂不评级」（terminal_value_gate 拦下 DCF 2.15 vs 价格 13.9 的-85%缺口——市场定价军工转型预期，rule-based 模式保守 block 是正确行为）
+- ✅ headline 中文 abs 修复：「隐含 82.6% 下行空间」无双重否定
+
+**发现并修复的新问题**：
+- ✅ **A 股行业解析根因修复**（BUG-Y18 的治本版）：push2 不可达时行业解析只剩 30 个龙头名字白名单，康达新材等一切中盘股全掉 General pack（寒武纪 v2 的 25× DCF 偏差同款隐患）。修复：[akshare_connector.py](aegis/core/acquisition/connectors/akshare_connector.py) 新增 Method 1.5 —— eastmoney **datacenter F10 API**（`datacenter.eastmoney.com`，实测可达、0.1s）拉 EM2016 三级行业，同分类法兼容既有 substring 匹配。**拯救效应实证：圣邦股份 300661（白名单外）→「电子设备-半导体-集成电路」→ sp_semiconductor_v1**（修前掉 General）。康达新材本身正确落 General（无化工 pack，属预期）
+- ✅ 审计 P2 顺手修：Method 3 sina 全市场爬取死代码（裸代码匹配带前缀列 + 读不存在的列 + 封 IP 风险）→ 换成已验证的 `tencent_sina_quote.fetch_cn_quote`（一次调用拿价格+股本+市值）
+- ✅ 行业字符串透传 meta_facts["industry"] → 报告 sector 栏不再显示"—"
+- ✅ report.jsx 两处注释含 "Infinity" 字面量污染卫生 grep → 改措辞，HTML grep Infinity 回到 0
+
+**测试**：913 → 922 passed（新增 test_industry_fallback.py 9 例）。已知遗留：无化工/汽车零部件等 pack，特种材料类仍走 General（可按需补 pack）。
+
+---
+> 上一轮: 2026-07-09 (AUDIT_2026-07 路线图 A/B/C/D/E 五阶段 50 项批量修复 + 240 个回归测试)
+
+## 🔧 2026-07-09 AUDIT_2026-07 批量修复（50 项，三波并行 + 全量验证）
+
+**基线 main@fefb049（673 passed / 4 skipped）→ 修复后 913 passed / 4 skipped，0 失败。分支 `claude/post-audit-fixes-optimization-514324`。**
+审计报告全文见根目录 [AUDIT_2026-07.md](AUDIT_2026-07.md)（63 条发现：5 P0 / 22 P1 / 35 P2，路线图 A-E 五阶段）。修复方式：7 个文件互斥并行 agent（Wave1）→ auto_research.py 集中修复（Wave2）→ 性能接线（Wave3）→ 全量验证，每项修复配回归测试。
+**NVDA smoke 实证（2026-07-09）**：全管线绿，A4 cap 真实触发（128×→26×），A1 对轻资产 NVDA base 几乎不动（150.66→151.36，符合预期），bear 不再钉死 0.5× 夹逼边界（自然值 0.73×）。
+
+### 阶段 A — 估值内核（数字层，全部落地）
+- ✅ **A1 (P0) D&A 双重计入**：[dcf_engine.py](aegis/core/truth/scenario_engine/dcf_engine.py) 基期 D&A 常数化贯穿 10 年且与 margin 内嵌 D&A 口径不一致 → 资本密集股 per-share 高估 ~27%。改为比率模型：`da_ratio_t` 从 `base_da/base_revenue` 线性收敛到当年 capex/revenue，`depreciation_t = da_ratio_t × revenue_t`，**终值年强制 D&A==capex（稳态守恒）**。合成基准（100B 营收/5% 增速/20% margin/capex=D&A=10%/WACC 9.5%）：**旧 338.87 → 新 263.48/股（−22.2%）**，与审计复核者独立数值精确吻合；da=0 时从悬崖式低估变为有界线性爬坡（224.73）。flat + consolidated 两路径都改。⚠ **资本密集型 A 股/半导体历史报告的 DCF base 全部偏高 20-30%，评级结论需重看**
+- ✅ **A2** reverse_dcf_solver 两个 solve_* 补 base_depreciation/capex_useful_life_years/buyback_yield_annual 透传（旧默认 0 → 同一价格反解出 2.3× 虚高隐含增速）；round-trip 实测正向 5% 增速 → 反解 5.00%
+- ✅ **A3** bear 增长地板 0.01 → −0.05（非 driver-tree 回退路径按情景分流，衰退情景可表达了；bull 保留 0.01）
+- ✅ **A4** Y23 的 30× 累计 cap 抽成模块级 `cap_cumulative_growth_path()`，bear/bull driver_deltas 路径同样施加（超高增长股情景值不再必然反转→被 0.5×/2× 静默改写）
+- ✅ **A5** ScenarioArchitect：delta 数组 pad/truncate 到恰好 10（截断响应不再让 dcf assert 崩整个 run）、case name 归一（Bearish/悲观/熊市→bear）、缺 case/概率非法抛异常走 mechanical fallback；orchestrator 侧 pw_value 前概率 renorm（偏离 1.0 >1% 告警），replay cache 与 signal 权重同源
+- ✅ **A6** total_debt 补 bonds_payable + 一年内到期非流动负债（akshare 字段名已对 eastmoney 实 API 验证：万科A 2024 = ¥1460亿）+ 美股 LongTermDebt 拆分概念，market-aware 去重；新增 DQ_TOTAL_DEBT_LT_COMPONENT 告警
+- ✅ **A7** A 股 net_income 切归母口径（net_income_to_parent 覆盖，合并口径保留为 net_income_incl_minority）——少数股东占比高的名字（京东方类）盈利不再虚高 20-40%
+- ✅ **A8** 「所得税费用」入 CONCEPT_MAP + effective_tax_rate 派生（clamp 5%-50%）——A 股 DCF 不再固定用美国 21% 税率（±5-7% 系统性偏差消除）
+- ✅ **A9** boundary-hit 伪造 implied_growth 的第三条泄漏路径（agent_macro.priced_in → 7 个 agent prompt）补 gate；variant/valuation 两个 rule-based agent 的 observation 同步 gate（Y20 至此三条路径全堵）
+- ✅ **A10** bear/bull 0.5×/2× 夹逼首次在报告披露：scenarios 结构新增 clamped/raw_value 字段 + 渲染中文脚注「⚠ 该情景值超出合理区间已保守夹逼（模型原始输出 ¥X）」；__growth_path_capped 同步渲染为 DCF 假设脚注（Y6 增长跳水有解释了），cap 警告改走 _log
+
+### 阶段 B — LLM 可靠性
+- ✅ **B1 (P0) KimiClient 恢复链死代码**：`continue` 绑内层 tool_calls 循环 + retryable 关键词缺失 → 首次 empty/截断即整 agent 退 mock。重构后 empty-args 重试 3 次到达 JSON-mode fallback、截断 grow 16384→32768 真实生效；暴露 `resolve_kimi_endpoint()` 供健康探针复用
+- ✅ **B2** CachedLLMClient 双向质量门：写侧拒缓存 raw_text 降级壳/空 dict/__partial/缺 required 字段；读侧对既有投毒条目命中即逐出自愈；新增 bypass_cache 参数；sdk_client 截断 salvage 打 __partial 标记。orchestrator 质量门重试接 nonce 方案（同 prompt 重试不再恒 cache hit）
+- ✅ **B3** Kimi 健康探针改用 resolve_kimi_endpoint（sk-kimi-→api.kimi.com/coding/v1，其他→api.moonshot.ai/v1）+ User-Agent: claude-code/1.0；网络异常降级 warning 不再中止 run（好 key 不再被误杀）
+- ✅ **B4** Counterargument.strength 归一化（medium→moderate 等，与 Y24 同款）——一个枚举混写不再丢弃整个 agent 真实输出
+- ✅ **B5** parse 边界四个崩溃点：source_ids/evidence_ids 字符串→coerce_list、indices 标量→coerce+默认 [0]、bias_check JSON 字符串→json.loads 救回、observations/inferences/counterarguments per-item try/except 丢坏项不炸整体
+- ✅ **B6** _strip_sensitive 补 6 组中文替换对（出口管制/华为/台湾(不误伤台积电)/实体清单/军工）+ 英文词 \b 改字母边界——A 股敏感标的 content-filter 重试不再是死代码。附带收紧 _is_content_filter_error（schema 400 不再误判）
+
+### 阶段 C — 渲染与产品脸面
+- ✅ **C1** agent thesis 去 dangerouslySetInnerHTML 改文本节点（headless Chrome 实测 `</script>` 攻击串安全、ROIC<WACC 不再吞后半句）
+- ✅ **C2** publishing_status="downgraded" 补渲染分支：「评级已降级 · 存在未解决分歧」（Y22 漏的边界，带矛盾的报告不再裸显「买入」）
+- ✅ **C3** narrative_fact_critic「万亿」被「亿」尾匹配先命中 → 2.4万亿解析成 2.4e8（万倍错）：改 fullmatch。万亿级公司（工行/中石油）正确引用不再被误报轰炸 publish gate
+- ✅ **C4** Step 12c DEEP 重跑后重建 all_judgments + 重跑 narrative 注入 → 决策引擎/HTML/replay cache 全部消费 v2 判断（报告不再 thesis 用新版、agent 卡片展示已被推翻的旧版）
+- ✅ 渲染 bonus 6 连修（均先核实）：中文 headline「-23.8%下行空间」双重否定取 abs；「usd bs」→「USD billions」；report_json 防 `</script>` 白屏转义；时效 banner 月数精确化（15.6 个月不再虚报 24）+ 支持真实期末日探测；price=0 三处 Infinity% 抽 safePct；synthesizer「估值回归」被判下行的方向词最长匹配修复 + numeric critic 中文系词隐式等式检测
+
+### 阶段 D — 性能（接线为主）
+- ✅ **D1** AGENT_MAX_PARALLEL 按 backend 分档：API 后端（deepseek/kimi/sdk）默认 4（env AEGIS_AGENT_MAX_PARALLEL_API），subprocess 保持 2 —— batch1 四 agent 一波并行，agent 阶段 3 轮串行→2 轮
+- ✅ **D2** run_research.sh 接线：AEGIS_LLM_CACHE 默认 =1（=0 可关）；FAST_AGENTS=1 开关→--fast-agents（hybrid flash 路由，预期 40→22min）**默认关**——转默认开前需 2-3 个真实 ticker A/B 验证 flash 档质量
+- ✅ **D3** max_tokens 按深度分档（light=8192/standard=16384/deep=32768）经 max_tokens_hint 透传 deepseek/kimi，恢复梯子锚定起始预算，无 hint 逐字节复现旧行为
+- ✅ **D4** 超时按 backend 分档：API 后端 batch=1800s/watchdog=900s（subprocess 沿用 4800/1800）——网络卡顿 30/15 分钟内暴露而非静默拖 80 分钟
+- ✅ **D5** A 股跳过 consensus estimates + peer fundamentals 的 yfinance 串行调用（BUG-29 漏网两路径，省 ~1-2min 代理网络等待）
+
+### 阶段 E — 测试补强（240 个新用例，9 个新文件）
+- ✅ E1 test_coerce.py + test_llm_agent_parse.py（65 用例，#1 高频回归类型首次有保护）
+- ✅ E2 test_orchestrator_scenarios.py（21 用例：30× cap 寒武纪式路径/renorm/gate/夹逼披露）
+- ✅ E3 test_html_report_v2.py 直测生产渲染器（_derive_rating 四态/_sanitize_floats/中文 label/JSON 完整性）+ 重写 TestReportCurrencySymbol 假测试（原为两个硬编码字面量互比）
+- ✅ E4 test_critics_zh.py（34 用例，Y41-Y48 中文路径首批回归保护）
+- ✅ E5 test_dcf_e2e.py 按 A1 新模型重推期望值（原来把错误公式固化成了断言）+ test_dcf_da_consistency.py 锁定 263.48 基准
+- ✅ 其余新文件：test_kimi_recovery.py / test_cached_client_gate.py / test_cn_adapter.py / test_scenario_architect_parse.py / test_fact_bridge.py 扩展
+
+### ⚠ 遗留待办（按优先级）
+1. **实盘验证**：跑 600519 / 688256 等资本密集与 A 股名字对比新旧 DCF base（预期资本密集名字 −20~30%）；NVDA smoke 已验证轻资产端
+2. **FAST_AGENTS 质量验证**后转默认开（再省 ~10min）
+3. **新发现**（本次修复过程中暴露，未在审计 63 条内）：scripts/replay_from_cache.py:501 `two_way_table` 缺 var1_range/var2_range 必填参数，恒抛 TypeError 被静默吞——replay 的敏感性表重算从未生效过
+4. 审计遗留 P2（不在路线图，未修）：宏观 PMI 用错 FRED 序列且无 key 时伪造整套宏观数字（openbb_connector.py:190）；peer_fundamentals dataclass vs dict 死代码（llm_agent_base.py:1051）；akshare sina spot 兜底裸代码匹配带前缀列纯死代码+白耗 80 页分页（akshare_connector.py:421）；Editor front_page_numbers 不过 scrubber（report_editor.py:228）；hypothesis_validated 字符串 "false" 按 truthy（thesis_synthesizer.py:655）；logic_critic 中文「经营利润率/毛利率」关键词缺失（critic.py:371）；EV/EBITDA 历史序列与 dates 轴错位（openbb_connector.py:892）；consensus high/low NaN 穿透（openbb_connector.py:629）
+5. 小口径问题：ROE 分母 total_equity 仍含少数股东（归母 NI/总权益，略保守）；effective_tax_rate 恰好 clamp 到 0.05/0.50 边界时被 auto_research.py:4226 严格不等式拒绝回落 21%（改 `<=` 可放行）；capex_useful_life_years 在新 D&A 模型下不再参与计算（字段保留兼容）
+
+---
+
+> 上一轮更新: 2026-05-06 (会话7 续 — TODO-Y1-Y20 18 项修复 + 寒武纪 v1/v2/v3 端到端实证)
 > 本次工作: 系统隐患审计 (Y1-Y9) → 寒武纪 baseline 跑通 → v2 暴露 4 个 P0 显示 bug (Y12/Y14/Y16/Y17) + sector inference 翻车 (Y18) + 5 个隐藏 currency 漏修 (Y15/Y19/Y20) → v3 全部实证 0 mock / 55% cache hit / 正确 blocked
 
 ## 🏆 2026-05-06 寒武纪 v3 端到端实证（会话7 续 完）

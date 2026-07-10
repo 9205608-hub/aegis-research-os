@@ -8,6 +8,10 @@ Covers the bugs surfaced in the 2026-04-16 P0-REVIEW audit:
   - FCFF = NOPAT + D&A - CapEx - ΔNWC formula integrity
   - Input validation guards
 
+AUDIT-A1 (2026-07): D&A expectations re-derived for the ratio-based D&A
+bridge (D&A_t = da_ratio_t × revenue_t, converging to the capex ratio by
+the terminal year). Benchmark regression lives in test_dcf_da_consistency.py.
+
 Each scenario uses simplified but realistic numbers so expected values
 can be hand-verified.
 """
@@ -177,8 +181,9 @@ class TestScenario_AAPL_Segment:
     def test_depreciation_grows_with_capex(self, inputs):
         out = engine.compute_consolidated_dcf(inputs)
         deps = [p.depreciation for p in out.consolidated_projections]
-        # With 5-year horizon and 5-year useful life, D&A should grow each year
-        # (no capex retires within the horizon)
+        # AUDIT-A1 ratio model: revenue grows every year AND the D&A ratio
+        # converges upward (da_base_ratio 11B/390B≈2.8% < consolidated capex
+        # ratio ≈3.7%), so D&A should grow each year.
         for i in range(1, len(deps)):
             assert deps[i] >= deps[i - 1], f"D&A should grow: Y{i} vs Y{i+1}"
 
@@ -230,18 +235,43 @@ class TestScenario_GOOG_Flat:
             )
 
     def test_da_zero_undervalues(self, base_inputs):
-        """Without D&A (the old GOOG bug), valuation drops massively."""
+        """Without D&A (the old GOOG bug), valuation drops.
+
+        AUDIT-A1 re-derivation: under the ratio-based D&A bridge both
+        variants converge to D&A == capex in the terminal year, so the
+        terminal values are identical and the gap is confined to the
+        explicit horizon:
+
+            ΔEV = Σ_t PV(rev_t × da_base_ratio × (1 − t/n))
+
+        (da_base_ratio = 21B/350B = 6%). We assert the exact hand-derived
+        gap instead of the old loose ">10%" ratio, which was calibrated to
+        the pre-A1 window model where missing D&A caused a cliff.
+        """
         with_da = engine.compute_dcf(base_inputs)
 
         no_da_input = DCFInput(**{**base_inputs.__dict__, "base_depreciation": 0.0})
         no_da = engine.compute_dcf(no_da_input)
 
-        # D&A=21B should make a meaningful difference — at least 10% higher
-        # (In production GOOG the impact was ~130% because capex ≈ D&A,
-        #  so removing D&A nearly halved FCFF. Here the ratio is less extreme.)
-        ratio = with_da.per_share_value / no_da.per_share_value
-        assert ratio > 1.10, (
-            f"D&A=21B should boost valuation >10%, got {ratio:.1%}"
+        assert with_da.per_share_value > no_da.per_share_value, (
+            "Real D&A must still boost valuation vs D&A=0"
+        )
+
+        n = base_inputs.horizon_years
+        da_base_ratio = base_inputs.base_depreciation / base_inputs.base_revenue
+        rev = base_inputs.base_revenue
+        expected_gap_ev = 0.0
+        for t in range(1, n + 1):
+            rev *= 1 + base_inputs.revenue_growth_path[t - 1]
+            expected_gap_ev += (
+                rev * da_base_ratio * (1 - t / n)
+                / (1 + base_inputs.wacc) ** t
+            )
+        expected_gap_ps = expected_gap_ev / base_inputs.shares_outstanding
+        actual_gap_ps = with_da.per_share_value - no_da.per_share_value
+        assert actual_gap_ps == pytest.approx(expected_gap_ps, rel=1e-9), (
+            f"D&A gap {actual_gap_ps:.2f}/share should equal the PV of the "
+            f"horizon D&A wedge {expected_gap_ps:.2f}/share"
         )
 
     def test_fcff_formula_integrity(self, base_inputs):
@@ -342,8 +372,9 @@ class TestScenario_AShare_301358:
         """Heavy capex early → FCFF should be negative in year 1."""
         out = engine.compute_dcf(inputs)
         # Y1: rev=36亿, margin=8%, tax=25% → NOPAT~2.16亿
-        # D&A~2亿, CapEx=35%*36亿=12.6亿, NWC=5%*6亿=0.3亿
-        # FCFF ~ 2.16 + 2 - 12.6 - 0.3 = -8.74亿
+        # D&A (AUDIT-A1 ratio model) = 36亿×(6.67%×0.9 + 35%×0.1) ≈ 3.42亿
+        # CapEx=35%*36亿=12.6亿, NWC=5%*6亿=0.3亿
+        # FCFF ~ 2.16 + 3.42 - 12.6 - 0.3 = -7.32亿
         assert out.projections[0].fcff < 0, "Early high-capex year should have negative FCFF"
 
     def test_later_years_improving_fcf(self, inputs):
@@ -455,15 +486,28 @@ class TestDCFInputValidation:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestDepreciationAccumulation:
-    """Verify D&A accumulation behavior — known issue: capex never retires."""
+    """Verify the ratio-based D&A bridge (AUDIT-A1, 2026-07).
 
-    def test_da_year1_equals_base_plus_first_capex_share(self):
-        """Year 1 D&A = base_depreciation + capex_Y1 / useful_life."""
-        inp = DCFInput(
+    Model: D&A_t = revenue_t × [da_ratio_base × (1 − t/n) + capex_ratio_t × t/n]
+    where da_ratio_base = base_depreciation / base_revenue and n is the
+    horizon. The blend weight reaches 1.0 in the terminal year, enforcing
+    the steady-state conservation D&A(terminal) == CapEx(terminal).
+
+    (The previous window model — base D&A constant forever plus a rolling
+    capex/useful-life window — double-counted the margin-embedded D&A and
+    overstated per-share value ~27% for capital-intensive names; its
+    behavior was locked in the old version of this class. Benchmark for
+    the new model lives in tests/unit/test_dcf_da_consistency.py.)
+    """
+
+    @staticmethod
+    def _inp(n: int, base_da: float, growth: float = 0.05,
+             capex: float = 0.10) -> DCFInput:
+        return DCFInput(
             base_revenue=100e9,
-            revenue_growth_path=[0.05],
-            operating_margin_path=[0.20],
-            capex_to_revenue_path=[0.10],
+            revenue_growth_path=[growth] * n,
+            operating_margin_path=[0.20] * n,
+            capex_to_revenue_path=[capex] * n,
             effective_tax_rate=0.20,
             nwc_to_revenue_delta=0.01,
             terminal_growth_rate=0.03,
@@ -472,48 +516,41 @@ class TestDepreciationAccumulation:
             dilution_rate_annual=0.0,
             shares_outstanding=2_000_000_000,
             net_debt=0,
-            horizon_years=1,
-            base_depreciation=5e9,
+            horizon_years=n,
+            base_depreciation=base_da,
             capex_useful_life_years=5.0,
         )
-        out = engine.compute_dcf(inp)
-        # Y1: cumulative_capex starts at 0, then capex=105B*0.10=10.5B added AFTER depreciation calc
-        # So Y1 depreciation = base(5B) + 0/5 = 5B (cumulative is 0 at start of Y1)
-        assert out.projections[0].depreciation == pytest.approx(5e9, rel=1e-9)
 
-    def test_da_year2_includes_y1_capex(self):
-        """Year 2 D&A includes amortization of Year 1's capex."""
-        inp = DCFInput(
-            base_revenue=100e9,
-            revenue_growth_path=[0.05, 0.05],
-            operating_margin_path=[0.20, 0.20],
-            capex_to_revenue_path=[0.10, 0.10],
-            effective_tax_rate=0.20,
-            nwc_to_revenue_delta=0.01,
-            terminal_growth_rate=0.03,
-            wacc=0.09,
-            sbc_to_revenue=0.0,
-            dilution_rate_annual=0.0,
-            shares_outstanding=2_000_000_000,
-            net_debt=0,
-            horizon_years=2,
-            base_depreciation=5e9,
-            capex_useful_life_years=5.0,
+    def test_da_year1_blends_base_ratio_toward_capex_ratio(self):
+        """Y1 D&A = rev_1 × [da_base_ratio × (1 − 1/n) + capex_ratio × 1/n]."""
+        out = engine.compute_dcf(self._inp(n=10, base_da=5e9))
+        # da_base_ratio = 5B/100B = 5%, capex ratio 10%, w = 1/10
+        # Y1 D&A = 105B × (0.05×0.9 + 0.10×0.1) = 105B × 0.055 = 5.775B
+        assert out.projections[0].depreciation == pytest.approx(
+            105e9 * 0.055, rel=1e-9
         )
-        out = engine.compute_dcf(inp)
-        y1_capex = out.projections[0].capex  # ~10.5B
-        # Y2 depreciation = base(5B) + y1_capex/5
-        expected_y2_da = 5e9 + abs(y1_capex) / 5.0
-        assert out.projections[1].depreciation == pytest.approx(expected_y2_da, rel=1e-6)
 
-    def test_da_grows_then_stabilizes_with_constant_capex(self):
-        """With constant capex ratio and 5% growth, D&A grows for useful_life years then stabilizes."""
+    def test_da_year2_convergence_weight_advances(self):
+        """Y2 D&A uses w = 2/n — the ratio keeps converging toward capex."""
+        out = engine.compute_dcf(self._inp(n=10, base_da=5e9))
+        # Y2 D&A = 110.25B × (0.05×0.8 + 0.10×0.2) = 110.25B × 0.06 = 6.615B
+        assert out.projections[1].depreciation == pytest.approx(
+            110.25e9 * 0.06, rel=1e-9
+        )
+
+    def test_terminal_year_da_equals_capex(self):
+        """Steady-state conservation: terminal-year D&A == terminal-year capex.
+
+        Uses a declining capex path so the check can't pass by accident of a
+        constant ratio — the terminal blend must target THAT year's ratio.
+        """
         n = 10
         inp = DCFInput(
             base_revenue=100e9,
             revenue_growth_path=[0.05] * n,
             operating_margin_path=[0.20] * n,
-            capex_to_revenue_path=[0.10] * n,
+            capex_to_revenue_path=[0.20, 0.19, 0.18, 0.17, 0.16,
+                                   0.15, 0.14, 0.13, 0.12, 0.11],
             effective_tax_rate=0.20,
             nwc_to_revenue_delta=0.01,
             terminal_growth_rate=0.03,
@@ -527,55 +564,37 @@ class TestDepreciationAccumulation:
             capex_useful_life_years=5.0,
         )
         out = engine.compute_dcf(inp)
-        deps = [p.depreciation for p in out.projections]
-        # D&A should grow during first useful_life years as new capex accumulates
-        for i in range(1, 5):  # Years 2-5
-            assert deps[i] >= deps[i - 1], (
-                f"D&A should grow in early years: Y{i}={deps[i-1]:.0f} vs Y{i+1}={deps[i]:.0f}"
+        last = out.projections[-1]
+        assert last.depreciation == pytest.approx(abs(last.capex), rel=1e-9), (
+            f"Terminal D&A ({last.depreciation/1e9:.2f}B) must equal terminal "
+            f"capex ({last.capex/1e9:.2f}B) — steady-state conservation"
+        )
+
+    def test_da_tracks_revenue_when_ratios_already_equal(self):
+        """da_base_ratio == capex ratio → D&A_t = ratio × revenue_t every year."""
+        out = engine.compute_dcf(self._inp(n=10, base_da=10e9))  # both 10%
+        for p in out.projections:
+            assert p.depreciation == pytest.approx(p.revenue * 0.10, rel=1e-9), (
+                f"Year {p.year}: D&A should stay at 10% of revenue"
             )
-        # After useful_life, growth should slow dramatically (only driven by revenue growth)
-        late_growth = deps[9] / deps[8] - 1
-        early_growth = deps[1] / deps[0] - 1
-        assert late_growth < early_growth, "D&A growth should slow after useful_life"
 
-    def test_da_plateaus_after_useful_life(self):
-        """After useful_life years, old capex should retire and D&A should plateau.
-
-        With constant capex and 5-year useful life, D&A should stabilize by year 6
-        as year 1's capex retires.
+    def test_da_zero_ramps_linearly_to_capex_ratio(self):
+        """base_depreciation=0 (D&A missing upstream): D&A ramps linearly
+        from 0 toward the capex ratio and still lands on D&A == capex in the
+        terminal year — bounded undervaluation, no cliff.
         """
         n = 10
-        # Constant revenue (0% growth) + constant capex ratio → constant annual capex
-        inp = DCFInput(
-            base_revenue=100e9,
-            revenue_growth_path=[0.0] * n,
-            operating_margin_path=[0.20] * n,
-            capex_to_revenue_path=[0.10] * n,
-            effective_tax_rate=0.20,
-            nwc_to_revenue_delta=0.0,
-            terminal_growth_rate=0.02,
-            wacc=0.09,
-            sbc_to_revenue=0.0,
-            dilution_rate_annual=0.0,
-            shares_outstanding=2_000_000_000,
-            net_debt=0,
-            horizon_years=n,
-            base_depreciation=0.0,  # No base → only new capex drives D&A
-            capex_useful_life_years=5.0,
+        out = engine.compute_dcf(self._inp(n=n, base_da=0.0, growth=0.0))
+        # Constant 100B revenue, 10% capex: D&A_t = 100B × 0.10 × t/10 = t×1B
+        for t, p in enumerate(out.projections, start=1):
+            assert p.depreciation == pytest.approx(t * 1e9, rel=1e-9), (
+                f"Year {t}: expected linear ramp {t}B"
+            )
+        # Terminal year: D&A == capex == 10B
+        assert out.projections[-1].depreciation == pytest.approx(10e9, rel=1e-9)
+        assert out.projections[-1].depreciation == pytest.approx(
+            abs(out.projections[-1].capex), rel=1e-9
         )
-        out = engine.compute_dcf(inp)
-        # With constant 10B capex/year and 5-year life:
-        # Y1 capex starts depreciating in Y2, so the window fills at Y6:
-        # Y6 D&A = sum(Y1..Y5 capex)/5 = 50B/5 = 10B
-        # Y7 D&A = sum(Y2..Y6 capex)/5 = 50B/5 = 10B (Y1 retired, Y6 entered)
-        y6_da = out.projections[5].depreciation  # Year 6
-        y7_da = out.projections[6].depreciation  # Year 7
-        # After the window is full, D&A should plateau with constant capex
-        assert y7_da == pytest.approx(y6_da, rel=0.01), (
-            f"D&A should plateau after useful_life+1: Y6={y6_da/1e9:.1f}B, Y7={y7_da/1e9:.1f}B"
-        )
-        # Also verify the plateau value is correct: 5 × 10B/5 = 10B
-        assert y6_da == pytest.approx(10e9, rel=0.01)
 
 
 # ═══════════════════════════════════════════════════════════════════════

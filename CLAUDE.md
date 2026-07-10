@@ -86,12 +86,13 @@ python scripts/replay_from_cache.py 301358 --allow-stale --editor  # 顺带重�
 - **网络环境**: 用户在中国大陆 + Clash Verge 代理。`.cn` / `eastmoney.com` 域名需要 bypass 代理 —— `akshare_connector._no_proxy()` 里有处理。`push2.eastmoney.com` 在当前代理配置下仍然不可达（已知遗留问题）
 - **LLM 偏好**: 优先用 Claude Max 订阅（SDK/OAuth），不要提议申请新的独立 API key
 
-## 当前系统状态 (2026-04-15)
+## 当前系统状态 (2026-07-09)
 
-- ✅ A 股中文化：99% 中文（剩下的是 ROIC/EBITDA/WACC 等国际缩写）
-- ✅ 时效性警告 banner 上线
-- ✅ akshare + eastmoney 接入完成
-- ✅ 敏感性表符号 bug 修复
-- ✅ 稀释率默认 2% bug 修复（新 DCF base 比旧高约 22%）
-- ✅ DCF engine FCFF 公式补齐 `+ D&A` 项，且对 capex 符号用 `abs()` 健壮化（2026-04-15 修复）
-- ⚠ Pipeline 一次运行 ~25 分钟，下一轮可优化（前 6 个 agent 改用 haiku/flash）
+- ✅ **AUDIT_2026-07 路线图 50 项批量修复落地**（阶段 A-E 全部完成，详见 HANDOFF 2026-07-09 条目）
+- ✅ DCF D&A 口径修复（P0）：比率模型 + 终值年 D&A≈capex 守恒，资本密集股 DCF base 下降 20-30%（合成基准 338.87→263.48/股）
+- ✅ A 股口径三连：total_debt 补应付债券、净利润切归母、所得税率真实派生（不再固定美国 21%）
+- ✅ KimiClient 恢复链接通（原是死代码，首次失败即退 mock）+ LLM 缓存质量门（降级壳不再投毒）
+- ✅ 性能接线：API 后端 agent 并发 2→4、LLM 磁盘缓存默认开启、超时按 backend 分档（预期 ~40min→~20min，待实测）
+- ✅ 测试 673→913 passed（新增 240 个回归用例，补齐 _coerce/html_report_v2/critics 中文路径/DCF 口径四大零覆盖）
+- ⚠ `FAST_AGENTS=1`（前 4 个 specialist 降 flash 档，预期再省 ~10min）已接线但默认关——需先在 2-3 个真实 ticker 上 A/B 验证 flash 输出质量
+- ⚠ 审计遗留未修 P2（不在路线图内）：宏观 PMI 假数字、peer_fundamentals dataclass 死代码、sina spot 兜底死代码、Editor front_page_numbers 无 scrub、hypothesis_validated 字符串真值、logic_critic 中文利润率关键词、replay_from_cache 敏感性表缺参（新发现）——清单见 HANDOFF 待办
