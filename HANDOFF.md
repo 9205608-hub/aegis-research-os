@@ -1,6 +1,32 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-10 第四批 (**Aegis 2.0 Phase 0 落地**：预期优先框架，分支 claude/phase0-expectations 待验收合并)
+> 最新更新: 2026-07-10 第五批 (**Aegis 2.0 Phase 1 落地**：A 股中频数据层，分支 claude/phase1-data-layer 待验收合并；Phase 0 已于 PR #11 合并)
+
+## 📡 2026-07-10 Phase 1 · A 股中频数据层（DESIGN_2.0 第二期，待用户验收）
+
+**分支 `claude/phase1-data-layer`（已 push 未合并）。测试 1124 → 1276 passed / 7 skipped。**
+插曲：Wave2（季报+TTM）agent 被 API 服务端错误打断，Wave3 用容错适配器接线（TTM 引擎入口惰性发现），Verify 修复回路自主补齐了 TTM 引擎与摄取端缺列——工作流韧性首次实战验证。
+
+### 新模块
+- ✅ **[aegis/pit/store.py](aegis/pit/store.py)**：sqlite 时点库（复活 AtomicAccountingFact 死合同）。双时间戳（as_of 摄取/announce_date 披露，红线 3）、重述版本链、业绩预告区间型事实、concept 绑定 metric registry（自由字符串 raise，register_concept 逃生口）。全库最重要断言：晚摄取事实在早 as_of 查询下不可见。28 测试
+- ✅ **[quarterly_cn.py](aegis/core/acquisition/connectors/quarterly_cn.py)**：单票季报摄取（累计利润表/现金流 + 时点资产负债表 + 扣非 + 应收/存货/负债合计），带披露日写 PIT，快报标 unaudited。24 测试
+- ✅ **[ttm_engine.py](aegis/core/truth/ttm_engine.py)**：累计差分 TTM（红线 4：只流量科目、TTM=FY_prev+YTD_cur−YTD_prev、归母/扣非双轨）。康达/茅台实测数字 golden 对账。21 测试
+- ✅ **[relative_valuation.py](aegis/core/truth/relative_valuation.py)**：同业 PE_TTM/PB 分位（东财 RPT_VALUEANALYSIS_DET，板块查询必须钉 TRADE_DATE 否则服务端超时——坑已写进 docstring）；<4 家 gate（红线 5）；sanctioned_numbers() 供 scrubber 白名单（红线 9）。26 测试
+- ✅ **[verification.py](aegis/core/truth/verification.py)**：封闭目录核验器 v1（应收/存货增速 vs 营收、CFO/归母、扣非/归母、负债率趋势、预告 vs 预期缺口），纯数据规则 LLM 不参与，Phase 0 的「未核验」升级为「已核验·通过/未通过/数据不足」+中文依据
+
+### 接线
+- orchestrator Step 4c（enable_quarterly 默认开，--no-quarterly 可关）：季报写 PIT（.cache/pit.db）→ TTM 快照 → meta_facts 固定键 ttm_revenue/ttm_net_income/ttm_net_income_deducted/__data_freshness（红线 8 豁免清单 TTM_META_KEYS）→ 相对估值 → Step 8c 核验注入
+- KEY FINANCIALS 注入 TTM 三行 + 数据截至（zh/en）；报告 masthead「数据截至」行按**披露日**口径计时效（期末口径在披露间隙必然假警报——红线 3 语义修正）
+- 「市场在定价什么」区块：验证点三态渲染 + 相对估值小节；relval 数字进 scrubber 白名单
+
+### 双 smoke 验收（Phase 1 验收线全达标）
+> **康达 002669**：数据截至 2026-03-31 季报·披露 04-28·**时效 73 天 <90** ✅；核验 通过×2（应收/存货增速）+ **未通过×3（CFO/归母 -9.56 红旗、负债率 +11.9pp、扣非/归母 0.13 盈利质量）**；相对估值 PE 32.6× vs 同业中位 33.3×（44 分位）、PB 30 分位；TTM 营收 ¥55.2亿（含 2026Q1，vs 年报 52.4亿）、TTM 扣非仅 ¥0.2亿
+> **茅台 600519**：时效 76 天；通过×4 + 未通过×1（应收 +112.8% vs 营收 +6.3%，数据如实）；PE 18.2× 56 分位、PB 5.56× 100 分位（全行业最贵账面倍数，经济上合理）
+
+### 遗留（Phase 1 后续批次/Phase 2 接口）
+- 龙虎榜/股东户数/两融（背景数据，评审建议推迟）；公告流常态化监控（Phase 3 事件循环的输入）
+- PIT concept 词表进程内注册（不落库），摄取端启动时显式声明——Phase 2 定型时评估是否持久化
+- LLM 完整版验收 run 进行中；合并等用户验收
 
 ## 🚀 2026-07-10 Phase 0 · 预期优先框架（DESIGN_2.0.md 第一期，待用户验收）
 
