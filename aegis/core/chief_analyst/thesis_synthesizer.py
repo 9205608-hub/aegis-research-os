@@ -342,6 +342,34 @@ def frontier_sanctioned_growth_pcts(frontier: dict[str, Any] | None) -> list[flo
     return sorted(out)
 
 
+def relative_valuation_sanctioned_pcts(relval: dict[str, Any] | None) -> list[float]:
+    """设计红线 9（Aegis 2.0 Phase 1）：相对估值锚面世数字 → scrubber 白名单。
+
+    覆盖 ``meta_facts["__relative_valuation"]``（RelativeValuation.to_dict）
+    的展示口径数字：PE(TTM)/PB 的目标值与同业中位数（叙事中可能写作
+    "低 32.6%" 等被 % 检查扫到的形态）+ 同业分位（0-100，"处于第 44 分位/
+    44%" 句式）。四舍五入口径与 RelativeValuation.sanctioned_numbers /
+    zh_lines 一致。TTM 营收/净利等绝对额自带 亿/万 单位后缀，落在
+    per-share 金额检查的豁免路径里，无需注册。
+    """
+    if not isinstance(relval, dict) or relval.get("insufficient_peers", True):
+        # 样本不足时 zh_lines 明令禁止引用任何同业数字——不发白名单。
+        return []
+    out: set[float] = set()
+    for key, ndigits in (
+        ("target_pe_ttm", 1), ("peer_pe_median", 1),
+        ("target_pb", 2), ("peer_pb_median", 2),
+    ):
+        val = relval.get(key)
+        if isinstance(val, (int, float)):
+            out.add(round(abs(float(val)), ndigits))
+    for key in ("pe_percentile", "pb_percentile"):
+        val = relval.get(key)
+        if isinstance(val, (int, float)):
+            out.add(float(round(val)))
+    return sorted(out)
+
+
 def _scrub_fair_value_claims(
     raw: dict[str, Any],
     scenarios: dict[str, float],
@@ -898,10 +926,16 @@ class ThesisSynthesizer:
         # report shows the override.
         # 设计红线 9：前沿隐含增速/margin 百分数注册进 % 白名单，防止
         # 「若利润率 X% 需 Y% 增速」句式被误判成 return 主张。
+        # Phase 1 同则：相对估值锚的 PE/PB/分位数字同步注册。
         raw, valuation_warnings = _scrub_fair_value_claims(
             raw, scenarios, market_data,
-            extra_sanctioned_pcts=frontier_sanctioned_growth_pcts(
-                (meta_facts or {}).get("__expectations_frontier")
+            extra_sanctioned_pcts=(
+                frontier_sanctioned_growth_pcts(
+                    (meta_facts or {}).get("__expectations_frontier")
+                )
+                + relative_valuation_sanctioned_pcts(
+                    (meta_facts or {}).get("__relative_valuation")
+                )
             ),
         )
         if valuation_warnings:

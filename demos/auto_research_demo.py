@@ -65,6 +65,10 @@ def main():
     parser.add_argument("--no-recent-events", action="store_true",
                         help="Aegis 2.0 Phase 0: skip the A-share recent-events slice "
                              "(公告/业绩预告/一致预期 fetch) — for offline runs / debugging")
+    parser.add_argument("--no-quarterly", action="store_true",
+                        help="Aegis 2.0 Phase 1: skip the A-share quarterly PIT/TTM/"
+                             "relative-valuation step (季报入库+TTM+同业倍数分位) — "
+                             "for offline runs / debugging")
     parser.add_argument("--strict-llm", action="store_true",
                         help="Fail hard if any agent's LLM exhausts retries (no silent mock fallback). "
                              "Use for production runs where mock-mixed output is worse than no report.")
@@ -111,6 +115,7 @@ def main():
         fred_api_key=args.fred_key,
         enable_openbb=not args.no_openbb,
         enable_recent_events=not args.no_recent_events,
+        enable_quarterly=not args.no_quarterly,
         strict_llm=args.strict_llm,
         smoke_mode=args.smoke,
     )

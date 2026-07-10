@@ -1481,6 +1481,43 @@ This is an A-share (China) entity. Write ALL natural-language output in Simplifi
                         summary_lines.append(f"    {label}: {val:.1%}")
                     elif isinstance(val, (int, float)):
                         summary_lines.append(f"    {label}: {fmt_money_big(val, _disp)}")
+            # Aegis 2.0 Phase 1 (任务 D4): TTM 滚动口径三行 + 数据截至。
+            # 让 agent 的分析基于最新滚动 4 季数据而非纯年报快照；数字由
+            # orchestrator Step 4c 从 PIT/TTM 引擎写入的固定键提供（红线 8
+            # 豁免键），面世数字已按红线 9 注册 scrubber 白名单。
+            _is_zh_prompt = bool(
+                inp.macro_context
+                and inp.macro_context.get("language") == "zh-CN"
+            )
+            ttm_rows = (
+                ("TTM营收（最近4季滚动）", "ttm_revenue"),
+                ("TTM归母净利润", "ttm_net_income"),
+                ("TTM扣非归母净利润", "ttm_net_income_deducted"),
+            ) if _is_zh_prompt else (
+                ("TTM Revenue (trailing 4 quarters)", "ttm_revenue"),
+                ("TTM Net Income (attributable)", "ttm_net_income"),
+                ("TTM Net Income (ex non-recurring)", "ttm_net_income_deducted"),
+            )
+            ttm_lines = []
+            for label, key in ttm_rows:
+                val = inp.facts.get(key)
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    ttm_lines.append(f"    {label}: {fmt_money_big(val, _disp)}")
+            if ttm_lines:
+                _fresh = inp.facts.get("__data_freshness")
+                if isinstance(_fresh, dict) and _fresh.get("latest_period"):
+                    _days = _fresh.get("days_since")
+                    _days_txt = ""
+                    if isinstance(_days, int):
+                        _days_txt = (
+                            f"（距今 {_days} 天）" if _is_zh_prompt
+                            else f" ({_days} days old)"
+                        )
+                    ttm_lines.append(
+                        f"    {'数据截至' if _is_zh_prompt else 'Data as of'}: "
+                        f"{_fresh['latest_period']}{_days_txt}"
+                    )
+                summary_lines.extend(ttm_lines)
             if summary_lines:
                 parts.append("=== KEY FINANCIALS SUMMARY ===")
                 parts.extend(summary_lines)

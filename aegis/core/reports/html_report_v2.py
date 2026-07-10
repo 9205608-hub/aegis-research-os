@@ -821,22 +821,28 @@ def _build_priced_in_block(
     events: dict | None,
     *,
     is_zh: bool,
+    relative: dict | None = None,
+    verification: list | None = None,
 ) -> dict | None:
-    """把 meta_facts 里的 Phase 0 三件套映射成渲染层显示结构。
+    """把 meta_facts 里的 Phase 0 三件套 + Phase 1 两件套映射成渲染层显示结构。
 
+    Phase 1（任务 D3）新增：``relative`` = __relative_valuation（相对估值
+    锚小节），``verification`` = __verification（验证点核验结果，用于把
+    verification_focus 清单从「未核验」升级为三态核验状态 + 依据）。
     数据缺失的子块置 None，前端显示「暂无」而不是烂值。
     """
-    if not (frontier or regime or events):
+    if not (frontier or regime or events or relative or verification):
         return None
     block: dict[str, Any] = {
         "title": "市场在定价什么" if is_zh else "What the market is pricing",
         "subtitle": (
-            "条件化预期前沿 · 定价体制 · 验证点" if is_zh
+            "条件化预期前沿 · 定价体制 · 相对估值 · 验证点" if is_zh
             else "Conditional expectations frontier · Pricing regime · Verification"
         ),
         "frontier": None,
         "regime": None,
         "verification": [],
+        "relative": None,
         "events": None,
     }
 
@@ -954,11 +960,110 @@ def _build_priced_in_block(
                 or ""
             ),
         }
-        # 验证点清单（Phase 0 验收：标注「未核验」——核验能力是 Phase 1 交付物）
+        # 验证点清单。Phase 0 缺省「未核验」；Phase 1（任务 D2/D3）：
+        # 有核验结果时升级为三态（已核验·通过/未通过 · 数据不足）+ 依据。
         block["verification"] = [
-            {"text": str(v), "status": "未核验" if is_zh else "Unverified"}
+            {"text": str(v), "status": "未核验" if is_zh else "Unverified",
+             "state": "unverified", "evidence": ""}
             for v in (regime.get("verification_focus") or [])
         ]
+
+    # ── 验证点核验结果对接（Phase 1 任务 D2；A 股中文路径专属） ──
+    ver_list = [v for v in (verification or []) if isinstance(v, dict)]
+    if ver_list and is_zh:
+        try:
+            from aegis.core.truth.verification import annotate_verification_focus
+            focus_texts = [
+                str(v) for v in (
+                    (regime.get("verification_focus") or [])
+                    if isinstance(regime, dict) else []
+                )
+            ]
+            block["verification"] = annotate_verification_focus(
+                focus_texts, ver_list)
+        except Exception:
+            pass  # 标注失败保留 Phase 0 的「未核验」清单，不烂值
+
+    # ── 相对估值锚（Phase 1 任务 D3：target vs 同业中位 + 分位 + 样本） ──
+    if isinstance(relative, dict):
+        _ins = bool(relative.get("insufficient_peers", True))
+        rel_block: dict[str, Any] = {
+            "insufficient": _ins,
+            "industry": str(relative.get("industry") or ""),
+            "dataDate": str(relative.get("data_date") or ""),
+            "peerCount": int(relative.get("peer_count") or 0),
+            "universe": int(relative.get("universe_size") or 0),
+            "lossMaking": int(relative.get("loss_making_count") or 0),
+            "rows": [],
+        }
+        if _ins:
+            rel_block["note"] = (
+                "同业样本不足，相对估值锚不可用" if is_zh
+                else "Insufficient peer sample — relative anchor unavailable"
+            )
+        else:
+            _industry = rel_block["industry"]
+            if str(relative.get("peer_source") or "") == "industry_board" and _industry:
+                src = (f"东财行业板块「{_industry}」" if is_zh
+                       else f"Industry board '{_industry}'")
+            else:
+                src = "内置同业映射表" if is_zh else "Static peer map"
+            scope = (
+                f"{src} · 市值最接近的 {rel_block['peerCount']} 家" if is_zh
+                else f"{src} · {rel_block['peerCount']} closest peers by market cap"
+            )
+            if rel_block["universe"]:
+                scope += (
+                    f"（板块成分共 {rel_block['universe']} 家）" if is_zh
+                    else f" (of {rel_block['universe']} constituents)"
+                )
+            if rel_block["lossMaking"]:
+                scope += (
+                    f" · {rel_block['lossMaking']} 家亏损已剔除 PE 样本" if is_zh
+                    else f" · {rel_block['lossMaking']} loss-making excluded from PE"
+                )
+            rel_block["note"] = scope
+            _na = "暂无" if is_zh else "n/a"
+            for lbl, tkey, mkey, pkey, skey, dec in (
+                ("PE(TTM)", "target_pe_ttm", "peer_pe_median",
+                 "pe_percentile", "pe_sample_size", 1),
+                ("PB", "target_pb", "peer_pb_median",
+                 "pb_percentile", "pb_sample_size", 2),
+            ):
+                median = relative.get(mkey)
+                sample = int(relative.get(skey) or 0)
+                if not isinstance(median, (int, float)):
+                    # 红线 5：单指标样本不足 → 逐指标披露，禁止引用
+                    rel_block["rows"].append({
+                        "lbl": lbl,
+                        "target": _na, "median": _na, "pct": _na,
+                        "sample": (
+                            f"有效样本 {sample} 家 · 该指标样本不足" if is_zh
+                            else f"{sample} valid peer(s) · below threshold"
+                        ),
+                    })
+                    continue
+                tval = relative.get(tkey)
+                if isinstance(tval, (int, float)) and tval > 0:
+                    target_txt = f"{tval:.{dec}f}×"
+                elif isinstance(tval, (int, float)):
+                    target_txt = ("为负（不适用）" if is_zh else "negative (n/m)")
+                else:
+                    target_txt = _na
+                pct = relative.get(pkey)
+                pct_txt = (
+                    (f"第 {pct:.0f} 分位" if is_zh else f"{pct:.0f}th pctile")
+                    if isinstance(pct, (int, float)) else _na
+                )
+                rel_block["rows"].append({
+                    "lbl": lbl,
+                    "target": target_txt,
+                    "median": f"{median:.{dec}f}×",
+                    "pct": pct_txt,
+                    "sample": (f"有效样本 {sample} 家" if is_zh
+                               else f"{sample} valid peers"),
+                })
+        block["relative"] = rel_block
 
     # ── 近事件摘要（近 90 天预告/公告，中文；A 股专属） ──
     if isinstance(events, dict):
@@ -1998,13 +2103,81 @@ def build_report_dict(
         except ValueError:
             pass
 
-    # ── 市场在定价什么（Aegis 2.0 Phase 0 第一公民区块） ──
+    # ── 市场在定价什么（Aegis 2.0 Phase 0 第一公民区块；Phase 1 扩展） ──
     priced_in_block = _build_priced_in_block(
         meta_facts.get("__expectations_frontier") if isinstance(meta_facts, dict) else None,
         meta_facts.get("__pricing_regime") if isinstance(meta_facts, dict) else None,
         meta_facts.get("__recent_events") if isinstance(meta_facts, dict) else None,
         is_zh=is_zh,
+        relative=(
+            meta_facts.get("__relative_valuation")
+            if isinstance(meta_facts, dict) else None
+        ),
+        verification=(
+            meta_facts.get("__verification")
+            if isinstance(meta_facts, dict) else None
+        ),
     )
+
+    # ── 数据截至（Aegis 2.0 Phase 1 任务 D3）──
+    # 最新报告期 + 财务数据时效天数（验收线：季报可得时 <90 天）。
+    # 时效锚点优先披露日 announce_date（红线 #3 语义：「手里最新公开信息
+    # 面世多久了」——期末口径在季报披露间隙必然 >90 天，属于日历假警报），
+    # 缺披露日退回报告期末。天数按渲染时点重算（replay 重渲染不吃缓存里
+    # 的陈旧天数），解析失败退回摄取时算好的 days_since，再失败显示「暂无」。
+    data_as_of = None
+    _freshness = (
+        meta_facts.get("__data_freshness") if isinstance(meta_facts, dict) else None
+    )
+    if isinstance(_freshness, dict) and _freshness.get("latest_period"):
+        _lp = str(_freshness["latest_period"])[:10]
+        _announce = (
+            str(_freshness["announce_date"])[:10]
+            if _freshness.get("announce_date") else None
+        )
+        _days = None
+        from datetime import date as _date
+        for _anchor in (_announce, _lp):
+            if not _anchor:
+                continue
+            try:
+                _days = (_date.today() - _date.fromisoformat(_anchor)).days
+                break
+            except ValueError:
+                continue
+        if _days is None:
+            _days = (
+                _freshness.get("days_since")
+                if isinstance(_freshness.get("days_since"), int) else None
+            )
+        _basis = str(_freshness.get("basis") or "")
+        _basis_zh = {"quarterly": "季报口径", "annual": "年报口径"}.get(_basis, "")
+        _basis_en = {"quarterly": "quarterly basis", "annual": "annual-report basis"}.get(_basis, "")
+        if is_zh:
+            _tail = " · ".join(
+                x for x in (
+                    _basis_zh,
+                    f"披露于 {_announce}" if _announce else "",
+                    f"时效 {_days} 天" if _days is not None else "时效 暂无",
+                ) if x
+            )
+            _line = f"数据截至 {_lp}（{_tail}）" if _tail else f"数据截至 {_lp}"
+        else:
+            _tail = ", ".join(
+                x for x in (
+                    _basis_en,
+                    f"disclosed {_announce}" if _announce else "",
+                    f"{_days}d old" if _days is not None else "",
+                ) if x
+            )
+            _line = f"Data as of {_lp}" + (f" ({_tail})" if _tail else "")
+        data_as_of = {
+            "latestPeriod": _lp,
+            "announceDate": _announce,
+            "days": _days,
+            "basis": _basis,
+            "line": _line,
+        }
 
     # ── Assemble ──
     report = {
@@ -2026,6 +2199,9 @@ def build_report_dict(
         "pipelineDuration": pipeline_duration or "—",
         "model": model_name or "—",
         "staleBanner": stale_banner_text,
+        # Aegis 2.0 Phase 1（任务 D3）：数据截至行（最新报告期 + 时效天数）。
+        # None = 无时效信息，前端隐藏该行。
+        "dataAsOf": data_as_of,
 
         "price": {
             "last": round(price_last, 2),
