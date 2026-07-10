@@ -20,6 +20,8 @@ Pipeline:
 
 from __future__ import annotations
 
+import re as _re
+
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -62,6 +64,208 @@ def normalize_entity_display(name: str) -> tuple[str, str]:
         if name.startswith(pfx):
             return (name[len(pfx):].lstrip(), pfx.upper())
     return (name, "")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Aegis 2.0 Phase 2 (任务 C1/C2): 最小 stage 化 checkpoint + 输入摘要 digest
+#
+# DESIGN_2.0 §五 Phase 2 第 1 项：沿 replay_from_cache 已验证的缓存缝，把
+# 管线切成 data → valuation → agents → report 四个可断点续跑 checkpoint。
+# **不搬代码块、不拆函数**——run() 里只在四个缝上插桩落盘；真正的单体
+# 拆解是 Phase 4 的事（红线 7 挂闸）。
+#
+# digest 语义（--update 增量复用的判据）：对 stage 的输入做 JSON 规范化
+# 序列化后 sha256。agents stage 的输入 = meta_facts 基本面子集 + 事件块
+# （__recent_events，含在 meta_facts 里）+ sector pack；**显式排除实时
+# 价格、时间戳、行情市值与一切价格衍生键**——盘中价格抖动不应作废昨天
+# 的深度分析（价格照旧进当日报告：valuation/report 永远重算/重渲染）。
+# ─────────────────────────────────────────────────────────────────────
+
+STAGE_NAMES = ("data", "valuation", "agents", "report")
+
+#: agents/valuation digest 排除的 meta_facts 顶层键（价格衍生 / 渲染时点
+#: 重算 / 纯 prompt 文本内嵌了摄取日期的重复体）。基本面子集 = 其余全部。
+AGENTS_DIGEST_EXCLUDE_KEYS: frozenset[str] = frozenset({
+    "__expectations_frontier",     # 反解自现价（Step 7d）
+    "__pricing_regime",            # 现价 vs 估值缺口驱动（Step 7d）
+    "__relative_valuation",        # 同业 PE/PB 分位——行情驱动
+    "__data_freshness",            # 「数据截至」时效天数按渲染时点漂移
+    "__implied_growth_unreliable",  # reverse-DCF vs 现价的派生标志
+    "__implied_growth_boundary_hit",
+    "__recent_events_prompt",      # 与 __recent_events 同源，文本内嵌 as_of 日期
+})
+
+#: 递归剔除的易变键名模式（任意层级，大小写不敏感）：实时价格、行情市值、
+#: 摄取时间戳。注意不匹配 announce_date 之类的事件日期——事件是基本面。
+_VOLATILE_KEY_PAT = _re.compile(
+    r"price|market_cap|as_of|asof|timestamp|fetched|retrieved|quote",
+    _re.IGNORECASE,
+)
+
+
+def _strip_volatile_keys(obj: Any) -> Any:
+    """递归剔除易变键（dict 键名命中 _VOLATILE_KEY_PAT 即整枝丢弃）。"""
+    if isinstance(obj, dict):
+        return {
+            str(k): _strip_volatile_keys(v)
+            for k, v in obj.items()
+            if not _VOLATILE_KEY_PAT.search(str(k))
+        }
+    if isinstance(obj, (list, tuple)):
+        return [_strip_volatile_keys(v) for v in obj]
+    return obj
+
+
+def compute_stage_digest(payload: Any) -> str:
+    """任意 JSON-able payload → 规范化 JSON → sha256 hex。永不 raise。"""
+    import hashlib
+    import json as _json
+    try:
+        text = _json.dumps(
+            payload, sort_keys=True, ensure_ascii=False, default=str,
+        )
+    except Exception:
+        text = str(payload)
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
+def agents_digest_payload(
+    meta_facts: dict[str, Any] | None,
+    sector_pack: Any = None,
+    period: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """agents stage 的输入摘要 payload（digest 前的规范化视图）。
+
+    = meta_facts 基本面子集（排除价格衍生键 + 递归剔除时间戳/行情键；
+    事件块 __recent_events 含在其中）+ sector pack + 会计期。
+    """
+    mf = {
+        k: v for k, v in (meta_facts or {}).items()
+        if k not in AGENTS_DIGEST_EXCLUDE_KEYS
+    }
+    payload: dict[str, Any] = {
+        "period": period,
+        "sector_pack": _strip_volatile_keys(sector_pack)
+        if isinstance(sector_pack, (dict, list)) else str(sector_pack),
+        "meta_facts": _strip_volatile_keys(mf),
+    }
+    if extra:
+        payload["extra"] = _strip_volatile_keys(dict(extra))
+    return payload
+
+
+def compute_agents_digest(
+    meta_facts: dict[str, Any] | None,
+    sector_pack: Any = None,
+    period: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> str:
+    """agents stage 输入 digest（C2 复用判据）。"""
+    return compute_stage_digest(
+        agents_digest_payload(meta_facts, sector_pack, period, extra=extra)
+    )
+
+
+def stage_checkpoint_dir(ticker: str, *, smoke_mode: bool = False) -> Path:
+    """checkpoint 目录：.cache/stages/{ticker}/（smoke 隔离到 .cache/smoke/，
+    测试可用 AEGIS_STAGE_DIR 整体重定向）。"""
+    import os
+    root = os.environ.get("AEGIS_STAGE_DIR", "").strip()
+    if root:
+        base = Path(root)
+    elif smoke_mode:
+        base = Path(".cache/smoke/stages")
+    else:
+        base = Path(".cache/stages")
+    return base / str(ticker).lower()
+
+
+def dump_stage_checkpoint(
+    ticker: str,
+    stage: str,
+    payload: dict[str, Any],
+    *,
+    digest: str,
+    run_id: str = "",
+    smoke_mode: bool = False,
+    log: Any = None,
+) -> Path | None:
+    """落一个 stage checkpoint（pkl）。永不 raise；失败返回 None。
+
+    防 RLock 净化（replay cache 的教训）：先整体 pickle 探测，失败则逐键
+    兜底——不可序列化的键置 None，其余照存；runtime 句柄键直接剔除。
+    """
+    import pickle
+    try:
+        cleaned: dict[str, Any] = {
+            k: v for k, v in dict(payload).items()
+            if k not in ("shared_llm_client",)  # 已知 runtime 句柄
+        }
+        try:
+            pickle.dumps(cleaned)
+        except Exception:
+            dropped = []
+            for k in list(cleaned.keys()):
+                try:
+                    pickle.dumps(cleaned[k])
+                except Exception:
+                    dropped.append(k)
+                    cleaned[k] = None
+            if log is not None and dropped:
+                log(f"  ⚠ Stage checkpoint [{stage}]: dropped unpicklable keys {dropped}")
+        record = {
+            "stage": str(stage),
+            "digest": str(digest),
+            "run_id": str(run_id or ""),
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "payload": cleaned,
+        }
+        out_dir = stage_checkpoint_dir(ticker, smoke_mode=smoke_mode)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{stage}.pkl"
+        with out_path.open("wb") as f:
+            f.write(pickle.dumps(record))
+        if log is not None:
+            log(f"💾 Stage checkpoint [{stage}] saved: {out_path} "
+                f"(digest={record['digest'][:12]}…)")
+        return out_path
+    except Exception as e:  # noqa: BLE001 — 插桩永不阻断主流程
+        if log is not None:
+            log(f"  ⚠ Stage checkpoint [{stage}] dump failed: {e}")
+        return None
+
+
+def load_stage_checkpoint(
+    ticker: str,
+    stage: str,
+    *,
+    smoke_mode: bool = False,
+    expected_digest: str | None = None,
+    log: Any = None,
+) -> dict[str, Any] | None:
+    """读一个 stage checkpoint record。缺文件 / 反序列化失败 / digest 不匹配
+    → None（调用方按「正常重跑该 stage」处理）。永不 raise。"""
+    import pickle
+    try:
+        path = stage_checkpoint_dir(ticker, smoke_mode=smoke_mode) / f"{stage}.pkl"
+        if not path.exists():
+            return None
+        with path.open("rb") as f:
+            record = pickle.load(f)
+        if not isinstance(record, dict) or "payload" not in record:
+            return None
+        if expected_digest is not None and record.get("digest") != expected_digest:
+            if log is not None:
+                log(f"  Stage checkpoint [{stage}]: digest 不一致"
+                    f"（{str(record.get('digest'))[:12]}… ≠ {expected_digest[:12]}…），"
+                    f"该 stage 将正常重跑")
+            return None
+        return record
+    except Exception as e:  # noqa: BLE001
+        if log is not None:
+            log(f"  ⚠ Stage checkpoint [{stage}] load failed: {e}")
+        return None
 
 
 def _currency_symbol_for_logs(meta_facts: dict[str, Any] | None) -> str:
@@ -578,6 +782,13 @@ class ResearchConfig:
     # Aegis 2.0 Phase 1: A 股季报 PIT + TTM + 相对估值锚 + 验证点核验。
     # 失败静默降级为年报口径（报告标注数据截至年报）。离线测试可关。
     enable_quarterly: bool = True
+
+    # Aegis 2.0 Phase 2 (任务 C2): --update 增量模式。data stage 永远重跑
+    # （行情/事件/季报必须新鲜）、valuation 永远重算、report 永远重渲染；
+    # agents stage 仅当输入 digest（基本面子集+事件块+sector pack，显式
+    # 排除实时价格）与上次 checkpoint 一致时直接复用缓存判断与合成产物
+    # （零 LLM 调用），否则正常重跑。
+    update_mode: bool = False
 
 
 @dataclass
@@ -1280,6 +1491,29 @@ class AutoResearchOrchestrator:
             except (TypeError, ValueError):
                 pass
 
+        # ── Stage checkpoint: data（Aegis 2.0 Phase 2 C1）────────────
+        # 数据获取 + 归一化 + PIT/TTM 完成缝（A 股事件切片在 Step 8b 落
+        # meta_facts，属 agents digest 的输入；本缝只锁「取数」产物）。
+        # data stage 输入 = ticker/period/filing_type（--update 下永远重跑）。
+        dump_stage_checkpoint(
+            config.ticker, "data",
+            {
+                "entity_id": entity_id,
+                "entity_name": entity_name,
+                "period": config.period,
+                "meta_facts": meta_facts,
+                "bridge_warnings": list(bridge_result.warnings or []),
+            },
+            digest=compute_stage_digest({
+                "ticker": config.ticker,
+                "period": config.period,
+                "filing_type": config.filing_type,
+            }),
+            run_id=run_id,
+            smoke_mode=getattr(config, "smoke_mode", False),
+            log=_log,
+        )
+
         # ── Step 5: Compute metrics ──────────────────────────────────
         from aegis.core.truth.registry.metric_registry import MetricRegistry
         from aegis.core.truth.registry.seed_metrics import seed_core_metrics
@@ -1835,7 +2069,49 @@ class AutoResearchOrchestrator:
         scenario_probabilities = {"bear": 0.25, "base": 0.50, "bull": 0.25}
         primary_swing_factor = ""
 
-        if config.use_llm:
+        # ── Aegis 2.0 Phase 2 (C2): valuation stage 输入 digest ──────
+        # 基本面子集 + DCF 假设（不含实时价格——「valuation 永远重算」指
+        # 毫秒级的 DCF 数学；ScenarioArchitect 的 LLM 叙事是基本面驱动，
+        # 基本面未变时 --update 直接复用上次的情景蓝图，不发 LLM 调用）。
+        # 注意：此时 meta_facts 尚无 __recent_events（Step 8b 才注入），
+        # 每次 run 都在同一缝上取 digest，比较口径一致。
+        _valuation_digest = compute_agents_digest(
+            meta_facts, sector_pack, config.period,
+            extra={
+                "wacc": dcf_input_flat.wacc,
+                "terminal_growth_rate": dcf_input_flat.terminal_growth_rate,
+                "revenue_growth_path": list(dcf_input_flat.revenue_growth_path),
+                "operating_margin_path": list(dcf_input_flat.operating_margin_path),
+            },
+        )
+        _scenario_reuse = None
+        if getattr(config, "update_mode", False):
+            _scenario_reuse = load_stage_checkpoint(
+                config.ticker, "valuation",
+                smoke_mode=getattr(config, "smoke_mode", False),
+                expected_digest=_valuation_digest,
+                log=_log,
+            )
+
+        if _scenario_reuse is not None:
+            # 增量复用：情景蓝图（LLM 叙事产物）引用自上次 run；DCF 数学
+            # 仍按本次新数据在 Step 7c 重算。
+            _sp = _scenario_reuse.get("payload") or {}
+            scenario_blueprint = _sp.get("scenario_blueprint")
+            bear_growth_delta = _sp.get("bear_growth_delta") or bear_growth_delta
+            bear_margin_delta = _sp.get("bear_margin_delta") or bear_margin_delta
+            bull_growth_delta = _sp.get("bull_growth_delta") or bull_growth_delta
+            bull_margin_delta = _sp.get("bull_margin_delta") or bull_margin_delta
+            scenario_narratives = _sp.get("scenario_narratives") or scenario_narratives
+            scenario_probabilities = (
+                _sp.get("scenario_probabilities") or scenario_probabilities
+            )
+            primary_swing_factor = _sp.get("primary_swing_factor") or ""
+            _log(
+                f"增量复用: 情景蓝图引用自缓存 run "
+                f"{_scenario_reuse.get('run_id') or '?'}（基本面输入未变，零 LLM 调用）"
+            )
+        elif config.use_llm:
             # BUG-7 fix: retry-once on exception. Before this, any transient
             # LLM error (empty tool_call args, 502, content_filter) would
             # cause a silent fallback to mechanical [-4%/-3%] deltas with
@@ -2390,6 +2666,37 @@ class AutoResearchOrchestrator:
             for p in raw_projections
         ]
 
+        # ── Stage checkpoint: valuation（Aegis 2.0 Phase 2 C1）───────
+        # DCF + 预期前沿 + 定价体制 + 敏感性完成缝。payload 额外携带
+        # ScenarioArchitect 的情景蓝图产物，供 --update 复用（见 Step 7b）。
+        dump_stage_checkpoint(
+            config.ticker, "valuation",
+            {
+                "dcf_output": dcf_output,
+                "dcf_input_flat": dcf_input_flat,
+                "dcf_projections": dcf_projections,
+                "scenarios": scenarios,
+                "scenario_probabilities": scenario_probabilities,
+                "sensitivity_table": sensitivity_table,
+                "sensitivity_rankings": sensitivity_rankings,
+                "implied_growth": implied_growth,
+                "expectations_frontier": meta_facts.get("__expectations_frontier"),
+                "pricing_regime": meta_facts.get("__pricing_regime"),
+                # ScenarioArchitect 产物（LLM 叙事）——C2 复用面
+                "scenario_blueprint": scenario_blueprint,
+                "bear_growth_delta": bear_growth_delta,
+                "bear_margin_delta": bear_margin_delta,
+                "bull_growth_delta": bull_growth_delta,
+                "bull_margin_delta": bull_margin_delta,
+                "scenario_narratives": scenario_narratives,
+                "primary_swing_factor": primary_swing_factor,
+            },
+            digest=_valuation_digest,
+            run_id=run_id,
+            smoke_mode=getattr(config, "smoke_mode", False),
+            log=_log,
+        )
+
         # ── Step 8: Macro Context ────────────────────────────────────
         from aegis.core.macro import MacroContextLayer
         from aegis.core.market_expectations import MarketExpectationsLayer
@@ -2650,6 +2957,32 @@ class AutoResearchOrchestrator:
                 "article_count": news_sentiment_insights.article_count,
             }
 
+        # ── Aegis 2.0 Phase 2 (C2): agents stage 复用判定 ─────────────
+        # 输入 digest = meta_facts 基本面子集（此时已含 Step 8b 事件块
+        # __recent_events + Step 8c 核验结果）+ sector pack + 会计期；
+        # 显式排除实时价格/时间戳/行情市值（盘中价格抖动不应作废昨天的
+        # 深度分析）。--update 且 digest 与 checkpoint 一致 → 直接加载
+        # agent 判断与合成产物，Steps 9b/10/11/12b/12c 均不发 LLM 调用。
+        _agents_digest = compute_agents_digest(
+            meta_facts, sector_pack, config.period,
+        )
+        _agents_reuse = None
+        _agents_reuse_payload: dict[str, Any] = {}
+        if getattr(config, "update_mode", False):
+            _agents_reuse = load_stage_checkpoint(
+                config.ticker, "agents",
+                smoke_mode=getattr(config, "smoke_mode", False),
+                expected_digest=_agents_digest,
+                log=_log,
+            )
+            if _agents_reuse is not None:
+                _p = _agents_reuse.get("payload")
+                _agents_reuse_payload = _p if isinstance(_p, dict) else {}
+                if not _agents_reuse_payload.get("all_judgments"):
+                    _log("  ⚠ agents checkpoint 缺 all_judgments，忽略复用，正常重跑")
+                    _agents_reuse = None
+                    _agents_reuse_payload = {}
+
         # ── Step 9a: Inject calibration context (historical accuracy feedback) ──
         try:
             from aegis.core.memory.calibration_loop import CalibrationLoop
@@ -2664,7 +2997,10 @@ class AutoResearchOrchestrator:
 
         # ── Step 9b: Chief Analyst — Research Director (LLM pre-agent) ──
         research_directive = None
-        if config.use_llm:
+        if _agents_reuse is not None:
+            # C2 增量复用：Director 指令引用自缓存 run，不发 LLM 调用。
+            research_directive = _agents_reuse_payload.get("research_directive")
+        elif config.use_llm:
             try:
                 from aegis.core.chief_analyst import ResearchDirector
                 director = ResearchDirector()
@@ -2736,7 +3072,20 @@ class AutoResearchOrchestrator:
         _agent_watchdog_timeout_s = agent_watchdog_timeout_for(_backend_kind)
 
         agents_results = {}
-        if config.use_llm:
+        if _agents_reuse is not None:
+            # ── C2 增量复用：直接加载缓存 run 的 agent 判断，零 LLM 调用 ──
+            all_judgments = list(_agents_reuse_payload.get("all_judgments") or [])
+            open_questions = list(_agents_reuse_payload.get("open_questions") or [])
+            _agents_reuse_at = str(
+                _agents_reuse.get("created_at")
+                or _agents_reuse.get("run_id") or "上次运行"
+            )
+            _log(
+                f"增量复用: {len(all_judgments)} 个 agent 判断引用自 "
+                f"{_agents_reuse_at}（run {_agents_reuse.get('run_id') or '?'}，"
+                f"基本面输入未变，零 LLM 调用）"
+            )
+        elif config.use_llm:
             from aegis.core.agents import (
                 LLMAccountingAnalyst, LLMBusinessAnalyst, LLMSectorContextAgent,
                 LLMManagementAnalyst, LLMValuationAnalyst, LLMVariantAnalyst, LLMRiskAnalyst,
@@ -3321,12 +3670,13 @@ class AutoResearchOrchestrator:
                     except Exception:
                         pass
 
-        all_judgments = [out.judgment for out in agents_results.values()]
-        _attach_judgment_runtime_attrs()
+        if _agents_reuse is None:
+            all_judgments = [out.judgment for out in agents_results.values()]
+            _attach_judgment_runtime_attrs()
+            _log(f"Ran {len(all_judgments)} agents" + (" (LLM)" if config.use_llm else " (rule-based)"))
         # AUDIT-C4: set when Step 12c replaces first-pass judgments so the
         # decision engine context can note it operates on post-iteration data.
         _judgments_updated_after_iteration = False
-        _log(f"Ran {len(all_judgments)} agents" + (" (LLM)" if config.use_llm else " (rule-based)"))
 
         # ── Step 11: 7 Critics ───────────────────────────────────────
         from aegis.core.critics import (
@@ -3502,25 +3852,35 @@ class AutoResearchOrchestrator:
         _critic_classes = [LogicCritic, AccountingCritic, EvidenceCritic, SectorCritic,
                            CognitiveBiasCritic, MacroConsistencyCritic, MarketCritic,
                            NumericConsistencyCritic, NarrativeFactCritic, LLMJudgeCritic]
-        critic_results = [None] * len(_critic_classes)
-
-        def _run_one_critic(idx: int, cls):
-            return idx, cls().review(all_judgments, context=critic_context)
-
-        try:
-            with _CTPE(max_workers=len(_critic_classes)) as _cex:
-                _futs = {_cex.submit(_run_one_critic, i, c): i
-                         for i, c in enumerate(_critic_classes)}
-                for _f in _cac(_futs, timeout=180):
-                    idx, res = _f.result()
-                    critic_results[idx] = res
-        except Exception as _ce:
-            _log(f"  ⚠ critic parallelization failed ({_ce}), falling back to serial")
+        if _agents_reuse is not None:
+            # C2 增量复用：critic 结果与 agent 判断同源缓存（LLMJudgeCritic
+            # 现跑会自建 LLM client——复用路径必须零 LLM 调用）。
             critic_results = [
-                c().review(all_judgments, context=critic_context)
-                for c in _critic_classes
+                cr for cr in (_agents_reuse_payload.get("critic_results") or [])
+                if cr is not None
             ]
-        _log(f"Ran {len(critic_results)} critics")
+            _log(f"增量复用: {len(critic_results)} 份 critic 结果引用自缓存 run"
+                 f"（零 LLM 调用）")
+        else:
+            critic_results = [None] * len(_critic_classes)
+
+            def _run_one_critic(idx: int, cls):
+                return idx, cls().review(all_judgments, context=critic_context)
+
+            try:
+                with _CTPE(max_workers=len(_critic_classes)) as _cex:
+                    _futs = {_cex.submit(_run_one_critic, i, c): i
+                             for i, c in enumerate(_critic_classes)}
+                    for _f in _cac(_futs, timeout=180):
+                        idx, res = _f.result()
+                        critic_results[idx] = res
+            except Exception as _ce:
+                _log(f"  ⚠ critic parallelization failed ({_ce}), falling back to serial")
+                critic_results = [
+                    c().review(all_judgments, context=critic_context)
+                    for c in _critic_classes
+                ]
+            _log(f"Ran {len(critic_results)} critics")
 
         # ── Step 12: Publish Gate ────────────────────────────────────
         from aegis.core.publish_gate import PublishGate
@@ -3553,7 +3913,12 @@ class AutoResearchOrchestrator:
 
         # ── Step 12b: Chief Analyst — Thesis Synthesis (LLM post-agent) ─
         synthesized_thesis = None
-        if config.use_llm:
+        if _agents_reuse is not None:
+            # C2 增量复用：论点合成产物引用自缓存 run（Steps 12b/12c 整体
+            # 跳过，不发 LLM 调用）。
+            synthesized_thesis = _agents_reuse_payload.get("synthesized_thesis")
+            _log("增量复用: 论点合成引用自缓存 run（零 LLM 调用）")
+        elif config.use_llm:
             try:
                 from aegis.core.chief_analyst import ThesisSynthesizer
                 synthesizer = ThesisSynthesizer()
@@ -3887,6 +4252,19 @@ class AutoResearchOrchestrator:
             with cache_file.open("wb") as f:
                 f.write(_blob)
             _log(f"💾 Replay cache saved: {cache_file} ({cache_file.stat().st_size // 1024}KB)")
+            # ── Stage checkpoint: agents（Aegis 2.0 Phase 2 C1）──────
+            # 与 replay cache 同缝同 payload（7 agent + critics + 合成器
+            # 完成处），外加 agents 输入 digest 供 --update 复用判定。
+            # 复用命中的 run 不重写该 checkpoint——保留原分析的 run 时间，
+            # 报告标注「智能体分析引用自 {原 run 时间}」才不漂移。
+            if _agents_reuse is None:
+                dump_stage_checkpoint(
+                    config.ticker, "agents", state,
+                    digest=_agents_digest,
+                    run_id=run_id,
+                    smoke_mode=getattr(config, "smoke_mode", False),
+                    log=_log,
+                )
         except Exception as cache_err:
             _log(f"  ⚠ Replay cache dump failed: {cache_err}")
 
@@ -4013,9 +4391,53 @@ class AutoResearchOrchestrator:
         )
         _log(f"Signal: {signal.direction}, conviction={signal.conviction}")
 
+        # ── Step 14a (Aegis 2.0 Phase 2 C3): Thesis 持久化 ────────────
+        # 全量与 --update run 结束都 build_thesis_contract +
+        # save_thesis_version（append-only JSONL 版本链，.cache/thesis/；
+        # smoke 隔离到 .cache/smoke/thesis/，测试可用 AEGIS_THESIS_DIR
+        # 重定向）。失败不阻断主流程。
+        thesis_version_num: int | None = None
+        try:
+            import os as _os_thesis
+            from aegis.core.thesis import (
+                build_thesis_contract,
+                save_thesis_version,
+            )
+            _thesis_dir = _os_thesis.environ.get("AEGIS_THESIS_DIR", "").strip() or (
+                ".cache/smoke/thesis" if getattr(config, "smoke_mode", False)
+                else ".cache/thesis"
+            )
+            _contract = build_thesis_contract(
+                entity_id=entity_id,
+                run_id=run_id,
+                synthesized_thesis=synthesized_thesis,
+                frontier=meta_facts.get("__expectations_frontier"),
+                regime=meta_facts.get("__pricing_regime"),
+                verification_results=meta_facts.get("__verification"),
+                kill_criteria=getattr(decision, "kill_criteria", None),
+                scenarios=scenarios,
+                publishing_status=getattr(decision, "publishing_status", "draft"),
+                confidence=getattr(decision, "confidence_bucket", "medium"),
+                market_id="cn" if is_a_share else "us",
+                accounting_standard="CAS" if is_a_share else "US_GAAP",
+            )
+            _thesis_rec = save_thesis_version(
+                entity_id, _contract, run_id, dir=_thesis_dir,
+            )
+            thesis_version_num = int(_thesis_rec["version"])
+            _log(f"Thesis 持久化: 观点版本 v{thesis_version_num} → "
+                 f"{_thesis_dir}/{_contract.entity_id}.jsonl")
+        except Exception as _thesis_err:
+            _log(f"  ⚠ Thesis 持久化失败（不阻断）: {_thesis_err}")
+
         # ── Step 14b: Chief Analyst — Report Editor (LLM editorial) ──
         edited_report = None
-        if config.use_llm and synthesized_thesis is not None:
+        if _agents_reuse is not None:
+            # C2 增量复用：复用路径零 LLM 调用——Editor 是 LLM 步骤且其
+            # 文案内嵌渲染时数字，复用旧稿会把过期价格写进新报告，故整体
+            # 跳过，报告走标准版式（与 replay_from_cache 缺省行为一致）。
+            _log("增量复用: 跳过 Report Editor（零 LLM 调用，报告用标准版式）")
+        elif config.use_llm and synthesized_thesis is not None:
             try:
                 from aegis.core.chief_analyst import ReportEditor
                 editor = ReportEditor()
@@ -4085,6 +4507,38 @@ class AutoResearchOrchestrator:
                 macro_snapshot=us_snap if not is_a_share else None,
             )
 
+            # ── Aegis 2.0 Phase 2 (C2/C3): masthead 附近的运行标注 ────
+            # 中文小标注（A 股中文化铁律；标注本身为产品级固定文案，两个
+            # 市场统一用中文）：观点版本 v{N} + 增量复用时的分析时点声明。
+            # 渲染器（html_report_v2）不在本任务名下文件，故在编排层对
+            # 成品 HTML 做 <body> 顶部注入，不改渲染器。
+            _note_bits: list[str] = []
+            if _agents_reuse is not None:
+                _reuse_at = str(
+                    _agents_reuse.get("created_at")
+                    or _agents_reuse.get("run_id") or "上次运行"
+                ).replace("T", " ")
+                _note_bits.append(
+                    f"智能体分析引用自 {_reuse_at}（基本面输入未变）"
+                )
+            if thesis_version_num is not None:
+                _note_bits.append(f"观点版本 v{thesis_version_num}")
+            if _note_bits:
+                _note_html = (
+                    '<div class="aegis-run-note" style="max-width:1180px;'
+                    'margin:10px auto 0;padding:6px 16px;font-size:12px;'
+                    'line-height:1.6;color:#8a6d1a;'
+                    'background:rgba(240,190,60,.12);'
+                    'border:1px solid rgba(240,190,60,.4);border-radius:6px;">'
+                    + " ｜ ".join(_note_bits) + "</div>"
+                )
+                _body_at = html.find("<body")
+                _body_gt = html.find(">", _body_at) if _body_at != -1 else -1
+                if _body_gt != -1:
+                    html = html[:_body_gt + 1] + _note_html + html[_body_gt + 1:]
+                else:
+                    html = _note_html + html
+
             # TODO-1: smoke mode redirects HTML output to demos/smoke/ so a
             # plumbing test never overwrites the LLM-quality production report.
             if config.output_dir:
@@ -4098,6 +4552,29 @@ class AutoResearchOrchestrator:
             html_file.write_text(html, encoding="utf-8")
             html_path = str(html_file)
             _log(f"HTML report saved to {html_path}")
+
+        # ── Stage checkpoint: report（Aegis 2.0 Phase 2 C1）──────────
+        # 渲染完成缝。report 永远重渲染（吃最新价格与估值），digest 只作
+        # 追溯记录：本次报告消费的 agents 输入 + 渲染时价格。
+        dump_stage_checkpoint(
+            config.ticker, "report",
+            {
+                "html_path": html_path,
+                "publishing_status": str(getattr(decision, "publishing_status", "")),
+                "confidence_bucket": str(getattr(decision, "confidence_bucket", "")),
+                "signal_direction": str(getattr(signal, "direction", "")),
+                "agents_digest": _agents_digest,
+                "agents_reused": _agents_reuse is not None,
+            },
+            digest=compute_stage_digest({
+                "agents_digest": _agents_digest,
+                "current_price": market_data.get("current_price"),
+                "period": config.period,
+            }),
+            run_id=run_id,
+            smoke_mode=getattr(config, "smoke_mode", False),
+            log=_log,
+        )
 
         # ── Step 16: Record prediction for calibration tracking ────────
         try:
