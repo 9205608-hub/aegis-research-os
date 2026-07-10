@@ -276,6 +276,20 @@ const SECTIONS = _SECTIONS_FULL.filter(s => {
 });
 
 const pct = (n, d = 1) => `${n > 0 ? "+" : ""}${n.toFixed(d)}%`;
+// AUDIT (2026-07): REPORT.price.last can legitimately be 0 (all quote
+// sources down, or a stale replay cache without market data) — dividing
+// by it rendered an unbounded "∞%" in the scenario cards / rating spread /
+// valuation gap. The server-side inf/nan sanitizer (BUG-Y39) can't catch
+// these because they're computed in the browser. Guard every px/base
+// ratio through these helpers: base <= 0 → null / "—" (fmtNum's n/m
+// semantics).
+const safePctNum = (px, base) =>
+  (typeof px === "number" && typeof base === "number" && base > 0 && Number.isFinite(px))
+    ? ((px / base) - 1) * 100 : null;
+const safePct = (px, base, d = 1, signed = false) => {
+  const v = safePctNum(px, base);
+  return v === null ? "—" : `${signed && v > 0 ? "+" : ""}${v.toFixed(d)}%`;
+};
 const fmtNum = (n, digits = 2) =>
   (n === null || n === undefined || (typeof n === "number" && !Number.isFinite(n)))
     ? "n/m"
@@ -423,7 +437,8 @@ function Verdict() {
   // When DCF is n/m the target is null — guard the implied-return math so
   // we render a dash instead of crashing on `null / number`.
   const _hasTarget = (typeof REPORT.rating.target === "number") && Number.isFinite(REPORT.rating.target);
-  const spread = _hasTarget ? ((REPORT.rating.target / REPORT.price.last - 1) * 100) : null;
+  // safePctNum guards price.last <= 0 (dead quote sources) → "—" not "∞%".
+  const spread = _hasTarget ? safePctNum(REPORT.rating.target, REPORT.price.last) : null;
   const spreadColor = (spread !== null && spread >= 0) ? "var(--up)" : "var(--down)";
   return (
     <div className="verdict">
@@ -586,7 +601,7 @@ function ValuationBand() {
               <span className="prob">{(s.prob * 100).toFixed(0)}%</span>
             </div>
             <div className="px">{curr}{(s.px || 0).toFixed(2)}</div>
-            <div className="delta">{L("vs 现价", "vs spot")} {(((s.px / REPORT.price.last) - 1) * 100).toFixed(1)}%</div>
+            <div className="delta">{L("vs 现价", "vs spot")} {safePct(s.px, REPORT.price.last)}</div>
             <p>{s.narrative}</p>
           </div>
         ))}
@@ -626,7 +641,7 @@ function ValuationBand() {
               </>
             );
           }
-          const gap = (_t / REPORT.price.last - 1) * 100;
+          const gap = safePctNum(_t, REPORT.price.last); // null when price.last <= 0
           return (
             <>
               <div>
@@ -637,8 +652,8 @@ function ValuationBand() {
                 <div className="k">{L("当前股价", "Current price")}</div>
                 <div className="v" style={{color:"var(--text-3)"}}>{curr}{REPORT.price.last.toFixed(2)}</div>
               </div>
-              <div className="delta" style={{color: gap >= 0 ? "var(--up)" : "var(--down)"}}>
-                {L("估值回归空间", "Valuation gap")} · {gap >= 0 ? "+" : ""}{gap.toFixed(1)}%
+              <div className="delta" style={{color: (gap !== null && gap >= 0) ? "var(--up)" : "var(--down)"}}>
+                {L("估值回归空间", "Valuation gap")} · {gap === null ? "—" : `${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`}
               </div>
             </>
           );
@@ -890,7 +905,11 @@ function AgentsSection() {
               <span className="name">{a.role} — <span style={{color:"var(--text-3)", fontWeight: 400}}>{a.name}</span></span>
               <span className={`stance ${a.stance}`}>{a.stance === "bear" ? L("看空", "Bear") : a.stance === "bull" ? L("看多", "Bull") : L("中性", "Neutral")} · {a.score.toFixed(1)}</span>
             </div>
-            <p className="thesis" dangerouslySetInnerHTML={{__html: a.thesis}}/>
+            {/* AUDIT-C1: a.thesis is raw LLM text (never HTML) — rendering it
+                via dangerouslySetInnerHTML made any "<" (e.g. "ROIC<WACC")
+                swallow the rest of the sentence and opened an injection
+                surface. Text node, same as pros/cons/narrative. */}
+            <p className="thesis">{a.thesis}</p>
             <div className="agent-points">
               <div className="col">
                 <h5>{L("支持证据", "Supporting evidence")}</h5>

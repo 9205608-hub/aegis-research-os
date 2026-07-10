@@ -61,6 +61,16 @@ class ReverseDCFSolver:
         growth_high: float = 0.50,
         tolerance: float = 0.01,
         max_iterations: int = 100,
+        # AUDIT-A2 (2026-07): the solver used to omit these three fields, so
+        # its DCFInput fell back to defaults (base_depreciation=0.0) while
+        # the forward DCF ran with real D&A — two different FCFF definitions
+        # for the same company. Round-tripping the forward model's own price
+        # then reported an implied growth ~2× the true rate. Defaults keep
+        # the old call signature working; callers should pass through from
+        # the same DCFInput used for the forward model.
+        base_depreciation: float = 0.0,
+        capex_useful_life_years: float = 5.0,
+        buyback_yield_annual: float = 0.0,
     ) -> ReverseDCFResult:
         """Solve for the uniform revenue growth rate implied by current price."""
 
@@ -79,6 +89,10 @@ class ReverseDCFSolver:
                 shares_outstanding=shares_outstanding,
                 net_debt=net_debt,
                 horizon_years=horizon_years,
+                # AUDIT-A2: keep reverse model identical to the forward model
+                base_depreciation=base_depreciation,
+                capex_useful_life_years=capex_useful_life_years,
+                buyback_yield_annual=buyback_yield_annual,
             )
             output = self._dcf.compute_dcf(dcf_input)
             return output.per_share_value
@@ -113,6 +127,11 @@ class ReverseDCFSolver:
         tg_high: float | None = None,
         tolerance: float = 0.01,
         max_iterations: int = 100,
+        # AUDIT-A2: same forward/reverse model-parity pass-through as
+        # solve_implied_growth above.
+        base_depreciation: float = 0.0,
+        capex_useful_life_years: float = 5.0,
+        buyback_yield_annual: float = 0.0,
     ) -> ReverseDCFResult:
         """Solve for implied terminal growth rate."""
         if tg_high is None:
@@ -133,6 +152,10 @@ class ReverseDCFSolver:
                 shares_outstanding=shares_outstanding,
                 net_debt=net_debt,
                 horizon_years=horizon_years,
+                # AUDIT-A2: keep reverse model identical to the forward model
+                base_depreciation=base_depreciation,
+                capex_useful_life_years=capex_useful_life_years,
+                buyback_yield_annual=buyback_yield_annual,
             )
             output = self._dcf.compute_dcf(dcf_input)
             return output.per_share_value

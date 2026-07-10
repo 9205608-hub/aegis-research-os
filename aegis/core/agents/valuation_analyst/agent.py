@@ -70,7 +70,12 @@ class ValuationAnalyst(AgentBase):
         # Implied assumptions from market expectations (in prior judgments or context)
         if inp.macro_context:
             priced_in = inp.macro_context.get("priced_in", {})
-            if priced_in.get("implied_revenue_growth") is not None:
+            # AUDIT-A9 (BUG-Y20 third path): boundary-hit reverse-DCF values
+            # are fake-clean artifacts (e.g. exactly 0.50). The orchestrator
+            # nulls the value and sets `implied_growth_unreliable`; guard
+            # here too so the artifact can never become an Observation.
+            if (priced_in.get("implied_revenue_growth") is not None
+                    and not priced_in.get("implied_growth_unreliable")):
                 observations.append(Observation(
                     text=f"Market-implied revenue growth: {priced_in['implied_revenue_growth']:.2%}",
                     source_ids=["reverse_dcf:implied_growth"],
@@ -128,6 +133,11 @@ class ValuationAnalyst(AgentBase):
         if implied_obs and inp.macro_context:
             priced_in = inp.macro_context.get("priced_in", {})
             implied_g = priced_in.get("implied_revenue_growth")
+            # AUDIT-A9: skip the aggressive/modest judgment when the value
+            # is a boundary-hit artifact (>25% branch would fire on the
+            # fake 0.50 edge value).
+            if priced_in.get("implied_growth_unreliable"):
+                implied_g = None
             if implied_g is not None:
                 if implied_g > 0.25:
                     inferences.append(Inference(

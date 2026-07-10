@@ -77,22 +77,39 @@ class CachedLLMClient:
         tool_schema: dict[str, Any],
         tool_name: str = "output",
         role: str = "agent",
+        *,
+        bypass_cache: bool = False,
         **kwargs: Any,
     ) -> dict[str, Any]:
+        """AUDIT-B2: `bypass_cache=True` skips the read path (fresh inner
+        call) so the orchestrator's same-prompt quality-gate retry actually
+        re-samples the LLM instead of getting a guaranteed cache hit. The
+        fresh result still passes through the write gate below, replacing
+        any stale entry with a better one.
+        """
         key = self._make_key(system_prompt, user_message, tool_schema, tool_name, role)
         cache_path = self.cache_dir / f"{key}.json"
-        if cache_path.exists():
-            with self._lock:
-                self._hits += 1
+        if not bypass_cache and cache_path.exists():
+            cached: Any = None
             try:
-                return json.loads(cache_path.read_text(encoding="utf-8"))
+                cached = json.loads(cache_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 # Corrupt cache file — fall through to fresh call. Removing
                 # the bad file lets the next miss rewrite it cleanly.
-                try:
-                    cache_path.unlink()
-                except OSError:
-                    pass
+                pass
+            if self._is_cacheable(cached, tool_schema):
+                with self._lock:
+                    self._hits += 1
+                return cached
+            # AUDIT-B2: corrupt OR legacy-poisoned entry (degradation
+            # shell / partial / missing required fields, written before
+            # the write gate existed). Evict and fall through so a good
+            # inner call can heal the cache instead of serving garbage
+            # forever.
+            try:
+                cache_path.unlink()
+            except OSError:
+                pass
         result = self.inner.call_structured(
             system_prompt=system_prompt,
             user_message=user_message,
@@ -103,16 +120,43 @@ class CachedLLMClient:
         )
         with self._lock:
             self._misses += 1
-        try:
-            cache_path.write_text(
-                json.dumps(result, ensure_ascii=False), encoding="utf-8",
-            )
-        except (TypeError, OSError):
-            # Result wasn't JSON-serialisable (e.g. contains a Pydantic
-            # model that the inner client forgot to dump). Don't crash the
-            # pipeline over a cache write — just skip caching this call.
-            pass
+        # AUDIT-B2 quality gate: never persist degraded/partial outputs —
+        # a poisoned entry is worse than no entry (same prompt → same key
+        # → the agent is locked onto garbage for every later run/replay).
+        if self._is_cacheable(result, tool_schema):
+            try:
+                cache_path.write_text(
+                    json.dumps(result, ensure_ascii=False), encoding="utf-8",
+                )
+            except (TypeError, OSError):
+                # Result wasn't JSON-serialisable (e.g. contains a Pydantic
+                # model that the inner client forgot to dump). Don't crash the
+                # pipeline over a cache write — just skip caching this call.
+                pass
         return result
+
+    @staticmethod
+    def _is_cacheable(result: Any, tool_schema: dict[str, Any] | None) -> bool:
+        """AUDIT-B2: should this `call_structured` result be persisted
+        (or, on the read path, served)?
+
+        Rejects the known degradation products of the inner clients:
+          - non-dict / empty dict
+          - ``{"raw_text": ...}`` shell (subprocess_client parse failure)
+          - anything tagged ``"__partial"`` (sdk_client truncation salvage)
+          - results missing the tool_schema's ``required`` fields
+        """
+        if not isinstance(result, dict) or not result:
+            return False
+        if result.get("__partial"):
+            return False
+        if set(result.keys()) == {"raw_text"}:
+            return False
+        if isinstance(tool_schema, dict):
+            required = tool_schema.get("required") or []
+            if any(field not in result for field in required):
+                return False
+        return True
 
     def call_text(
         self,

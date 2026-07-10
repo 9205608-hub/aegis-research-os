@@ -53,6 +53,27 @@ KIMI_MODEL_MAP = {
 KIMI_BASE_URL = "https://api.kimi.com/coding/v1"
 
 
+def resolve_kimi_endpoint(api_key: str) -> tuple[str, dict[str, str]]:
+    """Derive (base_url, default_headers) for a Kimi/Moonshot API key.
+
+    AUDIT-B3 prep: single source of truth for endpoint routing, shared by
+    ``KimiClient.__init__`` and the orchestrator's backend health probe so
+    the probe can never disagree with the client about which endpoint a
+    key authenticates against.
+
+    Routing:
+      - ``sk-kimi-`` prefix → Kimi Code endpoint (``api.kimi.com/coding/v1``)
+      - anything else       → Moonshot open platform (``api.moonshot.ai/v1``)
+
+    The Kimi Code API requires a coding-agent ``User-Agent`` to pass its
+    access check, so the headers dict must accompany every probe/request.
+    """
+    base_url = KIMI_BASE_URL
+    if api_key and not api_key.startswith("sk-kimi-"):
+        base_url = "https://api.moonshot.ai/v1"  # international keys
+    return base_url, {"User-Agent": "claude-code/1.0"}
+
+
 class KimiClient:
     """LLM client using Moonshot/Kimi API (OpenAI-compatible).
 
@@ -76,15 +97,14 @@ class KimiClient:
             raise RuntimeError("No Kimi API key. Set KIMI_API_KEY or MOONSHOT_API_KEY env var.")
 
         from openai import OpenAI
-        # Auto-select endpoint based on key prefix
-        base_url = KIMI_BASE_URL
-        if self._api_key and not self._api_key.startswith("sk-kimi-"):
-            base_url = "https://api.moonshot.ai/v1"  # international keys
+        # Auto-select endpoint based on key prefix (shared with the
+        # orchestrator health probe — see resolve_kimi_endpoint).
         # Kimi Code API requires coding-agent User-Agent to pass access check
+        base_url, default_headers = resolve_kimi_endpoint(self._api_key)
         self._client = OpenAI(
             api_key=self._api_key,
             base_url=base_url,
-            default_headers={"User-Agent": "claude-code/1.0"},
+            default_headers=default_headers,
         )
 
     def call_structured(
@@ -94,9 +114,17 @@ class KimiClient:
         tool_schema: dict[str, Any],
         tool_name: str = "output",
         role: str = "specialist_agent",
+        max_tokens_hint: int | None = None,
         **kwargs,
     ) -> dict[str, Any]:
-        """Call Kimi with function calling for structured output."""
+        """Call Kimi with function calling for structured output.
+
+        AUDIT-D3: ``max_tokens_hint`` sizes the starting output budget by
+        agent depth (light=8K / standard=16K / deep=32K). No hint → the
+        historical 16384 cold start with the [16384, 32768] grow ladder,
+        byte-for-byte the pre-hint behavior. Grow is capped at 32768 (the
+        largest budget this client has ever used on the main path).
+        """
         tool_def = {
             "type": "function",
             "function": {
@@ -111,7 +139,10 @@ class KimiClient:
         # mode also burns thinking tokens and can truncate mid-array. Start
         # at 16K (proven sufficient for most cases) and grow to 32K on a
         # truncated retry — matching DeepSeek's `BUDGET_TRUNCATED` shape.
-        BUDGET_TRUNCATED = [16384, 32768]
+        # AUDIT-D3: ladder anchored on the (possibly hinted) start budget;
+        # no hint reproduces the original [16384, 32768] exactly.
+        _start_budget = int(max_tokens_hint) if max_tokens_hint else 16384
+        BUDGET_TRUNCATED = [_start_budget, min(_start_budget * 2, 32768)]
         truncated_response_attempts = 0
         for attempt in range(self.max_retries):
             try:
@@ -119,10 +150,10 @@ class KimiClient:
                     _budget = (
                         BUDGET_TRUNCATED[truncated_response_attempts]
                         if truncated_response_attempts < len(BUDGET_TRUNCATED)
-                        else 32768
+                        else BUDGET_TRUNCATED[-1]
                     )
                 else:
-                    _budget = 16384
+                    _budget = _start_budget
                 # Use higher max_tokens to prevent truncation (Kimi k2.5
                 # reasoning can consume many tokens before producing output).
                 # Note: k2.5 has thinking mode enabled by default which is
@@ -152,49 +183,62 @@ class KimiClient:
                 # Extract tool call response
                 msg = response.choices[0].message
                 _fr = getattr(response.choices[0], "finish_reason", "?")
+                # AUDIT-B1: pull the tool_call match OUT of the inner
+                # `for tc in msg.tool_calls` loop. Previously the empty /
+                # truncated recovery `continue`s bound to that inner loop,
+                # so after the single matching tool_call was consumed they
+                # fell through to the ValueError below — the whole BUG-A20
+                # recovery chain (empty retry / budget grow / JSON-mode
+                # fallback) was dead code on Kimi. With the match hoisted,
+                # `continue` re-enters the outer attempt loop as intended.
+                raw: str | None = None
                 if msg.tool_calls:
                     for tc in msg.tool_calls:
                         if tc.function.name == tool_name:
-                            raw = tc.function.arguments
-                            if not raw or not raw.strip():
-                                # Kimi sometimes returns empty tool args (reasoning consumed all tokens)
-                                if attempt < self.max_retries - 1:
-                                    print(f"    ⏳ Kimi returned empty tool args (finish={_fr}), retry {attempt+1}/{self.max_retries}")
-                                    time.sleep(2)
+                            # None args → "" so a matched-but-empty tool
+                            # call still takes the empty-retry branch.
+                            raw = tc.function.arguments or ""
+                            break
+                if raw is not None:
+                    if not raw.strip():
+                        # Kimi sometimes returns empty tool args (reasoning consumed all tokens)
+                        if attempt < self.max_retries - 1:
+                            print(f"    ⏳ Kimi returned empty tool args (finish={_fr}), retry {attempt+1}/{self.max_retries}")
+                            time.sleep(2)
+                            continue
+                        # TODO-Y1: last-resort JSON-mode fallback,
+                        # mirroring DeepSeek's BUG-A20 v4 path.
+                        print(f"    ⏳ Kimi tool_use empty after retries, falling through to JSON-mode")
+                        return self._call_json_mode_fallback(
+                            system_prompt, user_message, tool_schema,
+                        )
+                    try:
+                        return json.loads(raw)
+                    except json.JSONDecodeError:
+                        try:
+                            return self._repair_json(raw)
+                        except json.JSONDecodeError as rep_e:
+                            # TODO-Y1: truncation-grow path. If raw
+                            # is substantial, repair failed → likely
+                            # mid-array cut. Grow max_tokens and retry.
+                            is_truncated = len(raw) > 500
+                            if is_truncated:
+                                truncated_response_attempts += 1
+                                if truncated_response_attempts < len(BUDGET_TRUNCATED):
+                                    print(f"    ⏳ Kimi args truncated (finish={_fr}, len={len(raw)}, attempt {truncated_response_attempts}/{len(BUDGET_TRUNCATED)}), retry max_tokens={BUDGET_TRUNCATED[truncated_response_attempts]}")
+                                    time.sleep(1)
                                     continue
-                                # TODO-Y1: last-resort JSON-mode fallback,
-                                # mirroring DeepSeek's BUG-A20 v4 path.
-                                print(f"    ⏳ Kimi tool_use empty after retries, falling through to JSON-mode")
+                                print(f"    ⏳ Kimi args truncated after {truncated_response_attempts} grow attempts; falling through to JSON-mode")
                                 return self._call_json_mode_fallback(
                                     system_prompt, user_message, tool_schema,
                                 )
-                            try:
-                                return json.loads(raw)
-                            except json.JSONDecodeError:
-                                try:
-                                    return self._repair_json(raw)
-                                except json.JSONDecodeError as rep_e:
-                                    # TODO-Y1: truncation-grow path. If raw
-                                    # is substantial, repair failed → likely
-                                    # mid-array cut. Grow max_tokens and retry.
-                                    is_truncated = len(raw) > 500
-                                    if is_truncated:
-                                        truncated_response_attempts += 1
-                                        if truncated_response_attempts < len(BUDGET_TRUNCATED):
-                                            print(f"    ⏳ Kimi args truncated (finish={_fr}, len={len(raw)}, attempt {truncated_response_attempts}/{len(BUDGET_TRUNCATED)}), retry max_tokens={BUDGET_TRUNCATED[truncated_response_attempts]}")
-                                            time.sleep(1)
-                                            continue
-                                        print(f"    ⏳ Kimi args truncated after {truncated_response_attempts} grow attempts; falling through to JSON-mode")
-                                        return self._call_json_mode_fallback(
-                                            system_prompt, user_message, tool_schema,
-                                        )
-                                    if attempt < self.max_retries - 1:
-                                        import sys as _sys
-                                        print(f"    ⏳ Kimi args unparseable (len={len(raw)}, preview={raw[:120]!r}), retry {attempt+1}/{self.max_retries}",
-                                              file=_sys.stderr)
-                                        time.sleep(2 ** attempt)
-                                        continue
-                                    raise rep_e
+                            if attempt < self.max_retries - 1:
+                                import sys as _sys
+                                print(f"    ⏳ Kimi args unparseable (len={len(raw)}, preview={raw[:120]!r}), retry {attempt+1}/{self.max_retries}",
+                                      file=_sys.stderr)
+                                time.sleep(2 ** attempt)
+                                continue
+                            raise rep_e
 
                 # Fallback: if model responded with text instead of tool call,
                 # try to extract JSON from text
@@ -222,8 +266,19 @@ class KimiClient:
 
             except Exception as e:
                 error_str = str(e).lower()
+                # AUDIT-B1: keyword set aligned with deepseek_client — the
+                # parse-failure keywords ("json"/"parseable"/…) let the
+                # "No tool call or parseable JSON" ValueError above re-enter
+                # the attempt loop instead of bubbling straight up to a
+                # mock fallback on the first miss.
                 is_retryable = any(
-                    k in error_str for k in ("rate_limit", "429", "timeout", "connection", "overloaded")
+                    k in error_str for k in (
+                        "rate_limit", "429", "timeout", "connection",
+                        "overloaded", "503", "502", "504",
+                        # Also retry parse failures — fresh sample next attempt
+                        "json", "parseable", "unparseable", "tool call arguments",
+                        "no tool call",
+                    )
                 )
                 # BUG-30: content_filter (HTTP 400) is NOT retryable (retrying
                 # the same prompt produces the same rejection) and should

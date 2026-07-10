@@ -199,7 +199,14 @@ class LogicCritic(CriticBase):
         EN_POS = ("strong", "durable", "sound", "excellent", "robust", "resilient")
         ZH_POS = ("强劲", "稳健", "出色", "优秀", "坚挺", "韧性", "卓越")
         EN_NEG = ("weak", "poor", "below par", "deteriorat", "fragile")
-        ZH_NEG = ("弱", "差", "不足", "恶化", "脆弱", "薄弱", "不及")
+        # AUDIT (2026-07, logic_critic:202): Y46's single-char negatives
+        # 弱/差 and the quantifier 不足 substring-matched neutral phrasing
+        # ("差异化定位", "减弱幅度有限", "误差", "市占率不足5%") and fired
+        # false LOGIC_CONTRADICTION warns. Single-char CJK words are too
+        # ambiguous — multi-char unambiguous phrases only (same lesson as
+        # the Y47 decision_engine negation window).
+        ZH_NEG = ("疲弱", "走弱", "偏弱", "转弱", "疲软", "较差", "变差",
+                  "恶化", "脆弱", "薄弱", "不及预期", "低于预期", "堪忧", "乏力")
 
         for j in judgments:
             for inf in j.inferences:
@@ -334,8 +341,13 @@ class LogicCritic(CriticBase):
         big_unit = "亿" if is_cny else "B"
         # Match Chinese "经营利润" / "营业利润" alongside English forms so the
         # window check below works for A-share narrative.
+        # AUDIT (2026-07, logic_critic:338): "营业收入" removed — under CAS
+        # it is REVENUE, not operating profit. With it in the list, a real
+        # segment-revenue citation ("云端产品线营业收入¥60.0亿") implied
+        # OI > consolidated OI and was mis-blocked as ABS_OI_IMPOSSIBLE.
+        # Revenue-level claims are narrative_fact_critic's job.
         opinc_keywords = (
-            ("operating income", "operating profit", "经营利润", "营业利润", "营业收入")
+            ("operating income", "operating profit", "经营利润", "营业利润")
             if is_cny else ("operating income", "operating profit")
         )
         seg_names_sorted = sorted(seg_rev_lookup.keys(), key=len, reverse=True)

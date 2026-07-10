@@ -26,10 +26,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+# AUDIT-D1/D4: caps and timeouts are backend-tiered now — the orchestrator
+# resolves the backend kind once per run and asks config for the tier.
 from aegis.core.config import (
-    AGENT_BATCH_TIMEOUT_S,
-    AGENT_MAX_PARALLEL,
-    AGENT_WATCHDOG_TIMEOUT_S,
+    agent_batch_timeout_for,
+    agent_max_parallel_for,
+    agent_watchdog_timeout_for,
 )
 
 
@@ -93,6 +95,67 @@ def _fmt_duration(delta: timedelta) -> str:
     if m:
         return f"{m}m {s}s"
     return f"{s}s"
+
+
+# AUDIT-A4 (2026-07): shared cumulative-growth cap, extracted from the
+# inline BUG-Y23 block in `_build_dcf_input` so the bear/bull driver_deltas
+# path (`_driver_adjusted_growth`) can apply the exact same bound. Before
+# this, only the base path was capped at 30× — a hyper-growth bear tree
+# would compound past base, trip the inversion guard, and get silently
+# rewritten to a mechanical 0.5× base.
+MAX_TERMINAL_RATIO = 30.0
+
+
+def cap_cumulative_growth_path(
+    growth_path: list[float],
+    terminal_growth: float,
+    max_ratio: float = MAX_TERMINAL_RATIO,
+) -> tuple[list[float], int]:
+    """Cap a revenue growth path so cumulative scaling stays plausible.
+
+    Walks the path compounding (1+g); the first year whose cumulative scale
+    exceeds ``max_ratio`` and every year after it are replaced with
+    ``terminal_growth + 0.005`` (same convention as the original BUG-Y23
+    fix). Returns ``(capped_path, capped_year)`` where ``capped_year`` is
+    the 0-indexed year the cap first triggered, or ``-1`` if untouched.
+    Never mutates the input list.
+    """
+    cum_scale = 1.0
+    capped_year = -1
+    for yr_idx, g in enumerate(growth_path):
+        cum_scale *= (1 + g)
+        if cum_scale > max_ratio:
+            capped_year = yr_idx
+            break
+    if capped_year < 0:
+        return list(growth_path), -1
+    capped = list(growth_path)
+    for yr_idx in range(capped_year, len(capped)):
+        capped[yr_idx] = round(terminal_growth + 0.005, 4)
+    return capped, capped_year
+
+
+def renormalize_scenario_probabilities(
+    probs: dict[str, float],
+    log: Callable[[str], None] | None = None,
+) -> dict[str, float]:
+    """AUDIT-A5 (orchestrator side): force bear/base/bull weights to sum to 1.
+
+    The ScenarioArchitect only normalizes the cases the LLM actually
+    returned; a dropped/renamed case keeps its orchestrator default
+    (0.25/0.50/0.25) so the three weights can sum to 1.25-1.5 and silently
+    inflate the probability-weighted target price. Warn when the drift
+    exceeds 1% and divide through by the total. Degenerate totals (≤ 0)
+    fall back to the mechanical default split.
+    """
+    total = sum(probs.values())
+    if total <= 0:
+        if log:
+            log(f"  ⚠ Scenario probabilities sum to {total:.3f} — resetting to default 0.25/0.50/0.25")
+        return {"bear": 0.25, "base": 0.50, "bull": 0.25}
+    if abs(total - 1.0) > 0.01 and log:
+        log(f"  ⚠ Scenario probabilities sum to {total:.3f} ≠ 1.0 — renormalizing before pw_value")
+    return {k: v / total for k, v in probs.items()}
 
 
 @dataclass
@@ -406,8 +469,15 @@ class AutoResearchOrchestrator:
                     _q = fetch_cn_quote(stock_code)
                     if _q and _q.name:
                         entity_name = _q.name
-                except Exception:
-                    pass
+                except Exception as _name_err:
+                    # AUDIT bonus (TODO-Y8): this used to be a silent pass.
+                    # When the name lookup fails, entity_name stays the bare
+                    # 6-digit code and the BUG-Y18 name→industry sector
+                    # fallback goes dead (→ General pack → large DCF bias),
+                    # so at minimum leave a trace for operators.
+                    _log(f"  ⚠ Tencent name lookup failed for {stock_code} "
+                         f"({type(_name_err).__name__}: {_name_err}) — "
+                         f"entity_name stays '{stock_code}', BUG-Y18 industry fallback may degrade")
             _log(f"A-share detected: {stock_code} ({entity_name})")
 
             cn_connector = CninfoConnector()
@@ -1022,6 +1092,12 @@ class AutoResearchOrchestrator:
                 if _ak_industry:
                     _log(f"  ↳ akshare industry empty; inferred '{_ak_industry}' "
                          f"from name '{_name}' (BUG-Y18 fallback)")
+            # AUDIT 2026-07: surface the resolved industry to the report
+            # layer (html_report_v2 reads meta_facts sector/industry —
+            # without this the report showed "—" even when the industry
+            # resolved fine and only the pack fell back to General).
+            if _ak_industry and not meta_facts.get("industry"):
+                meta_facts["industry"] = _ak_industry
         sector_pack = self._load_sector_pack(
             config.sector_pack_id, config.ticker, _ak_industry,
         )
@@ -1056,9 +1132,17 @@ class AutoResearchOrchestrator:
                 # yfinance symbol for A-shares (600519 → 600519.SS)
                 yf_symbol = self._to_yfinance_symbol(config.ticker) if is_a_share else config.ticker
 
-                # Consensus estimates (yfinance — works for US + A-shares)
-                consensus_estimates = obb_conn.get_consensus_estimates(yf_symbol)
-                _log(f"Consensus: {len(consensus_estimates)} estimates")
+                # Consensus estimates (yfinance)
+                # AUDIT-D5 (BUG-29 follow-up): A-shares must skip yfinance
+                # here — same policy as earnings_history / historical_valuation
+                # below. The unconditional call went through the proxy for
+                # .SS/.SZ symbols and returned junk/timeouts.
+                if is_a_share:
+                    consensus_estimates = []
+                    _log("Consensus: skipped for A-share (yfinance coverage unreliable)")
+                else:
+                    consensus_estimates = obb_conn.get_consensus_estimates(yf_symbol)
+                    _log(f"Consensus: {len(consensus_estimates)} estimates")
 
                 # Earnings history (yfinance — works for US; A-shares typically
                 # return bogus US ticker collisions from FMP fallback, so skip)
@@ -1070,10 +1154,17 @@ class AutoResearchOrchestrator:
                     _log(f"Earnings history: {len(earnings_history)} records")
 
                 # Peer discovery and fundamentals (built-in map has both US + A-share peers)
-                peer_tickers = obb_conn.get_sector_peers(config.ticker, limit=6)
-                if peer_tickers:
-                    peer_fundamentals = obb_conn.get_peer_fundamentals(peer_tickers[:6])
-                    _log(f"Peers: {len(peer_fundamentals)} fundamentals ({', '.join(peer_tickers[:6])})")
+                # AUDIT-D5: A-share peers in _PEER_MAP are .SS/.SZ tickers →
+                # _fetch_single_peer would hit yfinance serially through the
+                # proxy for each one. Skip, same as the other yfinance paths.
+                if is_a_share:
+                    peer_fundamentals = []
+                    _log("Peers: skipped for A-share (yfinance peer fundamentals unreliable)")
+                else:
+                    peer_tickers = obb_conn.get_sector_peers(config.ticker, limit=6)
+                    if peer_tickers:
+                        peer_fundamentals = obb_conn.get_peer_fundamentals(peer_tickers[:6])
+                        _log(f"Peers: {len(peer_fundamentals)} fundamentals ({', '.join(peer_tickers[:6])})")
 
                 # Historical valuation multiples (US only; A-share yfinance
                 # coverage is unreliable and the connector now skips .SZ/.SS
@@ -1315,6 +1406,7 @@ class AutoResearchOrchestrator:
             dcf_input = self._build_dcf_input(
                 config, meta_facts, computed_metrics, market_data,
                 sector_pack, consensus_for_agents, driver_tree=driver_tree,
+                log=_log,
             )
             dcf_output = dcf.compute_dcf(dcf_input)
 
@@ -1322,6 +1414,7 @@ class AutoResearchOrchestrator:
         dcf_input_flat = self._build_dcf_input(
             config, meta_facts, computed_metrics, market_data,
             sector_pack, consensus_for_agents, driver_tree=driver_tree,
+            log=_log,
         )
 
         # Capture driver projections for reports
@@ -1446,20 +1539,41 @@ class AutoResearchOrchestrator:
         bear_case_obj = scenario_blueprint.get_case("bear") if scenario_blueprint else None
         bull_case_obj = scenario_blueprint.get_case("bull") if scenario_blueprint else None
 
-        def _driver_adjusted_growth(case_obj, default_delta):
-            """Compute revenue growth path from driver_deltas if available."""
+        def _driver_adjusted_growth(case_obj, default_delta, growth_floor, label):
+            """Compute revenue growth path from driver_deltas if available.
+
+            growth_floor: per-year floor for the aggregate-delta fallback.
+            AUDIT-A3: bear uses -0.05 (the "deep recession" limit the
+            comment below always promised) — the old hardcoded 0.01 floor
+            pinned every non-driver-tree bear at +1%/yr growth, making the
+            -5% clamp at the call site dead code and recession scenarios
+            mathematically inexpressible. Bull keeps the 0.01 floor.
+            """
             if driver_tree and case_obj and case_obj.driver_deltas:
                 adjusted_tree = apply_driver_deltas(driver_tree, case_obj.driver_deltas)
                 adjusted_growth, _ = resolve_driver_revenue(
                     meta_facts.get("revenue", 0), adjusted_tree,
                 )
+                # AUDIT-A4: apply the same 30× cumulative cap as the base
+                # path (BUG-Y23). Without it, a hyper-growth bear/bull tree
+                # compounds past the capped base and the values shown in the
+                # report degrade to the mechanical 0.5×/2× clamp envelope.
+                adjusted_growth, _capped_yr = cap_cumulative_growth_path(
+                    adjusted_growth, dcf_input_flat.terminal_growth_rate,
+                )
+                if _capped_yr >= 0:
+                    _log(f"  ⚠ {label} driver-tree growth path capped at "
+                         f"Y{_capped_yr + 1} (cumulative "
+                         f"{MAX_TERMINAL_RATIO:.0f}× revenue threshold, same as base)")
                 return adjusted_growth
             # Fallback: apply aggregate delta to base growth path
-            return [max(g + d, 0.01) for g, d in
+            return [max(g + d, growth_floor) for g, d in
                     zip(dcf_input_flat.revenue_growth_path, default_delta)]
 
-        bear_growth = _driver_adjusted_growth(bear_case_obj, bear_growth_delta)
-        bull_growth = _driver_adjusted_growth(bull_case_obj, bull_growth_delta)
+        bear_growth = _driver_adjusted_growth(bear_case_obj, bear_growth_delta,
+                                              growth_floor=-0.05, label="bear")
+        bull_growth = _driver_adjusted_growth(bull_case_obj, bull_growth_delta,
+                                              growth_floor=0.01, label="bull")
 
         # Clamp growth deltas to prevent extreme scenarios:
         # Bear: growth can drop but not go below -5% (deep recession) for any year
@@ -1517,6 +1631,12 @@ class AutoResearchOrchestrator:
         # names still get room because their base DCF is already elevated.
         bear_ps = bear_output.per_share_value
         bull_ps = bull_output.per_share_value
+        # AUDIT-A10: record every mechanical rewrite (envelope clamp or
+        # inversion-guard correction) so the report layer can disclose that
+        # the displayed scenario value is a clamp artifact, not a model
+        # output. BUG-Y37 only added a stderr log — readers of the HTML had
+        # no way to tell a genuine 0.5×/2× spread from a clamped one.
+        scenario_clamp_flags: dict[str, float] = {}
         if base_val > 0:
             bear_floor = max(0, base_val * 0.50)
             bull_cap = base_val * 2.00
@@ -1530,6 +1650,7 @@ class AutoResearchOrchestrator:
                 _log(f"  ⚠ DCF: bear case {_sym}{bear_ps:.2f} clamped UP to "
                      f"floor {_sym}{bear_floor:.2f} (=0.5× base). "
                      f"Wider tail than 0.5× was suppressed.")
+                scenario_clamp_flags["bear"] = bear_ps  # AUDIT-A10: raw pre-clamp value
                 bear_output = type(bear_output)(**{
                     **bear_output.__dict__,
                     "per_share_value": bear_floor,
@@ -1539,6 +1660,7 @@ class AutoResearchOrchestrator:
                 _log(f"  ⚠ DCF: bull case {_sym}{bull_ps:.2f} clamped DOWN to "
                      f"cap {_sym}{bull_cap:.2f} (=2.0× base). "
                      f"Higher upside than 2× was suppressed.")
+                scenario_clamp_flags["bull"] = bull_ps  # AUDIT-A10
                 bull_output = type(bull_output)(**{
                     **bull_output.__dict__,
                     "per_share_value": bull_cap,
@@ -1557,6 +1679,7 @@ class AutoResearchOrchestrator:
         bull_final = bull_output.per_share_value
         if base_val > 0:
             if bull_final <= base_val:
+                scenario_clamp_flags["bull"] = scenario_clamp_flags.get("bull", bull_final)  # AUDIT-A10
                 bull_output = type(bull_output)(**{
                     **bull_output.__dict__,
                     "per_share_value": base_val * 1.50,
@@ -1564,6 +1687,7 @@ class AutoResearchOrchestrator:
                 _sym = _currency_symbol_for_logs(meta_facts)
                 _log(f"  ⚠ CONSISTENCY: Bull {_sym}{bull_final:.2f} ≤ Base {_sym}{base_val:.2f} — auto-corrected to {_sym}{base_val*1.5:.2f}")
             if bear_final >= base_val:
+                scenario_clamp_flags["bear"] = scenario_clamp_flags.get("bear", bear_final)  # AUDIT-A10
                 bear_output = type(bear_output)(**{
                     **bear_output.__dict__,
                     "per_share_value": max(0, base_val * 0.50),
@@ -1585,6 +1709,16 @@ class AutoResearchOrchestrator:
                      f"(bear={new_bear:.2f}, base={base_val:.2f}, bull={new_bull:.2f})")
 
         # Probability-weighted target price
+        # AUDIT-A5: renormalize first. When the LLM drops/renames a case,
+        # ScenarioArchitect only normalizes what it returned while the
+        # orchestrator defaults (0.25/0.50/0.25) survive for missed cases —
+        # the raw weights can sum to 1.25-1.5 and silently inflate pw_value.
+        # The renormalized dict is rebound so every downstream consumer
+        # (scenarios dict, replay cache, portfolio signal weights) sees the
+        # same corrected weights.
+        scenario_probabilities = renormalize_scenario_probabilities(
+            scenario_probabilities, log=_log,
+        )
         pw_value = (
             scenario_probabilities["bear"] * bear_output.per_share_value
             + scenario_probabilities["base"] * dcf_output.per_share_value
@@ -1605,6 +1739,14 @@ class AutoResearchOrchestrator:
             "probability_weighted_value": pw_value,
             "primary_swing_factor": primary_swing_factor,
             "currency": "CNY" if is_a_share else "USD",
+            # AUDIT-A10: clamp disclosure. When a scenario value was
+            # mechanically rewritten (0.5×/2× envelope or inversion guard),
+            # expose the flag + the raw model output so the report renders a
+            # footnote instead of passing the artifact off as a model value.
+            "bear_clamped": "bear" in scenario_clamp_flags,
+            "bull_clamped": "bull" in scenario_clamp_flags,
+            "bear_raw_value": scenario_clamp_flags.get("bear"),
+            "bull_raw_value": scenario_clamp_flags.get("bull"),
             # DCF bridge components for transparent per-share derivation in report
             "dcf_bridge": {
                 "pv_fcff_sum": dcf_output.pv_fcff_sum,
@@ -1682,6 +1824,13 @@ class AutoResearchOrchestrator:
                 shares_outstanding=dcf_input_flat.shares_outstanding,
                 net_debt=dcf_input_flat.net_debt,
                 horizon_years=dcf_input_flat.horizon_years,
+                # AUDIT-A2: pass D&A/buyback through so the reverse solve
+                # runs the exact same FCFF model as the forward DCF —
+                # omitting base_depreciation made implied growth ~2× too high
+                # for high-D&A names.
+                base_depreciation=dcf_input_flat.base_depreciation,
+                capex_useful_life_years=dcf_input_flat.capex_useful_life_years,
+                buyback_yield_annual=dcf_input_flat.buyback_yield_annual,
             )
             implied_growth = rdcf.implied_value
             if rdcf.boundary_hit is not None:
@@ -1738,9 +1887,13 @@ class AutoResearchOrchestrator:
             "wacc", wacc_range,
             "terminal_growth_rate", terminal_growth_range,
         )
-        # Scale the 2-way matrix values to match segment-based valuation
+        # Scale the 2-way matrix values to match segment-based valuation.
+        # AUDIT-A5 follow-up (dcf-core handoff): two_way_table now emits
+        # None for infeasible cells (wacc − tg too small); keep them None
+        # here so the renderer can show "n/m" instead of crashing on
+        # `None * float`.
         scaled_matrix = [
-            [cell * _sens_scale for cell in row]
+            [None if cell is None else cell * _sens_scale for cell in row]
             for row in two_way.matrix
         ]
         sensitivity_table = {
@@ -1826,10 +1979,19 @@ class AutoResearchOrchestrator:
             implied_growth_unreliable=bool(meta_facts.get("__implied_growth_unreliable")),
         )
 
+        # AUDIT-A9 (BUG-Y20 third path): when reverse-DCF hit a bisection
+        # boundary, `implied_growth` is a fake-clean edge value (e.g. 0.50).
+        # Y20 gated the Director/Synthesizer prompts and
+        # build_priced_in_object, but this hand-assembled dict flowed the raw
+        # number into all 7 agents' MACRO CONTEXT (and the __-prefixed
+        # meta_facts flag gets stripped from prompts, so agents couldn't see
+        # the unreliable marker). Null it out and pass an explicit flag.
+        _ig_unreliable_for_agents = bool(meta_facts.get("__implied_growth_unreliable"))
         agent_macro = {
             "cycle_phase": config.cycle_phase,
             "priced_in": {
-                "implied_revenue_growth": implied_growth,
+                "implied_revenue_growth": None if _ig_unreliable_for_agents else implied_growth,
+                "implied_growth_unreliable": _ig_unreliable_for_agents,
                 "implied_terminal_growth": config.terminal_growth_rate,
                 "revision_momentum": revision_momentum,
                 "revision_signal": revision_signal_detail,
@@ -1992,6 +2154,17 @@ class AutoResearchOrchestrator:
                 "key_controversy": research_directive.key_controversy,
                 "agent_emphasis": research_directive.agent_emphasis,
             }
+
+        # AUDIT-D1/D4: concurrency cap + timeouts are backend-tiered. The
+        # legacy values (cap=2, batch=4800s, watchdog=1800s) were sized for
+        # the subprocess/Claude-CLI path; API backends (deepseek/kimi/sdk)
+        # get cap=4 (batch 1's four agents run in one wave) and much tighter
+        # hang detection (1800s/900s). Resolved once here — the locals feed
+        # `_run_batch` below plus every `_agent_watchdog` in this method.
+        _backend_kind = self._resolved_backend_kind(config)
+        _agent_max_parallel = agent_max_parallel_for(_backend_kind)
+        _agent_batch_timeout_s = agent_batch_timeout_for(_backend_kind)
+        _agent_watchdog_timeout_s = agent_watchdog_timeout_for(_backend_kind)
 
         agents_results = {}
         if config.use_llm:
@@ -2181,7 +2354,22 @@ class AutoResearchOrchestrator:
                               f"({first_obs}/{first_inf} < {FIRST_PASS_MIN_OBS}/{FIRST_PASS_MIN_INF}), "
                               f"retrying once...")
                         try:
+                            # AUDIT-B2 wiring: the retry must reach the real
+                            # LLM, not replay the identical thin response out
+                            # of the disk cache. `bypass_cache` can't be
+                            # threaded through agent.run() (llm_agent_base
+                            # owns the client call), so perturb the prompt:
+                            # macro_context keys are dumped verbatim into the
+                            # MACRO CONTEXT section, so a nonce key changes
+                            # the cache hash → guaranteed fresh inner call.
+                            import uuid as _uuid
+                            if local_inp.macro_context is None:
+                                local_inp.macro_context = {}
+                            local_inp.macro_context["_quality_retry_nonce"] = (
+                                f"quality-gate-retry-{_uuid.uuid4().hex[:8]}"
+                            )
                             retry_out = agent.run(local_inp)
+                            local_inp.macro_context.pop("_quality_retry_nonce", None)
                             retry_obs = len(retry_out.judgment.observations)
                             retry_inf = len(retry_out.judgment.inferences)
                             # TODO-X2: Prefer retry when it rescues a 0-inferences
@@ -2215,6 +2403,9 @@ class AutoResearchOrchestrator:
                             else:
                                 _llog(f"    ↳ retry not richer ({retry_obs}/{retry_inf}), keeping first")
                         except Exception as retry_e:
+                            # Nonce must not leak into later follow-up calls.
+                            if local_inp.macro_context:
+                                local_inp.macro_context.pop("_quality_retry_nonce", None)
                             _llog(f"    ↳ retry failed ({retry_e}), keeping first pass")
                     depth_label = " [DEEP]" if depth == "deep" else ""
                     narr_label = f" +narrative({len(out.narrative_supplement)}ch)" if out.narrative_supplement else ""
@@ -2357,12 +2548,13 @@ class AutoResearchOrchestrator:
                     return
 
                 # Parallel LLM agent execution. BUG-32.
-                # TODO-4 (2026-04-24): cap max_workers via AGENT_MAX_PARALLEL
-                # (default 2) to stay under Anthropic Sonnet's 50 req/min
-                # limit. Earlier batches of 4 parallel calls routinely tripped
-                # 429 (each agent makes 2-3 CLI calls back-to-back, so 4
-                # agents = 8-12 concurrent).
-                _max_workers = min(AGENT_MAX_PARALLEL, len(deep_or_std))
+                # TODO-4 (2026-04-24): cap max_workers to stay under Anthropic
+                # Sonnet's 50 req/min limit on the subprocess path (earlier
+                # batches of 4 parallel CLI calls routinely tripped 429).
+                # AUDIT-D1 (2026-07-09): that cap=2 was applied to every
+                # backend; API backends now use their own tier (default 4)
+                # so batch 1's four agents run in a single wave.
+                _max_workers = min(_agent_max_parallel, len(deep_or_std))
                 with ThreadPoolExecutor(max_workers=_max_workers) as ex:
                     future_to_name = {
                         ex.submit(_run_one_llm_agent, aname, adepth, findings_snapshot): aname
@@ -2378,7 +2570,7 @@ class AutoResearchOrchestrator:
                     # ~40 min risks silent rule-based fallback that degrades the
                     # report without failing.
                     try:
-                        for fut in as_completed(future_to_name, timeout=AGENT_BATCH_TIMEOUT_S):
+                        for fut in as_completed(future_to_name, timeout=_agent_batch_timeout_s):
                             aname = future_to_name[fut]
                             try:
                                 out, q_entries, local_logs = fut.result(timeout=0)
@@ -2420,8 +2612,22 @@ class AutoResearchOrchestrator:
                                         cumulative_findings.append(
                                             self._extract_key_finding(aname, out)
                                         )
-                                except Exception:
-                                    pass
+                                except Exception as done_e:
+                                    # AUDIT bonus (TODO-Y8): this was a silent
+                                    # `pass` — an agent whose thread finished
+                                    # WITH an exception right as the batch
+                                    # timed out vanished from the report with
+                                    # no fallback and no log line. Mirror the
+                                    # normal path: log + rule-based fallback.
+                                    _log(f"  ⚠ {aname} completed with error at batch "
+                                         f"timeout ({done_e}), falling back to rule-based")
+                                    fb_cls = fallback_map.get(aname)
+                                    if fb_cls:
+                                        out = fb_cls().run(base_inp)
+                                        agents_results[aname] = out
+                                        cumulative_findings.append(
+                                            self._extract_key_finding(aname, out)
+                                        )
                             else:
                                 # Hung — fall back to rule-based
                                 _log(f"  ⚠ {aname} still running past batch timeout, falling back")
@@ -2465,7 +2671,7 @@ class AutoResearchOrchestrator:
             )
             try:
                 # 2026-04-23: bumped 360 → 900 for A-share subprocess/Sonnet.
-                with _agent_watchdog(AGENT_WATCHDOG_TIMEOUT_S, "sector_context"):
+                with _agent_watchdog(_agent_watchdog_timeout_s, "sector_context"):
                     sector_out = sector_agent.run(sector_inp)
             except Exception as e:
                 _log(f"  ⚠ sector_context LLM call failed ({e}), falling back to rule-based")
@@ -2481,7 +2687,7 @@ class AutoResearchOrchestrator:
             if _so_obs >= 4 and _so_inf == 0:
                 _log(f"  ⚠ sector_context_agent: {_so_obs} obs / 0 inf — retrying once")
                 try:
-                    with _agent_watchdog(AGENT_WATCHDOG_TIMEOUT_S, "sector_context_retry"):
+                    with _agent_watchdog(_agent_watchdog_timeout_s, "sector_context_retry"):
                         retry_sector = sector_agent.run(sector_inp)
                     r_inf = len(getattr(retry_sector.judgment, "inferences", []) or [])
                     if r_inf > 0:
@@ -2516,7 +2722,6 @@ class AutoResearchOrchestrator:
             sector_out = SectorContextAgent().run(sector_inp)
             agents_results[sector_out.judgment.agent_name] = sector_out
 
-        all_judgments = [out.judgment for out in agents_results.values()]
         # BUG-Y29 (2026-05-06): the renderer iterates `all_judgments` to
         # build agent cards but JudgmentContract has no `narrative_supplement`
         # field — that lives on the wrapping AgentOutput. Pipeline log says
@@ -2525,20 +2730,29 @@ class AutoResearchOrchestrator:
         # ever reaching the HTML. Attach the narrative + fallback flags as
         # runtime attributes so the existing `_g(j, "...", default)` helpers
         # in the renderer pick them up without a signature change.
-        for _out in agents_results.values():
-            try:
-                object.__setattr__(_out.judgment, "narrative_supplement", _out.narrative_supplement)
-                object.__setattr__(_out.judgment, "is_llm_fallback", _out.is_llm_fallback)
-                object.__setattr__(_out.judgment, "llm_fallback_reason", _out.llm_fallback_reason)
-            except Exception:
-                # Pydantic strict-frozen models reject setattr — fall back to
-                # patching __dict__ directly so the renderer still finds them.
+        # AUDIT-C4: extracted into a local helper so the Step 12c iterative
+        # re-run can re-attach attrs onto the fresh judgment objects too.
+        def _attach_judgment_runtime_attrs() -> None:
+            for _out in agents_results.values():
                 try:
-                    _out.judgment.__dict__["narrative_supplement"] = _out.narrative_supplement
-                    _out.judgment.__dict__["is_llm_fallback"] = _out.is_llm_fallback
-                    _out.judgment.__dict__["llm_fallback_reason"] = _out.llm_fallback_reason
+                    object.__setattr__(_out.judgment, "narrative_supplement", _out.narrative_supplement)
+                    object.__setattr__(_out.judgment, "is_llm_fallback", _out.is_llm_fallback)
+                    object.__setattr__(_out.judgment, "llm_fallback_reason", _out.llm_fallback_reason)
                 except Exception:
-                    pass
+                    # Pydantic strict-frozen models reject setattr — fall back to
+                    # patching __dict__ directly so the renderer still finds them.
+                    try:
+                        _out.judgment.__dict__["narrative_supplement"] = _out.narrative_supplement
+                        _out.judgment.__dict__["is_llm_fallback"] = _out.is_llm_fallback
+                        _out.judgment.__dict__["llm_fallback_reason"] = _out.llm_fallback_reason
+                    except Exception:
+                        pass
+
+        all_judgments = [out.judgment for out in agents_results.values()]
+        _attach_judgment_runtime_attrs()
+        # AUDIT-C4: set when Step 12c replaces first-pass judgments so the
+        # decision engine context can note it operates on post-iteration data.
+        _judgments_updated_after_iteration = False
         _log(f"Ran {len(all_judgments)} agents" + (" (LLM)" if config.use_llm else " (rule-based)"))
 
         # ── Step 11: 7 Critics ───────────────────────────────────────
@@ -2648,7 +2862,14 @@ class AutoResearchOrchestrator:
         critic_context = {
             "sector_pack": sector_pack,
             "cycle_phase": config.cycle_phase,
-            "priced_in": {"implied_revenue_growth": implied_growth},
+            # AUDIT-A9: same gate as agent_macro — critics must not treat the
+            # boundary-hit fake value as ground truth either.
+            "priced_in": {
+                "implied_revenue_growth": (
+                    None if meta_facts.get("__implied_growth_unreliable") else implied_growth
+                ),
+                "implied_growth_unreliable": bool(meta_facts.get("__implied_growth_unreliable")),
+            },
             "edge_assessment": edge_assessment_dict,
             "scenarios": scenarios,
             # SBC treatment mode — critics use this to skip double-counting
@@ -2760,7 +2981,7 @@ class AutoResearchOrchestrator:
 
                 # BUG-43: watchdog synthesizer too (LLM call can hang)
                 # 2026-04-23: bumped 480 → 900 for subprocess/Sonnet A-share.
-                with _agent_watchdog(AGENT_WATCHDOG_TIMEOUT_S, "thesis_synthesizer"):
+                with _agent_watchdog(_agent_watchdog_timeout_s, "thesis_synthesizer"):
                     synthesized_thesis = synthesizer.synthesize(
                         entity_id=entity_id,
                         entity_name=entity_name,
@@ -2884,7 +3105,7 @@ class AutoResearchOrchestrator:
                         if narr:
                             narr_supps_v2[aname] = narr
                     try:
-                        with _agent_watchdog(AGENT_WATCHDOG_TIMEOUT_S, "thesis_synthesizer[re-synth]"):
+                        with _agent_watchdog(_agent_watchdog_timeout_s, "thesis_synthesizer[re-synth]"):
                             synthesized_thesis = synthesizer.synthesize(
                                 entity_id=entity_id,
                                 entity_name=entity_name,
@@ -2903,6 +3124,21 @@ class AutoResearchOrchestrator:
                         _log(f"  Hypothesis after re-analysis: {validated_v2}")
                     except Exception as resynth_e:
                         _log(f"  ⚠ Re-synthesis failed ({resynth_e}), keeping first-pass thesis")
+
+                    # AUDIT-C4: the re-run replaced entries in agents_results,
+                    # but `all_judgments` still held the superseded round-1
+                    # judgment objects — the decision engine, HTML agent
+                    # cards, and replay cache all consumed stale first-pass
+                    # analysis while the thesis used round-2 (report
+                    # self-contradiction; premium DEEP narratives dropped).
+                    # Rebuild the list (same agents_results insertion order as
+                    # the first pass) and re-attach the BUG-Y29 narrative /
+                    # fallback runtime attrs onto the fresh judgment objects.
+                    all_judgments = [out.judgment for out in agents_results.values()]
+                    _attach_judgment_runtime_attrs()
+                    _judgments_updated_after_iteration = True
+                    _log(f"  Judgments rebuilt after iterative re-analysis "
+                         f"({len(challenger_list)} agent(s) updated) — decision/HTML/replay now use v2")
 
             except Exception as e:
                 _log(f"  ⚠ Thesis Synthesizer failed ({e}), building director-anchored fallback thesis")
@@ -2925,10 +3161,23 @@ class AutoResearchOrchestrator:
                     _controversy = getattr(_dir, "key_controversy", "") or ""
                     # Pull a representative agent thesis (highest non-zero
                     # score, prefer variant_analyst then risk_analyst).
+                    # AUDIT bonus (2026-07): this loop was dead code —
+                    # `all_judgments` is a *list* (never a dict), so the old
+                    # `.get(_name) if isinstance(..., dict)` always yielded
+                    # None; and it read `.claim` when the Inference schema
+                    # field is `text` (same slip BUG-Y36 fixed in
+                    # replay_from_cache.py). my_variant/counter_thesis were
+                    # always empty on this path. Match by agent_name and read
+                    # `.text`, dict-tolerant for replayed pickles.
                     _variant_text = ""
                     _counter_text = ""
+                    _by_name = {
+                        (getattr(_j, "agent_name", None)
+                         or (_j.get("agent_name") if isinstance(_j, dict) else None)): _j
+                        for _j in (all_judgments or [])
+                    }
                     for _name in ("variant_analyst", "risk_analyst", "valuation_analyst"):
-                        _j = all_judgments.get(_name) if isinstance(all_judgments, dict) else None
+                        _j = _by_name.get(_name)
                         if _j is None:
                             continue
                         _infs = getattr(_j, "inferences", None) or (
@@ -2936,8 +3185,8 @@ class AutoResearchOrchestrator:
                         )
                         if _infs:
                             _first = _infs[0]
-                            _txt = (getattr(_first, "claim", None)
-                                    or (_first.get("claim", "") if isinstance(_first, dict) else "")
+                            _txt = (getattr(_first, "text", None)
+                                    or (_first.get("text", "") if isinstance(_first, dict) else "")
                                     or "")
                             if _txt and not _variant_text:
                                 _variant_text = _txt
@@ -3059,6 +3308,11 @@ class AutoResearchOrchestrator:
                 "sensitivity_rankings": sensitivity_rankings,
                 "sensitivity_table": sensitivity_table,
                 "open_questions": open_questions,
+                # AUDIT-C4: True when Step 12c replaced first-pass judgments
+                # with DEEP re-run results — the engine (and anyone reading
+                # the decision context downstream) operates on post-iteration
+                # judgments, not the refuted round-1 set.
+                "judgments_updated_after_iteration": _judgments_updated_after_iteration,
             },
             synthesized_thesis=synthesized_thesis,
         )
@@ -3154,7 +3408,7 @@ class AutoResearchOrchestrator:
                 editor._llm = editor_client
                 # BUG-43: watchdog editor (LLM call)
                 # 2026-04-23: bumped 360 → 900 for subprocess/Sonnet A-share.
-                with _agent_watchdog(AGENT_WATCHDOG_TIMEOUT_S, "report_editor"):
+                with _agent_watchdog(_agent_watchdog_timeout_s, "report_editor"):
                     edited_report = editor.edit(
                         entity_name=entity_name,
                         synthesized_thesis=synthesized_thesis,
@@ -3684,21 +3938,36 @@ class AutoResearchOrchestrator:
                    or os.environ.get("MOONSHOT_API_KEY"))
             if not key:
                 return "backend=kimi but no KIMI_API_KEY / MOONSHOT_API_KEY in env"
+            # AUDIT-B3: the probe used to hit api.moonshot.cn without a
+            # User-Agent — an endpoint KimiClient never uses (sk-kimi- keys
+            # route to api.kimi.com/coding/v1, others to api.moonshot.ai/v1,
+            # and Kimi Code 401s any request missing the coding-agent UA).
+            # Good keys were rejected at startup with a misleading "rotate
+            # key" hint. Reuse the client's own endpoint derivation so probe
+            # and client can never disagree.
+            from aegis.core.llm.kimi_client import resolve_kimi_endpoint
+            base_url, ua_headers = resolve_kimi_endpoint(key)
             try:
                 req = _ur.Request(
-                    "https://api.moonshot.cn/v1/models",
-                    headers={"Authorization": f"Bearer {key}"},
+                    f"{base_url}/models",
+                    headers={"Authorization": f"Bearer {key}", **ua_headers},
                 )
                 with _ur.urlopen(req, timeout=8) as resp:
                     if resp.status != 200:
-                        return f"Kimi /v1/models returned HTTP {resp.status}"
+                        return f"Kimi {base_url}/models returned HTTP {resp.status}"
             except _uerr.HTTPError as e:
-                if e.code == 401:
-                    return (f"Kimi API key rejected (HTTP 401 Invalid Authentication). "
+                if e.code in (401, 403):
+                    return (f"Kimi API key rejected (HTTP {e.code}) at {base_url}. "
                             f"Key starts with {key[:8]}... — rotate or switch backend.")
                 return f"Kimi probe HTTP {e.code}: {str(e)[:120]}"
             except Exception as e:
-                return f"Kimi probe network error: {type(e).__name__}: {str(e)[:120]}"
+                # AUDIT-B3: network blips (proxy/DNS in the user's CN
+                # environment) must not kill the run — per the docstring,
+                # only definitive failures abort; per-agent retries handle
+                # transient issues. Degrade to a warning on stderr.
+                import sys as _sys
+                print(f"  ⚠ Kimi probe network error (non-fatal): "
+                      f"{type(e).__name__}: {str(e)[:120]}", file=_sys.stderr)
 
         elif backend == "subprocess":
             # claude CLI must be on PATH and callable outside a nested
@@ -3730,6 +3999,30 @@ class AutoResearchOrchestrator:
                         "CLAUDE_CODE_OAUTH_TOKEN is set")
 
         return None
+
+    def _resolved_backend_kind(self, config: Any) -> str:
+        """AUDIT-D1/D4: which backend `_resolve_llm_client` will pick, without
+        instantiating a client. Mirrors that method's "auto" branch exactly.
+
+        Used to select the backend-tiered concurrency cap and timeouts:
+        API backends (deepseek/kimi/sdk) are minutes-per-call, subprocess
+        CLI is tens of minutes — one set of knobs cannot fit both.
+        """
+        import os
+        backend = config.llm_backend
+        if backend != "auto":
+            return backend
+        if bool(config.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY")):
+            return "deepseek"
+        if bool(config.kimi_api_key or os.environ.get("KIMI_API_KEY")
+                or os.environ.get("MOONSHOT_API_KEY")):
+            return "kimi"
+        if bool(os.environ.get("ANTHROPIC_API_KEY")):
+            return "sdk"
+        if (bool(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"))
+                and not bool(os.environ.get("CLAUDE_CODE_ENTRYPOINT"))):
+            return "sdk"
+        return "subprocess"
 
     def _resolve_llm_client(self, config: Any, _log: Any, quiet: bool = False) -> Any:
         """Resolve LLM client based on config. Cached after first call."""
@@ -3972,6 +4265,7 @@ class AutoResearchOrchestrator:
         market_data: dict, sector_pack: dict | None = None,
         consensus_data: dict | None = None,
         driver_tree: Any = None,
+        log: Any = None,
     ) -> Any:
         """Build DCFInput from config, facts, computed metrics, and sector context.
 
@@ -4018,38 +4312,40 @@ class AutoResearchOrchestrator:
             # (≈ 41% 10-year CAGR — still extremely aggressive but plausible
             # for a real hyper-growth name) by switching to terminal_growth
             # once cumulative scaling crosses the threshold.
+            # AUDIT-A4: cap logic extracted to module-level
+            # `cap_cumulative_growth_path` so the bear/bull driver_deltas
+            # path applies the identical bound.
             tg = config.terminal_growth_rate
-            MAX_TERMINAL_RATIO = 30.0
-            cum_scale = 1.0
-            capped_year = -1
-            for yr_idx, g in enumerate(growth_path):
-                cum_scale *= (1 + g)
-                if cum_scale > MAX_TERMINAL_RATIO:
-                    capped_year = yr_idx
-                    break
+            pre_cap_path = list(growth_path)
+            growth_path, capped_year = cap_cumulative_growth_path(growth_path, tg)
             if capped_year >= 0:
-                # Replace later years with terminal_growth + small premium.
                 old_y10 = revenue * 1.0
-                for g in growth_path:
+                for g in pre_cap_path:
                     old_y10 *= (1 + g)
-                for yr_idx in range(capped_year, len(growth_path)):
-                    growth_path[yr_idx] = round(tg + 0.005, 4)
                 new_y10 = revenue * 1.0
                 for g in growth_path:
                     new_y10 *= (1 + g)
+                # AUDIT-A10: `_build_dcf_input` runs twice for the non-segment
+                # path (dcf_input + dcf_input_flat share the same `facts`
+                # dict) — only warn the first time the cap trips.
+                already_warned = bool(facts.get("__growth_path_capped"))
                 facts["__growth_path_capped"] = True
                 facts["__growth_path_capped_year"] = capped_year + 1
-                # `_log` lives in `run()` via closure — `_build_dcf_input` is
-                # a separate method, so use stderr directly. The orchestrator
-                # tail will mirror this through BUG-A16 stdout-mirror logic.
-                import sys as _sys
-                print(
-                    f"  ⚠ Driver-tree growth path capped at Y{capped_year + 1} "
-                    f"(cumulative {MAX_TERMINAL_RATIO:.0f}× revenue threshold). "
-                    f"Pre-cap Y10 revenue would have been "
-                    f"{old_y10/revenue:.0f}× base; post-cap {new_y10/revenue:.0f}×.",
-                    file=_sys.stderr,
-                )
+                if not already_warned:
+                    msg = (
+                        f"  ⚠ Driver-tree growth path capped at Y{capped_year + 1} "
+                        f"(cumulative {MAX_TERMINAL_RATIO:.0f}× revenue threshold). "
+                        f"Pre-cap Y10 revenue would have been "
+                        f"{old_y10/revenue:.0f}× base; post-cap {new_y10/revenue:.0f}×."
+                    )
+                    if log is not None:
+                        # AUDIT-A10: route through pipeline_log when the
+                        # caller passes `_log` (stderr print was invisible to
+                        # the pipeline log / replay).
+                        log(msg)
+                    else:
+                        import sys as _sys
+                        print(msg, file=_sys.stderr)
         if growth_path is None:
             tg = config.terminal_growth_rate
             cd = consensus_data or {}

@@ -122,6 +122,9 @@ _BALANCE_MAP = {
     "TOTAL_ASSETS": "资产总计",
     "SHORT_LOAN": "短期借款",
     "ACCOUNTS_PAYABLE": "应付账款",
+    # AUDIT-A6: current portion of long-term borrowings/bonds — without this
+    # the total_debt fallback misses reclassified debt (万科A 2024: ¥146B).
+    "NONCURRENT_LIAB_1YEAR": "一年内到期的非流动负债",
     "TOTAL_CURRENT_LIAB": "流动负债合计",
     "LONG_LOAN": "长期借款",
     "BOND_PAYABLE": "应付债券",
@@ -207,6 +210,52 @@ class AkShareConnector:
         if clean.startswith(("0", "3")):
             return f"SZ{clean}"
         return clean
+
+    @staticmethod
+    def _fetch_industry_f10(stock_code: str) -> dict[str, str] | None:
+        """Industry lookup via the eastmoney datacenter F10 API.
+
+        push2.eastmoney.com (stock_individual_info_em) is flaky behind the
+        CN proxy bypass, but datacenter.eastmoney.com answers reliably
+        (verified live 2026-07, ~0.1s). EM2016 is eastmoney's 3-level
+        industry string ("基础化工-化学制品-其他化学制品") — same taxonomy
+        family as push2's 行业 field, so the orchestrator's substring
+        keyword matching keeps working unchanged. Falls back to the CSRC
+        classification when EM2016 is absent. Returns None on any failure.
+        """
+        clean = stock_code.replace(".SZ", "").replace(".SS", "").strip()
+        secucode = f"{clean}.{'SH' if clean.startswith('6') else 'SZ'}"
+        params = {
+            "reportName": "RPT_F10_BASIC_ORGINFO",
+            "columns": "SECUCODE,SECURITY_NAME_ABBR,EM2016,INDUSTRYCSRC1",
+            "filter": f'(SECUCODE="{secucode}")',
+            "pageSize": "1",
+        }
+        try:
+            import requests
+            with _no_proxy():
+                resp = requests.get(
+                    "https://datacenter.eastmoney.com/securities/api/data/v1/get",
+                    params=params, timeout=8,
+                )
+            rows = ((resp.json() or {}).get("result") or {}).get("data") or []
+            if not rows:
+                return None
+            row = rows[0]
+            industry = str(row.get("EM2016") or "").strip()
+            csrc = str(row.get("INDUSTRYCSRC1") or "").strip()
+            if not industry:
+                industry = csrc
+            if not industry:
+                return None
+            return {
+                "industry": industry,
+                "industry_csrc": csrc,
+                "name": str(row.get("SECURITY_NAME_ABBR") or "").strip(),
+            }
+        except Exception as e:
+            logger.debug(f"datacenter F10 industry lookup failed: {e}")
+            return None
 
     def fetch(self, stock_code: str) -> AkShareFinancials | None:
         """Fetch full financials + real-time quote + company info.
@@ -412,26 +461,48 @@ class AkShareConnector:
             except Exception as e:
                 logger.debug(f"akshare bid_ask fallback also failed: {e}")
 
-            # Method 3: sina-backed stock_zh_a_spot (no _em suffix = sina host,
-            # which is reachable even when push2.eastmoney.com is down)
+            # Method 3: tencent/sina level-1 quote helper (hosts reachable
+            # even when push2.eastmoney.com is down). Replaces the old
+            # stock_zh_a_spot() full-market crawl, which was dead code
+            # (AUDIT 2026-07): sina's 代码 column carries "sz002669"-style
+            # prefixes so the bare-code match never hit, the frame has no
+            # 总股本/总市值 columns to read, and the ~80-page crawl risks a
+            # sina IP ban on repeat runs.
             if not got_price:
                 try:
-                    spot = ak.stock_zh_a_spot()
-                    if spot is not None and not spot.empty:
-                        row = spot[spot["代码"] == stock_code]
-                        if not row.empty:
-                            price = _safe_float(row.iloc[0].get("最新价"))
-                            shares = _safe_float(row.iloc[0].get("总股本"))
-                            mktcap = _safe_float(row.iloc[0].get("总市值"))
-                            if price:
-                                market_data["current_price"] = price
-                                logger.info(f"akshare: got price via sina spot (¥{price:.2f})")
-                            if shares and not market_data.get("total_shares"):
-                                market_data["total_shares"] = shares
-                            if mktcap and not market_data.get("market_cap"):
-                                market_data["market_cap"] = mktcap
+                    from .tencent_sina_quote import fetch_cn_quote
+                    q3 = fetch_cn_quote(stock_code)
+                    if q3 is not None and q3.current_price:
+                        market_data["current_price"] = q3.current_price
+                        logger.info(f"akshare: got price via tencent/sina "
+                                    f"quote (¥{q3.current_price:.2f})")
+                        if q3.shares_outstanding and not market_data.get("total_shares"):
+                            market_data["total_shares"] = q3.shares_outstanding
+                        if q3.market_cap and not market_data.get("market_cap"):
+                            market_data["market_cap"] = q3.market_cap
+                        if q3.name and not company_name:
+                            company_name = q3.name
+                            company_info.setdefault("name", q3.name)
                 except Exception as e:
-                    logger.debug(f"akshare sina spot fallback also failed: {e}")
+                    logger.debug(f"tencent/sina quote fallback also failed: {e}")
+
+        # Method 1.5 (AUDIT 2026-07, BUG-Y18 root-cause fix): when push2 is
+        # unreachable — or answered without a 行业 field — fetch the industry
+        # from the eastmoney datacenter F10 API, a different host that stays
+        # reachable behind the CN proxy bypass. Without this, any A-share
+        # missing from the orchestrator's name-fragment whitelist collapses
+        # to the General sector pack (Cambricon v2: 25× DCF miscalibration).
+        if not company_info.get("industry"):
+            f10 = self._fetch_industry_f10(stock_code)
+            if f10:
+                company_info["industry"] = f10["industry"]
+                if f10.get("industry_csrc"):
+                    company_info.setdefault("industry_csrc", f10["industry_csrc"])
+                if not company_name and f10.get("name"):
+                    company_name = f10["name"]
+                    company_info.setdefault("name", company_name)
+                logger.info(f"akshare: industry via datacenter F10 fallback: "
+                            f"{company_info['industry']}")
 
         # Derived: shares_outstanding for DCF (use total shares, not float)
         if market_data.get("total_shares"):

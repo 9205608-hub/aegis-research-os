@@ -199,6 +199,24 @@ _EQ_THREE_PATTERN = re.compile(
     rf"({_OPERAND})\s*[=≈]{_FILLER}({_OPERAND})\s*([-+−–]){_FILLER}({_OPERAND})",
 )
 
+# AUDIT (2026-07, numeric critic:147-171): Chinese implicit equations.
+# "净负债47亿元，即总债务75亿减现金15亿" carries the exact same broken
+# arithmetic as the literal-`=` form but contains neither '=' nor '−', so
+# it bypassed _EQ_THREE_PATTERN entirely. Accept Chinese copulas
+# (即/等于/为/是/合计...) as the equality marker — but ONLY paired with a
+# Chinese word operator (减/加/扣除...): "为营收50亿-60亿" is a RANGE, not
+# an equation, so hyphen-style operators stay exclusive to '='/'≈'.
+_CN_EQ_MARK = r"(?:即为|即|等于|也就是|亦即|合计为|合计|为|是)"
+_CN_OP_WORD = r"(减去|扣除|扣减|减|加上|加)"
+# Tolerates 元/人民币/，between the LHS operand and the copula. Excludes
+# digits and operator chars so it can't swallow a neighbouring operand.
+_CN_EQ_GAP = r"[^\d=≈+\-−–%]{0,6}?"
+_EQ_THREE_CN_PATTERN = re.compile(
+    rf"({_OPERAND}){_CN_EQ_GAP}{_CN_EQ_MARK}{_FILLER}"
+    rf"({_OPERAND}){_CN_EQ_GAP}{_CN_OP_WORD}{_FILLER}({_OPERAND})",
+)
+_CN_MINUS_WORDS = ("减去", "扣除", "扣减", "减")
+
 # Pattern B: X% = A / B (ratio percent — A and B share unit, LHS is %)
 # We use a tighter filler around `/` because explicit ratio statements
 # usually format the operands tightly (e.g. "12% = $0.6B / $5B").
@@ -226,6 +244,9 @@ def _find_equations(text: str) -> list[tuple]:
     out: list[tuple] = []
     for m in _EQ_THREE_PATTERN.finditer(text):
         out.append(("additive", m.group(1), m.group(2), m.group(3), m.group(4)))
+    for m in _EQ_THREE_CN_PATTERN.finditer(text):
+        op = "-" if m.group(3) in _CN_MINUS_WORDS else "+"
+        out.append(("additive", m.group(1), m.group(2), op, m.group(4)))
     for m in _RATIO_PCT_PATTERN.finditer(text):
         out.append(("ratio_pct", m.group(1), m.group(2), m.group(3)))
     for m in _UNITLESS_RATIO_PATTERN.finditer(text):

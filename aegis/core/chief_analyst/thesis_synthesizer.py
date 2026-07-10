@@ -124,10 +124,58 @@ _UPSIDE_KEYWORDS = (
 _GROWTH_CONTEXT_KEYWORDS = (
     "增长", "增速", "同比", "环比", "yoy", "qoq", "growth",
     "营收", "revenue", "净利润", "净利", "earnings",
-    "毛利率", "净利率", "净息差", "yield", "margin",
+    # AUDIT (2026-07): generic "利润率" + "ebitda" added — "调整后EBITDA
+    # 利润率18%" is a margin metric, not a return claim, but neither
+    # 毛利率 nor 净利率 substring-matched it.
+    "毛利率", "净利率", "利润率", "ebitda", "净息差", "yield", "margin",
     "市占率", "market share",
     "cagr",
 )
+
+
+# AUDIT (2026-07, thesis_synthesizer:106/:112): Y48 introduced substring
+# collisions across the two direction sets — "回归"(down) ⊂ "估值回归"(up),
+# and "调整"(down) fires on the adjusted-metric prefix "调整后". The old
+# `any(k in ctx)` checks let downside win whenever both sets hit, so an
+# upside re-rating claim ("盈利驱动估值回归，隐含35%空间") got signed
+# NEGATIVE and tripped a false "% RETURN CONSISTENCY OVERRIDE" warning.
+# Fix: longest-match-first — scan both sets together ordered by keyword
+# length; the longest hit wins. Equal-length hits in BOTH directions are
+# undecidable → direction 0, and the caller skips that % (宁漏勿假).
+_DIRECTION_KEYWORDS: list[tuple[str, int]] = sorted(
+    [(_k, -1) for _k in _DOWNSIDE_KEYWORDS]
+    + [(_k, +1) for _k in _UPSIDE_KEYWORDS],
+    key=lambda kv: len(kv[0]),
+    reverse=True,
+)
+
+
+def _kw_hits(window: str, kw: str) -> bool:
+    if kw == "调整":
+        # "调整后EBITDA" / "调整后净利润" are adjusted-metric prefixes,
+        # not downside cues — only count "调整" NOT followed by "后".
+        return bool(re.search(r"调整(?!后)", window))
+    return kw in window
+
+
+def _direction_of(window: str) -> int:
+    """Longest-match direction of a context window.
+
+    Returns -1 (downside), +1 (upside), or 0 (no cue / undecidable tie).
+    """
+    best_len = 0
+    best_dir = 0
+    tie = False
+    for kw, d in _DIRECTION_KEYWORDS:
+        if len(kw) < best_len:
+            break  # list is length-sorted desc — nothing longer remains
+        if not _kw_hits(window, kw):
+            continue
+        if len(kw) > best_len:
+            best_len, best_dir, tie = len(kw), d, False
+        elif d != best_dir:
+            tie = True  # equal-length hit in the opposite direction
+    return 0 if tie else best_dir
 
 
 def _scrub_fair_value_claims(
@@ -318,8 +366,14 @@ def _scrub_fair_value_claims(
                     _ctx_growth = text[max(0, m.start() - 40):m.end() + 40].lower()
                     if any(g in _ctx_growth for g in _GROWTH_CONTEXT_KEYWORDS):
                         continue
-                    is_down = any(k in ctx_before or k in ctx_after for k in _DOWNSIDE_KEYWORDS)
-                    is_up = any(k in ctx_before or k in ctx_after for k in _UPSIDE_KEYWORDS)
+                    # AUDIT (2026-07): longest-match direction resolution,
+                    # leading context preferred (either order is common:
+                    # "下行 81%", "implied 45% downside"). A tie (both
+                    # directions at equal keyword length) yields 0 → the
+                    # sign checks below skip this % instead of guessing.
+                    _dir = _direction_of(ctx_before) or _direction_of(ctx_after)
+                    is_down = _dir < 0
+                    is_up = _dir > 0
                     # Range form (group 1 + group 2)
                     if m.group(1) and m.group(2):
                         try:
