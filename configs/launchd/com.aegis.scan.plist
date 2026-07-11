@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.aegis.scan — Aegis 监控扫描 LaunchAgent（用户级，非 root）。
+
+  用途：每日 A 股盘后（16:30）自动跑一轮 scan_watchlist.py（带 postmortems 复盘），
+  对票池做事件/触发扫描 + 到期 90 天回看复盘，产物落 .cache/ 下的 JSON/Markdown。
+
+  为什么用 launchd 而不是 cron：
+    - cron 在 Mac 睡眠期间错过的时点不会补跑；launchd 的
+      StartCalendarInterval 具备「唤醒后补跑」语义——若 16:30 时机器在睡眠，
+      合上盖子错过的那次会在下次唤醒后尽快补执行一次。
+    - 再叠加 RunAtLoad=true：开机 / 重新 load 本 agent 时也会先跑一次，
+      作为「唤醒后首扫更新」的兜底。
+
+  SLA 口径：本 agent 承诺的是「机器唤醒后会尽快首扫一次并把水位线追平」，
+    **不承诺 24 小时不间断盯盘**。长时间关机/断网期间的事件靠唤醒后首扫补齐。
+
+  __PROJECT_ROOT__ 由 scripts/install_launchd.sh 在安装时 sed 替换为真实项目根。
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aegis.scan</string>
+
+    <!-- 审查发现 #8：弃用 `bash -c "cd … && python …"` 拼串（路径含空格/特殊
+         字符会被词拆分导致作业静默不执行）。改为直接给解释器 + 脚本绝对路径两个
+         数组元素（launchd 逐元素原样传参，无 shell 词拆分）；工作目录用
+         WorkingDirectory 键设置——扫描器写的是相对路径 .cache/…，cwd 必须是项目根。-->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/spensir/miniforge3/bin/python</string>
+        <string>__PROJECT_ROOT__/scripts/scan_watchlist.py</string>
+        <string>--postmortems</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_ROOT__</string>
+
+    <!-- 每日 16:30（A 股盘后）触发一次；睡眠错过则唤醒后补跑。 -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>16</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <!-- load / 开机时先跑一次，作为唤醒后首扫兜底。 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__PROJECT_ROOT__/logs/scan.out</string>
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_ROOT__/logs/scan.err</string>
+</dict>
+</plist>

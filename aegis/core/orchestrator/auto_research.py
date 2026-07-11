@@ -790,6 +790,12 @@ class ResearchConfig:
     # （零 LLM 调用），否则正常重跑。
     update_mode: bool = False
 
+    # Aegis 2.0 Phase 3 (事件循环): 本次复研的触发原因（中文），由扫描器
+    # (aegis.core.monitor.scanner) 在事件/监控点触发 --update 时透传。落进
+    # thesis 版本链的 version_change_trigger 字段，供 delta 简报说明「哪个
+    # 监控点触发的」。人工/定期全量运行留空。
+    update_trigger: str = ""
+
 
 @dataclass
 class ResearchResult:
@@ -854,6 +860,31 @@ class AutoResearchOrchestrator:
         self._earnings_call_analyzer_factory = earnings_call_analyzer_factory
         self._cached_llm_client = None
         self._cached_fast_llm_client = None
+
+    def last_run_cost_usd(self) -> float:
+        """本实例累计 LLM 成本（美元），只读。
+
+        Aegis 2.0 Phase 3：扫描器为每票 new 一个 orchestrator 实例跑 --update，
+        因此这个"实例累计"就等于"该票本次复研成本"（用于每日预算熔断）。逻辑与
+        Step 17 的成本汇总同源——walk 缓存的主/快 LLM client 的 cost_tracker
+        求和；无 client / 无 tracker 时返回 0.0。永不 raise。
+        """
+        total = 0.0
+        clients: list[Any] = []
+        if getattr(self, "_cached_llm_client", None) is not None:
+            clients.append(self._cached_llm_client)
+        fast = getattr(self, "_cached_fast_llm_client", None)
+        if fast is not None and fast is not self._cached_llm_client:
+            clients.append(fast)
+        for c in clients:
+            ct = getattr(c, "cost_tracker", None)
+            if ct is None:
+                continue
+            try:
+                total += float(ct.total_cost_usd)
+            except Exception:  # noqa: BLE001 — 成本读取失败不阻断
+                continue
+        return total
 
     def _make_market_data_connector(self) -> Any:
         if self._market_data_connector_factory is not None:
@@ -4423,6 +4454,13 @@ class AutoResearchOrchestrator:
             )
             _thesis_rec = save_thesis_version(
                 entity_id, _contract, run_id, dir=_thesis_dir,
+                # Phase 3: 激活沉睡字段——较上一版的中文变更摘要 + 触发原因
+                compute_change_summary=True,
+                version_change_trigger=(
+                    getattr(config, "update_trigger", "") or None
+                ),
+                # Phase 3: 记论点建立时现价，供 90 天回看复盘算真实收益
+                anchor_price=(market_data.get("current_price") or None),
             )
             thesis_version_num = int(_thesis_rec["version"])
             _log(f"Thesis 持久化: 观点版本 v{thesis_version_num} → "
