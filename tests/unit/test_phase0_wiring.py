@@ -215,9 +215,15 @@ class TestBuildMarginScenarios:
         assert [s[0] for s in scens] == ["Hold current margin", "Sector median", "Midpoint"]
         assert scens[1][1] == pytest.approx(0.15)
 
-    def test_default_8pct_when_pack_lacks_margin(self):
+    def test_general_pack_no_fake_median(self):
+        # 假锚防护（Grok §3.4 + 校准闭环实证）：General/无真实行业利润率数据时
+        # 只出「维持现状」一档，不把缺省 8% 当「行业中位」假锚展示。
         scens = build_margin_scenarios(0.029, {"sector_name": "Generic"}, zh=True)
-        assert scens[1][1] == pytest.approx(DEFAULT_SECTOR_TYPICAL_MARGIN)
+        assert len(scens) == 1
+        assert scens[0] == ("维持现状", pytest.approx(0.029))
+        # None pack 同理只出一档。
+        assert build_margin_scenarios(0.029, None, zh=True) == [
+            ("维持现状", pytest.approx(0.029))]
 
     def test_dedupe_when_current_equals_sector(self):
         pack = {"valuation_framework": {"typical_operating_margin_range": [0.06, 0.10]}}

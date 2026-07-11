@@ -139,9 +139,12 @@ CONFUSION_MATRIX = [
                                terminal_value_gate_triggered=True),
      "mixed", ("turnaround", "story")),
     # 扩张期消费：溢价 70% 但 FCF 转负 → 增长/反转之间的模糊带
+    # 权重三向铺开（growth 0.33 / turnaround 0.28 / story 0.25 / steady 0.14）——
+    # 最高都 < 0.40，如实报 unclassified（旧行为"mixed(growth,turnaround)"忽略了
+    # 几乎同高的 story，是伪自信；Grok §5 + unclassified 闸门修正）。
     ("expansion_mixed", _features(dcf_gap=0.70, fcf_positive=False,
                                   accruals_ratio=0.08, cfo_to_ni=0.90),
-     "mixed", None),
+     "unclassified", None),
 ]
 
 
@@ -227,9 +230,38 @@ class TestHysteresisBand:
         assert "mixed" in labels
 
     def test_jitter_inside_band_stays_mixed(self):
-        """迟滞带内 ±0.03 的特征抖动不改变 mixed 判定。"""
+        """迟滞带内 ±0.03 的特征抖动不硬翻转体制标签（mixed 或 unclassified 均属
+        "未硬分类"稳定态——gap≈0.38 处最高权重跌破 0.40 时如实报 unclassified，
+        仍非 steady↔growth 直接翻转，迟滞语义不破）。"""
         for gap in (0.32, 0.35, 0.38):
-            assert self._at_gap(gap).dominant == "mixed", f"gap={gap}"
+            assert self._at_gap(gap).dominant in ("mixed", "unclassified"), f"gap={gap}"
+
+
+class TestReviewFixes:
+    """Grok 评审 2026-07-11 + 校准闭环实证驱动的两处修复回归。"""
+
+    def test_undervalued_cashcow_stays_steady(self):
+        # abs(gap)→pos_gap 修复：被**低估**的干净现金牛（现价远低于 DCF，负 gap）
+        # 不再被当"非稳态"扣分（折价侧按稳态框架解读，与 L179 口径一致）。
+        # 茅台实测：dcf_gap≈-0.68、CFO/NI 健康、低杠杆 → steady 主导。
+        r = assess_pricing_regime(
+            dcf_gap=-0.68, fcf_positive=True, accruals_ratio=0.02,
+            cfo_to_ni=0.9, growth_regime_break=False,
+            net_debt_to_ebitda=None, terminal_value_gate_triggered=False)
+        assert r.dominant == "steady"
+        assert r.weights["steady"] > 0.45
+
+    def test_diffuse_weights_report_unclassified(self):
+        # unclassified 闸门：权重铺平（最高 < 0.40）时如实报"分不出"，只留通用
+        # 质量 focus，不合并两套体制清单伪装"两套都盯"。
+        r = assess_pricing_regime(
+            dcf_gap=0.70, fcf_positive=False, accruals_ratio=0.08,
+            cfo_to_ni=0.90, growth_regime_break=False,
+            net_debt_to_ebitda=None, terminal_value_gate_triggered=False)
+        assert r.dominant == "unclassified"
+        assert max(r.weights.values()) < 0.40
+        # 通用 focus，不是体制专属
+        assert any("盈利质量" in f for f in r.verification_focus)
 
 
 class TestFeatureHandling:

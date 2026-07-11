@@ -33,13 +33,24 @@ from dataclasses import dataclass, field
 
 REGIMES = ("steady", "growth", "turnaround", "story")
 
-# softmax 温度：>1 压平分布。校准依据：T=2 时四个手工标注原型
-# （茅台=steady / 成长消费=growth / 康达=turnaround·story mixed /
-# 寒武纪=story）在混淆矩阵测试里全部落对，且康达型恰好落进迟滞带。
+# softmax 温度：>1 压平分布。T=2 时四个**手工标注原型**（茅台=steady /
+# 成长消费=growth / 康达=turnaround·story mixed / 寒武纪=story）在混淆矩阵
+# 测试里全部落对。
+# ⚠ **这是 prototype self-fit，不是 out-of-sample 验证**（Grok 评审
+#   2026-07-11 §3.2 + 真实校准实证）：2026-07-11 用真实当期数据全量跑三票，
+#   茅台跑出 mixed(steady 仅 0.30)、寒武纪跑出 dominant=turnaround——**手工
+#   标签 2/3 未复现**。故混淆矩阵测试**只证明参数能拟合原型，不证明外推可靠**，
+#   不得当作"分类器已校准"的证据。abs(gap) 低估误伤已修（见 assess 函数 steady
+#   打分）；hold-out 重标定 + unclassified 闸门待落地。
 _TEMPERATURE = 2.0
 
 # 迟滞带宽度：最高/次高权重差小于该值时如实报 mixed。
 _MIXED_BAND = 0.15
+
+# unclassified 闸门：最高权重低于该值 = 无任何体制可信主导，如实报"分不出"
+# （Grok 评审 2026-07-11 §5 + 校准实证：softmax T=2 下真实票 top 常 ~0.45–0.50，
+# 低于 0.40 = 分布过平、分类器无判断力）。
+_UNCLASSIFIED_MIN = 0.40
 
 _REGIME_ZH = {
     "steady": "稳态现金流",
@@ -62,6 +73,16 @@ _NARRATIVE_EN = {
 }
 _NARRATIVE_MIXED_ZH = "市场定价框架处于「{a}」与「{b}」之间的混合状态，单一框架不足以解释现价，需同时跟踪两套验证点。"
 _NARRATIVE_MIXED_EN = "The pricing regime is mixed between '{a}' and '{b}'; no single frame fully explains the current price, so both verification tracks apply."
+# unclassified：最高权重都撑不起阈值 = 分类器对该票无可信判断（Grok §2/§5 +
+# 校准实证）。**如实报"分不出"**，而不是 mixed（mixed 合并两套 focus="两套都盯"
+# 反而更糟），只留通用质量框架，不强加体制专属验证点。
+_NARRATIVE_UNCLASSIFIED_ZH = "各定价体制权重分散（最高 {w:.0%}，未达可信归类阈值），无法可靠归入单一体制——不强加体制专属验证点，仅按通用盈利质量框架跟踪，体制判断待更多信息或人工研判。"
+_NARRATIVE_UNCLASSIFIED_EN = "Regime weights are diffuse (top only {w:.0%}, below the confidence threshold); this name cannot be reliably assigned to a single pricing regime — no regime-specific verification is imposed, only a generic earnings-quality track applies pending more information or human judgment."
+_VERIFICATION_FOCUS_GENERIC = [
+    "盈利质量：CFO/归母净利比、应计项目占比、扣非/归母（是否账面利润未获现金支撑）",
+    "资产负债率趋势与再融资安排（增发/债券/质押）",
+    "营收 / 应收 / 存货增速是否相互印证（营运资本是否被增长吞噬）",
+]
 _REGIME_EN = {
     "steady": "steady-state cash flow",
     "growth": "growth premium",
@@ -207,8 +228,12 @@ def assess_pricing_regime(
 
     # steady：已实现现金流解释得了现价。
     scores["steady"] = (
-        # 价差收敛是稳态定价的核心证据：|gap|<10% 满分，>50% 归零
-        2.2 * (1.0 - _ramp(abs(gap), 0.10, 0.50))
+        # 价差收敛是稳态定价的核心证据：**仅溢价侧**（pos_gap）扣分——
+        # 现价高于 DCF 越多越不像稳态；**折价侧不扣分**（与 L179 口径一致：
+        # "折价侧按稳态/质量框架解读"）。Grok 评审 2026-07-11 §2 + 校准实证
+        # 修复：原用 abs(gap) 会把"被低估的现金牛"（茅台：现价 < 悲观 DCF）
+        # 误判为非稳态——低估与泡沫同罚，与设计意图自相矛盾。
+        2.2 * (1.0 - _ramp(pos_gap, 0.10, 0.50))
         # 稳态资产必须自我造血
         + (0.8 if fcf_positive else -0.8)
         # 盈利质量干净 → 报表现金流可信，DCF 锚有效
@@ -270,18 +295,26 @@ def assess_pricing_regime(
 
     ranked = sorted(REGIMES, key=lambda k: weights[k], reverse=True)
     top, second = ranked[0], ranked[1]
-    # 迟滞带：差距不足时如实报 mixed，防止边界抖动来回翻转体制标签
-    dominant = top if weights[top] - weights[second] >= _MIXED_BAND else "mixed"
-
-    if dominant == "mixed":
+    if weights[top] < _UNCLASSIFIED_MIN:
+        # 无任何体制可信主导 → 如实报 unclassified（不 mixed：mixed 会合并两套
+        # verification_focus="两套都盯"，对分不出的票是伪自信）。只留通用质量框架。
+        dominant = "unclassified"
+        narrative_zh = _NARRATIVE_UNCLASSIFIED_ZH.format(w=weights[top])
+        narrative_en = _NARRATIVE_UNCLASSIFIED_EN.format(w=weights[top])
+        focus = list(_VERIFICATION_FOCUS_GENERIC)
+    elif weights[top] - weights[second] >= _MIXED_BAND:
+        # 有可信主导且领先足够
+        dominant = top
+        narrative_zh = _NARRATIVE_ZH[dominant]
+        narrative_en = _NARRATIVE_EN[dominant]
+        focus = list(_VERIFICATION_FOCUS[dominant])
+    else:
+        # 迟滞带：领先不足时如实报 mixed，防止边界抖动来回翻转体制标签
+        dominant = "mixed"
         narrative_zh = _NARRATIVE_MIXED_ZH.format(a=_REGIME_ZH[top], b=_REGIME_ZH[second])
         narrative_en = _NARRATIVE_MIXED_EN.format(a=_REGIME_EN[top], b=_REGIME_EN[second])
         focus = list(_VERIFICATION_FOCUS[top])
         focus += [f for f in _VERIFICATION_FOCUS[second] if f not in focus]
-    else:
-        narrative_zh = _NARRATIVE_ZH[dominant]
-        narrative_en = _NARRATIVE_EN[dominant]
-        focus = list(_VERIFICATION_FOCUS[dominant])
 
     features: dict[str, object] = {
         # 原始输入（审计：分类决策可追溯）

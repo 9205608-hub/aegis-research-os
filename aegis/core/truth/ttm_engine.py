@@ -101,6 +101,12 @@ def _latest_per_period(store: Any, entity_id: str, concept: str) -> dict[str, An
     同 period 多版本时：审计值优先（正式报告自然取代快报），其余按
     (as_of, fact_version, id) 取最新（跨重述窗口永远最新版本）。
     store 为 None / 查询失败 → 空 dict（调用方降级输出 None）。
+
+    .. note:: **知识时间口径**（Grok 评审 2026-07-11 §3.3 沉淀）：这里
+       ``get_facts`` 不传 ``as_of`` = **全知视角**（取最新版本），**不是**
+       point-in-time / 回测级查询。PIT 库的 ``as_of`` 摄取时间过滤能力已具备
+       但生产消费端尚未注入——因此 TTM 快照对"当下研究"正确，但**不构成
+       "回测无未来函数"的保证**（红线 3 后半句待落地）。
     """
     if store is None:
         return {}
