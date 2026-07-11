@@ -1,0 +1,50 @@
+# Aegis 2.0 Phase 3 事件循环 —— 监控票池配置
+#
+# 事件循环每轮扫描时读取本文件，决定「监控哪些票、每票开哪些监控器」。
+# 加载器：aegis/core/monitor/watchlist.py::load_watchlist
+#
+# 容错说明：本文件缺失 / 写坏时，系统会回退到内置默认票池（不会崩）；
+# 单条目缺 ticker 会被跳过，monitors 缺开关取型号默认值。
+
+# 配置版本号（结构升级时递增）。
+version: 1
+
+# 每日 LLM 花费预算上限（美元）。事件循环用它做每日预算台账，超支即停跑
+# 当日的 LLM 增量简报，只保留纯规则型监控。
+daily_llm_budget_usd: 2.0
+
+# 公告 / 业绩预告回溯窗口（天）。拉取 eastmoney 事件时的 days 参数默认值。
+announcement_lookback_days: 90
+
+# 监控标的列表。每票字段：
+#   ticker  —— A 股 6 位代码（必填，缺失则该条目被跳过）
+#   name    —— 中文简称（可选，仅用于简报展示）
+#   enabled —— 是否纳入本轮扫描（默认 true）
+#   monitors —— 监控器开关：
+#     announcements    公告关键词监控（并购 / 减值 / 订单），默认 true
+#     forecasts        业绩预告 vs 一致预期监控，默认 true
+#     price_deviation  股价偏离阈值监控，需实时行情，默认 false
+tickers:
+  - ticker: "002669"
+    name: "康达新材"
+    enabled: true
+    monitors:
+      announcements: true
+      forecasts: true
+      price_deviation: false
+
+  - ticker: "600519"
+    name: "贵州茅台"
+    enabled: true
+    monitors:
+      announcements: true
+      forecasts: true
+      price_deviation: false
+
+  - ticker: "301358"
+    name: "湖南裕能"
+    enabled: true
+    monitors:
+      announcements: true
+      forecasts: true
+      price_deviation: false

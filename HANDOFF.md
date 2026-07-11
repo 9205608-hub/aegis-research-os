@@ -1,10 +1,70 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-10 第六批 (**Aegis 2.0 Phase 2 落地**：观点持久化 + --update 增量模式，分支 claude/phase2-persistence 待验收合并；P0=PR #11、P1=PR #12 已合并)
+> 最新更新: 2026-07-11 (**Aegis 2.0 Phase 3 落地**：事件驱动循环——watchlist 扫描器 + 水位线幂等 + delta 简报 + launchd 调度 + 90 天回看，**待用户验收**，分支 claude/phase3-events；1559 测试绿 + 对抗性审查 8 bug 全修。P0/P1/P2=PR #11/#12/#13 已合并)
 
-## 🔄 2026-07-10 Phase 2 · 观点持久化 + 增量运行（DESIGN_2.0 第三期，待用户验收）
+## 🔎 2026-07-11 Grok（grok-4.5）前三期评审 + Claude triage
 
-**分支 `claude/phase2-persistence`（已 push 未合并）。测试 1276 → 1365 passed / 7 skipped。**
+用户要 Grok 对前三期（Phase 0/1/2）讲看法。经 SuperGrok CLI（headless 只读）评审，产出
+**[GROK_REVIEW_2026-07-11.md](GROK_REVIEW_2026-07-11.md)**（项目根，Grok 全文 + Claude 逐条核实/判断）。
+Grok 核心判断（Claude 核实后大体认同）：前三期是"高质量方向纠偏 + 工程礼仪"，但解决的是
+**叙事层 + 数据管道 + 写前日志，还没证明"研究变准了"**；最该停功能堆砌、先做**校准闭环**
+（真实 90 天回看人工标注 8-12 票——DESIGN §三.C 自称"新框架是否更准的唯一证据来源"）。
+核实属实的具体点：前沿利润率第三档是"两者中点"非 DESIGN 的"管理层目标"、General pack 8% 假锚、
+定价体制近循环+18/18 过拟合、**PIT 半套（get_facts 有 ingest-time as_of 但无 announce-time；
+ttm/verification 全知视角）**、TTM 只 3 键、golden 只锁报告装配不锁引擎数值、bias_check 假 passed。
+**Claude 夜间只做 1 处零风险修改**（其余触及已校准引擎/frozen schema，记录+延后给用户定夺）：
+- ✅ `scripts/golden_master.py` docstring 增"覆盖边界"段——明写本闸门不覆盖 expectations/PIT/TTM
+  引擎数值正确性，防误用（Grok §3.6）。golden 3 smoke 零 diff、test_golden_master 25 passed。
+详细 triage + "建议你亲自定夺清单"（S/A/B/C 级）见 GROK_REVIEW_2026-07-11.md。
+
+## 📡 2026-07-11 Phase 3 · 事件驱动循环（DESIGN_2.0 第五期，待用户验收）
+
+**分支 `claude/phase3-events`（worktree relaxed-tesla-ac3f76）。测试 1365 → 1559 passed / 9 skipped（+194，其中 10 个 monitor/CLI/server 测试文件 + 1 个对抗性审查修复回归文件）。**
+构建方式：Workflow 分 3 波建绿地 `aegis/core/monitor/` 包（文件互斥）→ golden 闸门内手术（我亲自）→ 对抗性审查 workflow（8 bug 全确认修复 + 回归测试）。
+
+### 新模块 `aegis/core/monitor/`（9 模块，纯 JSON 存储，零新依赖，红线 10）
+- ✅ **[watchlist.py](aegis/core/monitor/watchlist.py)** + **[configs/watchlist.yaml](configs/watchlist.yaml)**：票池配置（康达/茅台/裕能，每票监控开关 announcements/forecasts/price_deviation + 每日 LLM 预算上限），缺文件回退内置默认票池
+- ✅ **[watermark.py](aegis/core/monitor/watermark.py)**：事件水位线库（`.cache/monitor/watermarks.json`）。公告 key=`date|title`、预告 key=`period|type|notice_date`；`diff_new` 求增量、`merge_seen` 并回写即**幂等**（再扫无新增），em 返近 90 天故可补扫。原子落盘（tmp+os.replace）
+- ✅ **[triggers.py](aegis/core/monitor/triggers.py)**：触发判定（纯函数）。公告/预告增量=全 watchlist 触发源；关键词〔并购/减值/订单〕+股价偏离+预告 vs 一致预期=封闭目录型号（`monitorable_model_id` 反解 thesis 已挂型号标「已武装」，红线 6）
+- ✅ **[delta.py](aegis/core/monitor/delta.py)**：版本链前后两版对比（纯函数）→ 中文 delta 简报（什么变了/对论点影响/哪个监控点触发）。数值 >1% 才算变
+- ✅ **[budget.py](aegis/core/monitor/budget.py)**：每日 LLM 成本熔断台账（`.cache/monitor/spend/{日期}.json`）。软上限：超限跳过后续复研（复用 CostTracker 口径）。原子落盘
+- ✅ **[runner.py](aegis/core/monitor/runner.py)**：in-process 触发 `--update`。每票 fresh orchestrator 实例 → `last_run_cost_usd()` 恰为该票本次成本。延迟 import 主流程、永不 raise
+- ✅ **[scanner.py](aegis/core/monitor/scanner.py)**：一轮扫描编排（心跳）。读票池→取事件→判触发→熔断闸→跑 update→出 delta 落 `.cache/deltas/`→更新水位线。**跨进程 fcntl 文件锁**串行 launchd 进程与 dashboard 兜底线程；单票异常降级不断整轮
+- ✅ **[postmortem.py](aegis/core/monitor/postmortem.py)**：90 天回看（复活 PostMortem 沉睡合同）。到期 thesis（`review_date<=today`）→ 确定性启发（隐含方向×回看收益×发布状态，不调 LLM）→ 落 `.cache/postmortems/`
+
+### golden 闸门内手术（我亲自做，每步 golden check 零 diff）
+- ✅ `ResearchConfig.update_trigger` 字段 + `AutoResearchOrchestrator.last_run_cost_usd()` 只读助手
+- ✅ `persistence.save_thesis_version` 激活沉睡字段 `version_change_summary`（较上一版中文摘要，lazy import delta）/ `version_change_trigger`（触发原因）+ `anchor_price`（论点建立价，供复盘算收益）——全部可选参数，向后兼容（55 旧测试逐字不变）
+- ✅ Step 14a 接线：`--update` run 自动出中文变更摘要 + 触发原因 + 建仓价锚
+
+### 调度 + dashboard 兜底
+- ✅ **[configs/launchd/com.aegis.scan.plist](configs/launchd/com.aegis.scan.plist)**：launchd LaunchAgent（非 cron——睡眠后 `StartCalendarInterval` 唤醒补跑 + `RunAtLoad`），每日 16:30 盘后。用 `WorkingDirectory` + 直接解释器调用（无 bash -c 词拆分风险）。SLA=「唤醒后首扫更新」，不承诺 24h
+- ✅ **[scripts/scan_watchlist.py](scripts/scan_watchlist.py)** CLI（`--dry-run/--smoke/--postmortems`）+ **[scripts/install_launchd.sh](scripts/install_launchd.sh)**（sed 转义特殊字符）
+- ✅ **[server/app.py](server/app.py)**：dashboard 打开即去抖后台扫一轮 + `POST /api/scan` / `GET /api/deltas` / `GET /delta/{slug}`（防路径穿越），对 monitor 包缺失全容错降级
+
+### 对抗性审查（workflow，13 agent）→ 8 bug 全确认修复 + 9 回归测试（[test_phase3_review_fixes.py](tests/unit/test_phase3_review_fixes.py)）
+- 🔴 **#1（高危）复研瞬时失败仍消费催化剂**：ok=False（LLM 超时高发）曾把触发的公告/预告并入 seen→永久吞掉不重试。改为只 `_touch_scan_at`（不并 fresh 事件），次轮重试
+- **#2 price_deviation 死监控器**：anchor 仅复研成功时播种→price_deviation-only 票恒不触发（死锁）。改为首次观测即以现价播种 anchor
+- **#3 postmortem 恒生成 0**：thesis record 无建仓价锚。save 落 `record['anchor_price']`（Step14a 传现价）→ 回看可算真实收益
+- **#4 postmortem 幂等破坏**：thesis 缺 entity_id 时 due_records 检查名(path.stem) ≠ 落盘名('unknown')→重复生成+跨标的覆盖。due_records 回写 path.stem 统一
+- **#6 并发扫描无锁**：launchd 进程 vs web 线程读改写共享台账丢更新。scan_once 跨进程 fcntl 锁 + watermark/budget 原子落盘
+- **#7 --smoke 污染生产**：冒烟写生产水位线/delta。重定向 watermark/delta/thesis 到 smoke 沙箱
+- **#8 plist cd 未引号**：含空格路径静默不执行。改 WorkingDirectory + 直接调用
+
+### 验证
+> **1559 passed / 9 skipped**；golden check 3 smoke 快照零 diff（002669 LLM 快照因本 worktree 无其精确源 pkl 而 skip，编排层手术经同 session record→edit→check 零 diff 已证行为无损）。
+> **端到端演示（fake 复研，真实 persistence/delta/scanner）**：康达一条扭亏预告+并购公告落地→触发→论点 v1→v2→中文 delta 简报（7 处变化，基准每股价值 ¥2.15→¥4.10、状态 blocked→draft）→次轮幂等无触发。产物：[demos/phase3_delta_002669_demo.md](demos/phase3_delta_002669_demo.md) + [demos/phase3_scan_report_demo.md](demos/phase3_scan_report_demo.md)
+> **实盘 dry-run**（live eastmoney）：3 票全扫到真实触发（康达命中减值公告+3 条扭亏预告+30 公告；茅台/裕能各 2 预告+30 公告）
+
+### 遗留 / 下一步
+- **全量 LLM 实盘验收 run 留给用户触发**（沿 Phase 0/1/2 惯例）：`UPDATE=1 ./run_research.sh 002669` 先建 v1，再落一条预告后唤醒首扫应自动出 v2 + delta（需 DS key + 网络 + ~分钟成本）
+- launchd 实际 `install_launchd.sh` 安装 + 盘后自动跑一轮待用户在真机验证
+- P1 遗留（评审推迟）：龙虎榜 / 股东户数 / 两融接入；FactsContext/dunder 方言迁移（棘轮已冻结 13 文件白名单）
+- 合并等用户验收（GitHub 代理会抖动，push/merge 带重试）
+
+## 🔄 2026-07-10 Phase 2 · 观点持久化 + 增量运行（DESIGN_2.0 第三期，**已于 PR #13 合并**）
+
+**分支 `claude/phase2-persistence`（已合并进 main@4837625）。测试 1276 → 1365 passed / 7 skipped。**
 
 ### 交付物
 - ✅ **[golden_master.py](scripts/golden_master.py)（红线 7 闸门）**：record/check 双模式，沿 replay_from_cache 已验证缝重建报告 dict，NORMALIZE_RULES 固化 7 条易变字段（含确定性守卫：同 pkl 两次重建必须逐字节一致）。4 份基线（002669 LLM/002669/600519/nvda smoke）入库 tests/golden/。**此后任何 auto_research.py 手术每步必须 check 零 diff**。已知漂移面（catalysts 按日过滤、staleBanner 按月漂移）记录在 docstring：跨月手术先重新 record。27 测试
@@ -19,7 +79,7 @@
 ### 遗留（Phase 2 第二批/Phase 3 接口）
 - typed FactsContext + dunder 方言清偿（评审估一个 session）——棘轮已冻结存量，迁移待下批
 - thesis review_date=+90 天已按 postmortem 对齐，90 天回看执行器属 Phase 3
-- 合并等用户验收
+- ~~合并等用户验收~~ → 已于 PR #13 合并进 main@4837625
 
 ## 📡 2026-07-10 Phase 1 · A 股中频数据层（DESIGN_2.0 第二期，待用户验收）
 
