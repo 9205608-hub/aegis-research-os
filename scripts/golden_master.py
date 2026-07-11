@@ -5,6 +5,16 @@
 → PortfolioIntegration → build_report_dict），规范化后与 tests/golden/ 下
 的基线 JSON 逐路径比对。任何一步单体手术后 check 必须零 diff 才许下一步。
 
+**覆盖边界（重要——防误用；Grok 评审 2026-07-11 §3.6 沉淀）**:
+本闸门锁的是 **报告装配回归**——从**冻结的 replay pkl** 重建 report dict。它
+**不重跑** 预期前沿（expectations_frontier）、PIT 摄取、TTM、verification、
+relval、agents——pkl 里的 ``__expectations_frontier`` / ``__verification`` 等是
+**冻住的旧输出**。因此改 expectations_frontier / ttm_engine / pricing_regime 等
+**引擎的数学**，本闸门仍可能全绿。这些引擎的数值正确性由各自单测护栏
+（frontier 19 / ttm 21 含康达·茅台 golden 对账 …）负责，**不在本闸门范围**。
+本闸门的唯一职责是「拆单体（红线 #7）时保证报告装配逐字节不变」，
+**别把它当估值哲学 / 引擎正确性的护栏**。
+
 用法:
     python scripts/golden_master.py record            # 重建全部快照并写基线
     python scripts/golden_master.py check             # 与基线比对，非空 diff 退出码 1

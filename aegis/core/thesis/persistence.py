@@ -393,6 +393,9 @@ def save_thesis_version(
     *,
     created_at: datetime | date | None = None,
     dir: Path | str | None = None,
+    compute_change_summary: bool = False,
+    version_change_trigger: str | None = None,
+    anchor_price: float | None = None,
 ) -> dict[str, Any]:
     """把一版 thesis 追加进 ``{entity}.jsonl``（append-only，版本自增）。
 
@@ -400,19 +403,54 @@ def save_thesis_version(
     才退当前时间。落盘前把合同的 thesis_version / parent_thesis_id 对齐
     到链上位置（frozen 模型用 ``model_copy(update=...)``，不可变性保持）。
     返回写入的记录 dict。
+
+    Aegis 2.0 Phase 3（事件循环）——激活沉睡字段
+    ``version_change_summary`` / ``version_change_trigger``：
+
+    - ``compute_change_summary=True`` 且存在上一版时，用
+      :func:`aegis.core.monitor.delta.diff_theses` 生成"较上一版什么变了"的
+      中文摘要，写进 ``version_change_summary``（delta 简报由扫描器落独立文件，
+      这里只在链上留一句自描述）。monitor 包缺失/异常时静默跳过（不阻断落盘）。
+    - ``version_change_trigger`` 非空时写进同名字段（扫描器透传的"哪个监控点
+      触发的"）。默认 None（人工/定期全量运行不填）——行为与 Phase 2 逐字一致。
+    - ``anchor_price`` 非空时写进 record 顶层 ``anchor_price``：**论点建立时的
+      现价**，供 90 天回看复盘（:mod:`aegis.core.monitor.postmortem`）算真实收益
+      （审查发现 #3：ThesisContract schema 无价格字段，不落盘则回看恒缺锚跳过）。
+      默认 None——旧调用逐字不变。
     """
     path = _chain_path(entity_id, dir)
     prior = history(entity_id, dir=dir)
     version = (prior[-1]["version"] + 1) if prior else 1
     parent_version = prior[-1]["version"] if prior else None
 
-    aligned = contract.model_copy(update={
+    change_summary: str | None = None
+    if compute_change_summary and prior:
+        try:
+            from aegis.core.monitor.delta import diff_theses
+            _brief = diff_theses(
+                prior[-1].get("thesis", {}) or {},
+                contract.model_dump(mode="json"),
+                entity_id=normalize_entity_id(entity_id),
+                from_version=prior[-1]["version"],
+                to_version=version,
+                trigger_zh=version_change_trigger,
+            )
+            change_summary = (_brief.summary_zh or "").strip() or None
+        except Exception as e:  # noqa: BLE001 — 摘要失败不阻断版本落盘
+            logger.warning(f"thesis persistence: change summary failed: {e}")
+
+    _updates: dict[str, Any] = {
         "thesis_version": version,
         "parent_thesis_id": (
             str(prior[-1].get("thesis", {}).get("thesis_id") or contract.thesis_id)
             if prior else None
         ),
-    })
+    }
+    if change_summary:
+        _updates["version_change_summary"] = change_summary
+    if version_change_trigger:
+        _updates["version_change_trigger"] = str(version_change_trigger).strip() or None
+    aligned = contract.model_copy(update=_updates)
 
     created = created_at or run_created_at(run_id) or datetime.now()
     record: dict[str, Any] = {
@@ -422,6 +460,10 @@ def save_thesis_version(
         "parent_version": parent_version,
         "thesis": aligned.model_dump(mode="json"),
     }
+    # Phase 3：论点建立时现价（复盘算收益用），仅在给了正值时写。
+    if isinstance(anchor_price, (int, float)) and not isinstance(anchor_price, bool):
+        if anchor_price > 0:
+            record["anchor_price"] = float(anchor_price)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
