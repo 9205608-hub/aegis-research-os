@@ -406,6 +406,33 @@ def _sector_typical_margin(sector_pack: dict | None) -> float:
     return DEFAULT_SECTOR_TYPICAL_MARGIN
 
 
+def _sector_margin_has_real_value(sector_pack: dict | None) -> bool:
+    """sector pack 里是否存在**真实**的行业典型营业利润率。
+
+    区别于 :func:`_sector_typical_margin` 的缺省 8%（General pack 假锚）。
+    只有 pack 明确给出 valuation_framework / benchmarks 的利润率时才 True。
+    """
+    pack = sector_pack or {}
+    for path in (
+        ("valuation_framework", "typical_operating_margin_range"),
+        ("benchmarks", "typical_margins", "operating_margin"),
+    ):
+        node: Any = pack
+        for key in path:
+            node = node.get(key) if isinstance(node, dict) else None
+            if node is None:
+                break
+        if isinstance(node, (list, tuple)) and len(node) >= 2:
+            try:
+                float(node[0]); float(node[1])
+                return True
+            except (TypeError, ValueError):
+                continue
+        if isinstance(node, (int, float)):
+            return True
+    return False
+
+
 def build_margin_scenarios(
     current_margin: float,
     sector_pack: dict | None,
@@ -413,17 +440,24 @@ def build_margin_scenarios(
 ) -> list[tuple[str, float]]:
     """构造预期前沿的 2-3 档终年利润率情景（Phase 0 接线规格）。
 
-    档位：维持现状（当前利润率）/ 行业中位（sector pack 典型利润率，
-    没有则 8% 缺省）/ 两者中点。当前与行业档几乎重合（<0.5pp）时去重，
-    只留两档（中点档与两端重合无信息量）。标签 zh/en 双语由调用方按
-    市场选择（中文化铁律）。
+    档位：维持现状（当前利润率）/ 行业中位（sector pack 典型利润率）/ 两者中点。
+    当前与行业档几乎重合（<0.5pp）时去重，只留两档。标签 zh/en 双语由调用方
+    按市场选择（中文化铁律）。
+
+    **假锚防护（Grok 评审 2026-07-11 §3.4 + 校准闭环实证）**：落 General pack
+    （无真实行业利润率数据）时**只出「维持现状」一档**——不把缺省 8% 当「行业中位」
+    展示（否则「行业中位 8%→需 +X% 增速」看着像 cross-check 实为假锚，比单点隐含
+    增速更危险）。有真实 pack 的名字（茅台白酒/寒武纪半导体等）行为不变。
     """
-    sector_m = _sector_typical_margin(sector_pack)
     cur = float(current_margin)
     labels = (
         ("维持现状", "行业中位", "两者中点") if zh
         else ("Hold current margin", "Sector median", "Midpoint")
     )
+    # General / 无真实行业利润率 → 只出维持现状档，不出 8% 假锚。
+    if not _sector_margin_has_real_value(sector_pack):
+        return [(labels[0], round(cur, 4))]
+    sector_m = _sector_typical_margin(sector_pack)
     if abs(cur - sector_m) < 0.005:
         return [(labels[0], round(cur, 4))]
     mid = (cur + sector_m) / 2.0

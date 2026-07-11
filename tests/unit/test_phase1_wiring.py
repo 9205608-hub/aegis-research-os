@@ -428,6 +428,27 @@ class TestVerificationChecks:
              if x.check_id == "forecast_vs_consensus"][0]
         assert r.status == "pass"
 
+    def test_forecast_vs_consensus_stale_period_honest_message(self):
+        # 校准闭环实证（Grok §3.5）：最新预告(2025)已披露实现，一致预期只覆盖
+        # 前瞻年度(2026+)，两者结构性不重叠 → insufficient 但给**诚实**说明
+        # 「无可比期次·非数据缺失」，而非误导性的「一致预期无 2025 年度预测」。
+        events = {
+            **MOCK_EVENTS,
+            "consensus": {
+                "org_count": 8, "latest_report_date": "2026-06-20",
+                "insufficient_coverage": False,
+                "predictions": [
+                    {"year": 2026, "eps": 1.0, "net_profit": 3.0e8, "revenue": 6e9},
+                    {"year": 2027, "eps": 1.2, "net_profit": 3.5e8, "revenue": 7e9},
+                ],
+            },
+        }
+        r = [x for x in run_verification(recent_events=events)
+             if x.check_id == "forecast_vs_consensus"][0]
+        assert r.status == "insufficient"
+        assert "无可比期次" in r.detail_zh and "已披露实现" in r.detail_zh
+        assert "非数据缺失" in r.detail_zh
+
 
 class TestAnnotateVerificationFocus:
 

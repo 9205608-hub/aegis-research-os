@@ -140,6 +140,10 @@ def _latest_per_period(store: Any, entity_id: str, concept: str) -> dict[str, An
     选取纪律：审计值优先（正式报告自然取代快报），其余按
     (as_of, fact_version, id) 取最新（重述链上永远最新版本）。
     store 为 None / 查询失败 → 空 dict（调用方输出「数据不足」）。
+
+    .. note:: **知识时间口径**（Grok 评审 2026-07-11 §3.3 沉淀）：``get_facts``
+       不传 ``as_of`` = 全知视角（取最新版本），非 point-in-time / 回测级查询。
+       核验对"当下研究"正确，但不构成"回测无未来函数"保证（红线 3 后半句待落地）。
     """
     if store is None:
         return {}
@@ -421,6 +425,20 @@ def _check_forecast_vs_consensus(recent_events: Any) -> VerificationResult:
             cons_np = float(np_)
             break
     if cons_np is None or cons_np == 0:
+        # 诚实的「无可比」说明（Grok §3.5 + 校准闭环实证）：A 股最新业绩预告
+        # 几乎总是针对已披露/当期报告期，而一致预期只覆盖前瞻年度，两者结构性
+        # 不重叠。区分「预告期已过时·无前瞻预告可比」与「一致预期确实缺该期」，
+        # 避免把前者误读成数据缺失 bug（三票实测：茅台预告2024/寒武纪预告2025，
+        # 一致预期均只覆盖 2026+）。
+        cons_years = sorted(
+            y for y in (_get(p, "year") for p in (_get(consensus, "predictions") or []))
+            if isinstance(y, int)
+        )
+        if cons_years and fc_year < cons_years[0]:
+            return _insufficient(
+                check_id,
+                f"最新业绩预告针对 {fc_year} 年度（已披露实现），一致预期仅覆盖 "
+                f"{cons_years[0]}–{cons_years[-1]} 年度前瞻，无可比期次（非数据缺失）")
         return _insufficient(
             check_id, f"一致预期无 {fc_year} 年度归母净利润预测，缺口无法核验")
     gap = (mid - cons_np) / abs(cons_np)
