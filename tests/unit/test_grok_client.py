@@ -74,7 +74,9 @@ def _make_client(monkeypatch, responses):
 def _capture_fallback(monkeypatch, client, sentinel):
     calls = []
 
-    def _fallback(system_prompt, user_message, tool_schema):
+    def _fallback(system_prompt, user_message, tool_schema, **kwargs):
+        # AUDIT 2026-07-12 (B4): fallback now receives role= for
+        # per-role temperature — the stub accepts and ignores it.
         calls.append((system_prompt, user_message, tool_schema))
         return sentinel
 

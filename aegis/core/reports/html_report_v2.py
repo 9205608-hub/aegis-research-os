@@ -1196,6 +1196,13 @@ def build_report_dict(
     # Target = probability-weighted value (primary), fallback to base value
     target = prob_weighted if prob_weighted > 0 else base_value
 
+    # AUDIT 2026-07-12: two-sided valuation sanity verdict stamped by the
+    # orchestrator (aegis.core.truth.valuation_sanity). On mismatch the
+    # report must not present DCF-derived numbers as price targets — they
+    # stay visible in the scenario section as model diagnostics only.
+    _v_sanity = sc.get("valuation_sanity") if isinstance(sc.get("valuation_sanity"), dict) else {}
+    _sanity_mismatch = bool(_v_sanity.get("mismatch"))
+
     # DCF-meaningful guard. Refactor 4 (2026-05-04): prefer the engine-
     # set flag from DCFOutput; the engine has the most accurate view
     # (e.g. enterprise_value < 0 even when per_share rounds positive).
@@ -1531,6 +1538,17 @@ def build_report_dict(
             else:
                 footnote = ("⚠ Value clamped to a conservative bound"
                             + (f" (raw model output {raw_txt})" if raw_txt else " (engine correction)"))
+        # AUDIT 2026-07-12: on valuation mismatch every scenario cell gets a
+        # diagnostics-only disclosure (same narrative-append channel as the
+        # clamp footnote so no template change is needed).
+        if _sanity_mismatch:
+            _ratio_txt = f"{_v_sanity.get('ratio', 0.0):.1f}×"
+            _sm_note = (
+                f"⚠ 估值失配（DCF基准/市价 {_ratio_txt}）：情景值仅作模型诊断展示，不构成目标价"
+                if is_zh else
+                f"⚠ Valuation mismatch (base/price {_ratio_txt}): scenario values are model diagnostics, not price targets"
+            )
+            footnote = f"{footnote} {_sm_note}".strip() if footnote else _sm_note
         cell = {
             "key": key,
             "tag": label_zh if is_zh else label_en,
@@ -2230,11 +2248,15 @@ def build_report_dict(
             # a negative number that the front-end would render as a price.
             # `weighted` flips to a qualitative label so any UI showing
             # "概率加权 ¥-0.83" instead reads "DCF n/m".
-            "target": (round(target, 2) if _dcf_meaningful else None),
+            # AUDIT 2026-07-12: valuation mismatch also withholds the target
+            # — a DCF at 10× price must never render as a price target.
+            "target": (round(target, 2) if _dcf_meaningful and not _sanity_mismatch else None),
             # AUDIT-C2: downgraded reports keep their rating but the target
             # label becomes an explicit caveat (rendered by Verdict in
             # report.jsx via `rating.weighted`).
             "weighted": (
+                ("估值失配 · 不提供目标价" if is_zh else "Valuation mismatch · target withheld")
+                if _sanity_mismatch else
                 ("评级已降级 · 存在未解决分歧" if is_zh else "Downgraded · unresolved conflicts")
                 if _rating_downgraded else
                 ("概率加权" if is_zh else "Probability-weighted")
@@ -2259,6 +2281,8 @@ def build_report_dict(
 
         "quick": quick,
         "scenarios": scen_cells,
+        # AUDIT 2026-07-12: structured sanity verdict for templates/audits.
+        "valuationSanity": (_v_sanity or None),
         # Short pull-quote under the three scenarios: one punchy clause from
         # the variant view. Falls back to None if no variant text.
         # Pullquote: one punchy clause. Use tight hard_max (120) so a long

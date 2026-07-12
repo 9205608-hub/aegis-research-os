@@ -3,118 +3,118 @@
     "agents": [
       {
         "cons": [
-          "高应计可能反映正当的成长期投入（如 IFRS 下研发支出资本化），未必等同于利润操纵",
-          "收入确认、研发费用处理及政府补助分类在不同会计准则下存在差异，可能影响指标的可比性"
+          "High accruals may reflect legitimate growth investment (e.g., capitalized R&D under IFRS) rather than manipulation",
+          "Cross-standard differences in revenue recognition, R&D treatment, and government subsidy classification may affect metric comparability"
         ],
         "fallback": false,
         "name": "财报质量与现金流真实性",
         "narrative": "",
         "pros": [
-          "应计比率为 0.1454，盈利质量较差，利润含金量存疑",
-          "经营现金流/净利润为 -9.56——低于现金转化警戒线，盈利现金含量不足"
+          "Accruals ratio is 0.1454, indicating poor earnings quality",
+          "CFO/Net Income ratio is -9.56 — below cash conversion floor"
         ],
         "role": "会计分析师",
         "score": 3.8,
         "stance": "bear",
-        "thesis": "盈利质量欠佳——报表利润可能高估真实经营成果，利润含金量存疑"
+        "thesis": "Earnings quality is below par — reported earnings may overstate economic reality"
       },
       {
         "cons": [
-          "低利润率可能是主动的成长期投入而非业务质量差——规模化后的单位经济模型可能截然不同"
+          "Low margins may reflect deliberate growth investment rather than poor business quality — unit economics at scale could differ materially"
         ],
         "fallback": false,
         "name": "产能利用率与资产错配",
         "narrative": "",
         "pros": [
-          "毛利率为 14.07%",
-          "ROIC 为 2.34%，资本配置回报平平"
+          "Gross margin is 14.07%",
+          "ROIC is 2.34%, indicating marginal capital allocation"
         ],
         "role": "业务分析师",
         "score": 3.0,
-        "stance": "bull",
-        "thesis": "护城河指标偏弱——回报水平呈现同质化竞争特征"
+        "stance": "bear",
+        "thesis": "Business shows weak economic moat indicators — commodity-like returns"
       },
       {
         "cons": [
-          "低 ROIC 可能是成长期的主动再投资，回报将在更长周期内兑现",
-          "量化记录本身无法完全刻画管理层质量——沟通透明度与战略一致性同样重要"
+          "Low ROIC may reflect deliberate growth-phase reinvestment that will generate returns over a longer horizon",
+          "Quantitative track record alone cannot capture management quality — communication transparency and strategic consistency also matter"
         ],
         "fallback": false,
         "name": "资本配置与战略纪律",
         "narrative": "",
         "pros": [
-          "ROIC 为 2.34%——反映资本配置成效",
-          "ROE 为 4.08%"
+          "ROIC is 2.34% — reflects capital allocation effectiveness",
+          "ROE is 4.08%"
         ],
         "role": "管理层分析师",
         "score": 3.0,
         "stance": "bear",
-        "thesis": "管理层资本配置记录欠佳——ROIC 水平显示存在价值毁损"
+        "thesis": "Management's capital allocation track record is poor — ROIC suggests value destruction"
       },
       {
         "cons": [
-          "DCF 估值对永续增长率与 WACC 假设高度敏感——微小的参数变化即可导致估值大幅波动"
+          "DCF valuation is highly sensitive to terminal growth and WACC assumptions — small changes drive large value swings"
         ],
         "fallback": false,
         "name": "DCF 与多组估值三角",
         "narrative": "",
         "pros": [
-          "市盈率 P/E (静态): 32.7x",
-          "EV/EBITDA: 17.8x"
+          "P/E (FY static): 33.3x",
+          "EV/EBITDA: 18.0x"
         ],
         "role": "估值分析师",
-        "score": 3.5,
+        "score": 3.4,
         "stance": "bear",
-        "thesis": "市场定价须按条件化预期解读：同一现价在不同终年利润率情景下对应不同的隐含增速，结论应表述为「若利润率 X%，需 Y% 增速支撑」，并对照业绩预告、公告与财务证据检验该预期的可信度"
+        "thesis": "Scenario spread (bull/bear): 300% — wide range of outcomes"
       },
       {
         "cons": [
-          "缺乏近期催化剂的差异化论点可能在持有期内无法收敛——「市场保持非理性的时间，可以比你保持偿付能力的时间更长」"
+          "Variant thesis without near-term catalyst may fail to converge within horizon — 'the market can stay irrational longer than you can stay solvent'"
         ],
         "fallback": false,
         "name": "市场共识与错价机制",
         "narrative": "",
         "pros": [
-          "市场隐含预期（条件化反解）: 若终年营业利润率为 2.9%（维持现状），现价 ¥13.54 需要约 +22.6% 的年营收增速支撑（WACC±1% 区间: +19.6% ~ +25.4%）",
-          "市场隐含预期（条件化反解）: 若终年营业利润率为 8.0%（行业中位），现价 ¥13.54 需要约 +8.9% 的年营收增速支撑（WACC±1% 区间: +6.4% ~ +11.3%）"
+          "Market-implied revenue growth: 20.01%",
+          "Consensus revision momentum: neutral"
         ],
         "role": "变体分析师",
-        "score": 3.5,
+        "score": 3.4,
         "stance": "bear",
-        "thesis": "变体判断的锚是条件化预期：先确认现价在哪个利润率情景下需要多高增速，再判断可验证事实（业绩预告、公告、财务证据）能否支撑该组合——支撑不了的部分即为预期差"
+        "thesis": "Base case implies -84% downside — price above our intrinsic value estimate"
       },
       {
         "cons": [
-          "高杠杆可能是阶段性或战略性的（如并购后）——应结合管理层去杠杆计划评估",
-          "风险评估可能偏保守——尾部风险的发生概率本来就低"
+          "High leverage may be temporary or strategic (e.g., post-acquisition) — management deleveraging plan should be assessed",
+          "Risk assessment may be overly conservative — tail risks by definition have low probability"
         ],
         "fallback": false,
         "name": "客户集中度与偿付能力",
         "narrative": "",
         "pros": [
-          "净负债/EBITDA: 6.0x——杠杆水平偏高",
-          "流动比率: 1.14x"
+          "Net Debt/EBITDA: 6.0x — leverage is elevated",
+          "Current ratio: 1.14x"
         ],
         "role": "风险分析师",
         "score": 3.8,
         "stance": "bear",
-        "thesis": "资产负债表风险偏高——净负债/EBITDA 6.0x 制约战略灵活性，并放大压力情景下的下行风险"
+        "thesis": "Balance sheet risk is elevated — Net Debt/EBITDA 6.0x limits strategic flexibility and increases downside in stress scenarios"
       },
       {
         "cons": [
-          "行业分析包的基准是通用性的——公司特有因素可能足以支撑对行业常态的偏离"
+          "Sector pack benchmarks are general — company-specific factors may justify deviation from sector norms"
         ],
         "fallback": false,
         "name": "行业周期与政策环境",
         "narrative": "",
         "pros": [
-          "公司所属行业: General（分析包: sp_generic）",
-          "行业周期属性: moderate，主要驱动: unknown"
+          "Entity classified under sector: General (pack: sp_generic)",
+          "Sector cyclicality: moderate, primary driver: unknown"
         ],
         "role": "宏观分析师",
         "score": 3.0,
         "stance": "neutral",
-        "thesis": "公司所属行业: General（分析包: sp_generic）"
+        "thesis": "Entity classified under sector: General (pack: sp_generic)"
       }
     ],
     "bias": "passed",
@@ -148,18 +148,18 @@
       "title": "等待关键催化剂验证"
     },
     "confidence": "中",
-    "coreCalloutHtml": "<strong>核心判断：</strong>基准 DCF 公允价值 ¥2.15；概率加权 ¥2.42，较现价 ¥13.54 存在 <strong>-82.1%</strong> 估值回归空间。",
+    "coreCalloutHtml": "<strong>核心判断：</strong>基准 DCF 公允价值 ¥2.15；概率加权 ¥2.42，较现价 ¥13.76 存在 <strong>-82.4%</strong> 估值回归空间。",
     "critics": [
       {
         "issues": 0,
         "name": "逻辑批评员"
       },
       {
-        "issues": 4,
+        "issues": 2,
         "name": "财务批评员"
       },
       {
-        "issues": 4,
+        "issues": 3,
         "name": "证据批评员"
       },
       {
@@ -171,7 +171,7 @@
         "name": "认知偏差批评员"
       },
       {
-        "issues": 2,
+        "issues": 1,
         "name": "宏观一致性批评员"
       },
       {
@@ -191,13 +191,7 @@
         "name": "LLM 数值审核员"
       }
     ],
-    "dataAsOf": {
-      "announceDate": "2026-04-28",
-      "basis": "quarterly",
-      "days": "<NORMALIZED>",
-      "latestPeriod": "2026-03-31",
-      "line": "<NORMALIZED>"
-    },
+    "dataAsOf": null,
     "dcf": {
       "gBase": 3.0,
       "paragraphHtml": "FCFF 两阶段模型：Y1–Y10 明细期 + 永续期（g = 3.0%, WACC = 9.5%）。",
@@ -414,11 +408,11 @@
         },
         {
           "label": "市盈率 (静态)",
-          "value": "32.7×"
+          "value": "33.3×"
         },
         {
           "label": "EV / EBITDA",
-          "value": "17.8×"
+          "value": "18.0×"
         }
       ],
       "kpisTitle": "FY2025 关键指标",
@@ -462,284 +456,25 @@
       "change": 0.0,
       "changePct": 0.0,
       "currency": "¥",
-      "last": 13.54,
+      "last": 13.76,
       "market": "CN"
     },
-    "pricedIn": {
-      "events": {
-        "announcements": [
-          {
-            "category": "董事会决议公告",
-            "date": "2026-07-02",
-            "title": "康达新材:第六届董事会第二十五次会议决议公告"
-          },
-          {
-            "category": "关联交易",
-            "date": "2026-07-02",
-            "title": "康达新材:关于调整2026年度公司日常关联交易预计的公告"
-          },
-          {
-            "category": "召开股东大会通知",
-            "date": "2026-06-27",
-            "title": "康达新材:关于召开2026年第三次临时股东会通知的公告"
-          },
-          {
-            "category": "增发方案修订",
-            "date": "2026-06-27",
-            "title": "康达新材:关于延长公司2025年度向特定对象发行股票股东会决议有效期及授权有效期的公告"
-          },
-          {
-            "category": "董事会决议公告",
-            "date": "2026-06-27",
-            "title": "康达新材:第六届董事会第二十四次会议决议公告"
-          },
-          {
-            "category": "提供/对外担保公告",
-            "date": "2026-06-18",
-            "title": "康达新材:关于为子公司提供担保事项的进展公告"
-          },
-          {
-            "category": "股票交易异常波动",
-            "date": "2026-06-11",
-            "title": "康达新材:股票交易异常波动的公告"
-          },
-          {
-            "category": "股份质押、冻结",
-            "date": "2026-05-27",
-            "title": "康达新材:关于公司控股股东部分股份质押的公告"
-          },
-          {
-            "category": "分配方案实施",
-            "date": "2026-05-23",
-            "title": "康达新材:2025年年度权益分派实施公告"
-          },
-          {
-            "category": "法律意见书",
-            "date": "2026-05-19",
-            "title": "康达新材:北京植德律师事务所关于康达新材料(集团)股份有限公司第五期员工持股计划第二个锁定期2025年业绩考核指标达成的法律意见书"
-          }
-        ],
-        "asOf": "2026-07-10",
-        "consensusLine": "无有效一致预期：近6个月覆盖机构 1 家，最近研报日期 无，未达使用门槛",
-        "forecasts": [
-          {
-            "indicator": "扣除非经常性损益后的净利润",
-            "noticeDate": "2026-01-21",
-            "period": "2025-12-31",
-            "range": "2100万元 ~ 3100万元",
-            "type": "扭亏"
-          },
-          {
-            "indicator": "每股收益",
-            "noticeDate": "2026-01-21",
-            "period": "2025-12-31",
-            "range": "0.42元 ~ 0.46元",
-            "type": "扭亏"
-          },
-          {
-            "indicator": "归属于上市公司股东的净利润",
-            "noticeDate": "2026-01-21",
-            "period": "2025-12-31",
-            "range": "1.25亿元 ~ 1.35亿元",
-            "type": "扭亏"
-          }
-        ]
-      },
-      "frontier": {
-        "note": "「若利润率为 X%，现价需要 Y% 年增速支撑」。⚠=极端预期（累计营收 scale >30×）；多解=价格-增速曲线非单调。",
-        "priceLine": "现价 ¥13.54 隐含的条件化增速要求（基准 WACC 9.5%）",
-        "rows": [
-          {
-            "cells": [
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+19.6%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+22.6%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+25.4%"
-              }
-            ],
-            "label": "维持现状",
-            "margin": "2.9%"
-          },
-          {
-            "cells": [
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+6.4%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+8.9%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+11.3%"
-              }
-            ],
-            "label": "行业中位",
-            "margin": "8.0%"
-          },
-          {
-            "cells": [
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+11.1%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+13.8%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+16.3%"
-              }
-            ],
-            "label": "两者中点",
-            "margin": "5.5%"
-          }
-        ],
-        "waccCols": [
-          "WACC−1%",
-          "基准",
-          "WACC+1%"
-        ]
-      },
-      "regime": {
-        "dominant": "mixed",
-        "dominantLabel": "混合（题材叙事 × 困境反转）",
-        "mixed": true,
-        "narrative": "市场定价框架处于「题材叙事」与「困境反转」之间的混合状态，单一框架不足以解释现价，需同时跟踪两套验证点。",
-        "weights": [
-          {
-            "key": "story",
-            "label": "题材叙事",
-            "pct": 48.2
-          },
-          {
-            "key": "turnaround",
-            "label": "困境反转",
-            "pct": 45.8
-          },
-          {
-            "key": "growth",
-            "label": "增长溢价",
-            "pct": 4.0
-          },
-          {
-            "key": "steady",
-            "label": "稳态现金流",
-            "pct": 2.1
-          }
-        ]
-      },
-      "relative": {
-        "dataDate": "2026-07-10",
-        "industry": "化学制品",
-        "insufficient": false,
-        "lossMaking": 1,
-        "note": "东财行业板块「化学制品」 · 市值最接近的 10 家（板块成分共 181 家） · 1 家亏损已剔除 PE 样本",
-        "peerCount": 10,
-        "rows": [
-          {
-            "lbl": "PE(TTM)",
-            "median": "33.3×",
-            "pct": "第 44 分位",
-            "sample": "有效样本 9 家",
-            "target": "32.6×"
-          },
-          {
-            "lbl": "PB",
-            "median": "2.01×",
-            "pct": "第 30 分位",
-            "sample": "有效样本 10 家",
-            "target": "1.48×"
-          }
-        ],
-        "universe": 181
-      },
-      "subtitle": "条件化预期前沿 · 定价体制 · 相对估值 · 验证点",
-      "title": "市场在定价什么",
-      "verification": [
-        {
-          "evidence": "",
-          "state": "unverified",
-          "status": "未核验",
-          "text": "支撑现价所需的条件化隐含增速是否有可验证的事实锚"
-        },
-        {
-          "evidence": "2025-12-31 期经营现金流 -11.99亿元 / 归母净利润 1.25亿元 = -9.56，低于 0.5 红旗线，账面利润未获现金流支撑",
-          "state": "fail",
-          "status": "已核验·未通过",
-          "text": "现金消耗速度与再融资依赖程度"
-        },
-        {
-          "evidence": "",
-          "state": "unverified",
-          "status": "未核验",
-          "text": "题材催化剂的可证伪时间点（公告、订单、政策节点）"
-        },
-        {
-          "evidence": "2025-12-31 期经营现金流 -11.99亿元 / 归母净利润 1.25亿元 = -9.56，低于 0.5 红旗线，账面利润未获现金流支撑；2026-03-31 期扣非/归母 = 65%（扣非 449万元 vs 归母 686万元），主业利润成色正常",
-          "state": "fail",
-          "status": "已核验·未通过",
-          "text": "盈利质量修复信号（CFO/净利比、应计项目占比回落）"
-        },
-        {
-          "evidence": "",
-          "state": "unverified",
-          "status": "未核验",
-          "text": "重组/并购整合的落地证据（公告、订单、业绩承诺兑现）"
-        },
-        {
-          "evidence": "2026-03-31 期资产负债率 69.0%，较上年同期 57.1% 上升 11.9pp（超 5pp 阈值）",
-          "state": "fail",
-          "status": "已核验·未通过",
-          "text": "债务与流动性压力（净负债/EBITDA、再融资安排）"
-        },
-        {
-          "evidence": "2026-03-31 期应收账款同比 +27.7% vs 营收同比 +31.8%（缺口 -4pp，阈值内）",
-          "state": "pass",
-          "status": "已核验·通过",
-          "text": "应收增速 vs 营收增速"
-        },
-        {
-          "evidence": "2026-03-31 期存货同比 +19.5% vs 营收同比 +31.8%（缺口 -12pp，阈值内）",
-          "state": "pass",
-          "status": "已核验·通过",
-          "text": "存货增速 vs 营收增速"
-        }
-      ]
-    },
+    "pricedIn": null,
     "quick": [
       {
         "lbl": "市值",
         "sub": "市销率 0.8×",
-        "val": "¥41.1 亿"
+        "val": "¥41.8 亿"
       },
       {
         "lbl": "市盈率 (TTM)",
         "sub": "每股收益 0.43",
-        "val": "32.7×"
+        "val": "33.3×"
       },
       {
         "lbl": "EV / EBITDA",
         "sub": "",
-        "val": "17.8×"
+        "val": "18.0×"
       },
       {
         "lbl": "营业利润率",
@@ -757,7 +492,7 @@
       "marketKvs": [
         {
           "k": "市值",
-          "v": "¥41.1 亿"
+          "v": "¥41.8 亿"
         },
         {
           "k": "营收 (TTM)",
@@ -778,12 +513,12 @@
         },
         {
           "k": "EV / EBITDA",
-          "v": "17.8×"
+          "v": "18.0×"
         }
       ],
       "openQuestions": [],
       "priceHistory": [
-        13.54
+        13.76
       ]
     },
     "rating": {
@@ -832,7 +567,7 @@
     ],
     "sector": "基础化工-化学制品-其他化学制品",
     "sensitivity": {
-      "baseValue": 2.148785118860941,
+      "baseValue": 2.148655118682158,
       "cols": [
         2.0,
         2.5,
@@ -860,7 +595,7 @@
           1.95,
           2.52,
           3.19,
-          3.98,
+          3.97,
           4.92
         ],
         [
@@ -915,16 +650,17 @@
       "whyNow": ""
     },
     "tickerMark": "康",
-    "valuationPullquote": null
+    "valuationPullquote": null,
+    "valuationSanity": null
   },
   "summary": {
     "bias_check_status": "passed",
     "confidence_bucket": "medium",
     "entity_id": "002669",
-    "gate_checks_passed": 13,
-    "gate_checks_total": 13,
+    "gate_checks_passed": 14,
+    "gate_checks_total": 14,
     "gate_publishable": true,
-    "kill_criteria_count": 4,
+    "kill_criteria_count": 3,
     "monitorables_count": 22,
     "publishing_status": "published",
     "signal_conviction": "medium",

@@ -278,17 +278,21 @@ def _get(obj: Any, key: str, default: Any = None) -> Any:
 def _iter_llm_watch_texts(synthesized_thesis: Any) -> list[tuple[str | None, str]]:
     """从 synthesized_thesis 收集 (LLM 声称的型号名或 None, 文本) 候选对。
 
-    候选字段（若有）：monitorables / must_monitor / follow_ups /
-    follow_up_questions / watch_items / open_questions。条目可以是
+    候选字段（若有）：monitorables / must_monitor / watch_items。条目可以是
     str（自由文本）或 dict（{"model"/"check_id": ..., "description"/
     "question": ..., "threshold": ...}），全部容错。
+
+    AUDIT 2026-07-12 (B2)：open_questions / follow_ups / follow_up_questions
+    已从候选字段中移除——未答研究问题是「研究待办」，不是「必须监控」。
+    旧行为把整份 open_questions 复制成 watch_only「人工关注」条目，Grok 20
+    审计一致判为 must_monitor 被 TODO 污染、监控清单不可执行。open_questions
+    保留在合约 open_questions 字段与报告的独立区块，不再冒充监控点。
     """
     if synthesized_thesis is None:
         return []
     out: list[tuple[str | None, str]] = []
     fields = (
-        "monitorables", "must_monitor", "follow_ups",
-        "follow_up_questions", "watch_items", "open_questions",
+        "monitorables", "must_monitor", "watch_items",
     )
     for field_name in fields:
         for item in coerce_list(_get(synthesized_thesis, field_name)):

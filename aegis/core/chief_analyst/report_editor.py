@@ -216,6 +216,15 @@ class ReportEditor:
             computed_metrics, market_data, scenarios,
             meta_facts, segment_detail,
         )
+        # AUDIT 2026-07-12 R2-1：编辑层同样事前注入估值引用规则——headline/
+        # 摘要是"发明锚 + 残骸%"到达读者的最后一跳，事后清洗只是兜底。
+        try:
+            from aegis.core.chief_analyst.thesis_synthesizer import (
+                valuation_constraint_block,
+            )
+            user_message += valuation_constraint_block(scenarios, market_data)
+        except Exception:
+            pass
 
         _sys_prompt = AEGIS_PROJECT_PREAMBLE + REPORT_EDITOR_SYSTEM_PROMPT
         if isinstance(scenarios, dict) and scenarios.get("currency") == "CNY":
@@ -242,6 +251,7 @@ class ReportEditor:
         try:
             from aegis.core.chief_analyst.thesis_synthesizer import (
                 _scrub_fair_value_claims,
+                _valuation_sanity_verdict,
                 frontier_sanctioned_growth_pcts,
                 relative_valuation_sanctioned_pcts,
             )
@@ -251,6 +261,9 @@ class ReportEditor:
             )
             # 设计红线 9：前沿隐含增速/margin 档百分数是 sanctioned numbers；
             # Phase 1 同则：相对估值锚的 PE/PB/分位数字同步注册。
+            # AUDIT 2026-07-12: 估值失配时 editor 字段同样进入 strict 清洗
+            # ——headline/摘要正是"残影%"到达读者的最后一跳。
+            _sanity = _valuation_sanity_verdict(scenarios, market_data)
             scrubbed, warns = _scrub_fair_value_claims(
                 raw, scenarios, market_data, fields=editor_fields,
                 extra_sanctioned_pcts=(
@@ -261,6 +274,7 @@ class ReportEditor:
                         (meta_facts or {}).get("__relative_valuation")
                     )
                 ),
+                strict=bool(_sanity and _sanity.get("mismatch")),
             )
             if warns:
                 for k in editor_fields:

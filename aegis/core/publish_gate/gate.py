@@ -66,6 +66,12 @@ DEFAULT_GATE_POLICY: dict[str, Any] = {
     "valuation_upside_threshold": 0.15,
     "high_capex_threshold": 0.15,
     "terminal_value_ev_threshold": 0.70,
+    # AUDIT 2026-07-12: two-sided DCF-vs-price magnitude band. Beyond this
+    # ratio (either direction) magnitude conclusions are unreliable and the
+    # thesis must not publish (Grok 20-audit P0 — 宁德 base 11.5× price
+    # passed every gate because all prior checks were one-directional or
+    # keyed to high-capex/negative-FCF profiles).
+    "valuation_sanity_ratio": 3.0,
 }
 
 
@@ -128,6 +134,9 @@ class PublishGate:
 
         # Gate 13: terminal-value dominated DCFs require conservative assumptions
         checks.append(self._terminal_value_gate(ctx))
+
+        # Gate 14: DCF base and market price must share a magnitude regime
+        checks.append(self._valuation_sanity_gate(ctx))
 
         # Aggregate
         blocked_by = [c.gate_name for c in checks if not c.passed and c.severity == "block"]
@@ -560,4 +569,56 @@ class PublishGate:
             gate_name="terminal_value_gate",
             passed=True,
             message="Terminal value dependence is acceptable",
+        )
+
+    def _valuation_sanity_gate(self, ctx: dict) -> GateCheck:
+        """Block when DCF base and market price are in different magnitude regimes.
+
+        AUDIT 2026-07-12 (Grok 20-audit P0): a base at 10× the market price
+        sailed through — the consistency logging only fired on base « price
+        and the terminal/capex gates only key on high-risk profiles. This
+        gate is two-sided and profile-independent: beyond the sanity ratio
+        (either direction), every magnitude conclusion (price target,
+        up/downside %) is unreliable, so the thesis must not publish until
+        DCF inputs (share count / net debt / revenue path / terminal
+        assumptions) are re-audited. Model bug > market bug.
+        """
+        scenarios = ctx.get("scenarios") or {}
+        market_data = ctx.get("market_data") or {}
+        base_value = scenarios.get("base_value")
+        price = market_data.get("current_price") or market_data.get("price")
+
+        from aegis.core.truth.valuation_sanity import check_valuation_sanity
+        sanity = scenarios.get("valuation_sanity")
+        if not (isinstance(sanity, dict) and "mismatch" in sanity):
+            sanity = check_valuation_sanity(
+                base_value, price,
+                ratio_threshold=self._policy["valuation_sanity_ratio"],
+            )
+        if sanity is None:
+            return GateCheck(
+                gate_name="valuation_sanity_gate",
+                passed=True,
+                severity="warn",
+                message="Valuation sanity gate skipped: missing DCF base value or market price",
+            )
+        if sanity["mismatch"]:
+            return GateCheck(
+                gate_name="valuation_sanity_gate",
+                passed=False,
+                message=(
+                    f"DCF base {sanity['base_value']:.2f} vs market price "
+                    f"{sanity['market_price']:.2f} differ by "
+                    f"{sanity['ratio']:.2f}× — outside the "
+                    f"{sanity.get('ratio_threshold', 3.0):.0f}× sanity band; "
+                    "magnitude conclusions unreliable until DCF inputs are re-audited"
+                ),
+            )
+        return GateCheck(
+            gate_name="valuation_sanity_gate",
+            passed=True,
+            message=(
+                f"DCF base and market price share a magnitude regime "
+                f"(ratio {sanity['ratio']:.2f}×)"
+            ),
         )

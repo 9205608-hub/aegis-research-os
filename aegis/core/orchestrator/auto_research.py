@@ -310,6 +310,35 @@ def _fmt_duration(delta: timedelta) -> str:
 MAX_TERMINAL_RATIO = 30.0
 
 
+def max_cumulative_growth_ratio(base_revenue: float, is_cny: bool) -> float:
+    """AUDIT 2026-07-12 R3-1：规模感知的累计增长封顶（Grok Round-2 复审）。
+
+    统一 30× 封顶对小基数超成长股（寒武纪 ¥65亿）是合理的防爆栓，但对
+    巨头是幻想通行证：宁德 ¥4237亿 营收按 30× 封顶合法地滚到 ¥12.7万亿
+    （≈中国 GDP 的 1/10），DCF base ¥4064 vs 市价 ¥349（11.65×），审计
+    判词"估值体系实质性破产、用坏模型反解市场预期=循环论证"。
+
+    十年营收倍数的历史基率强烈依赖起始规模——按规模分档取近似历史
+    top-decile 上限：
+      mega（≥¥2000亿 / $30B）  → 3×（≈11.6% 十年 CAGR，巨头顶配）
+      large（≥¥500亿 / $7B）   → 6×（≈19.6%）
+      mid（≥¥100亿 / $1.4B）   → 12×（≈28.2%）
+      small（其余，如寒武纪 ¥65亿）→ 30×（原防爆栓，超成长可达）
+    """
+    if not isinstance(base_revenue, (int, float)) or base_revenue <= 0:
+        return MAX_TERMINAL_RATIO
+    t_mega, t_large, t_mid = (
+        (2000e8, 500e8, 100e8) if is_cny else (30e9, 7e9, 1.4e9)
+    )
+    if base_revenue >= t_mega:
+        return 3.0
+    if base_revenue >= t_large:
+        return 6.0
+    if base_revenue >= t_mid:
+        return 12.0
+    return MAX_TERMINAL_RATIO
+
+
 def cap_cumulative_growth_path(
     growth_path: list[float],
     terminal_growth: float,
@@ -458,6 +487,14 @@ def build_margin_scenarios(
     if not _sector_margin_has_real_value(sector_pack):
         return [(labels[0], round(cur, 4))]
     sector_m = _sector_typical_margin(sector_pack)
+    # AUDIT 2026-07-12 R2（Grok round-1 复审 002371/002594）：假锚防护扩展。
+    # sector pack 按行业大类挂载，中位数可能来自完全不同的商业模式（半导体
+    # pack 的 50% 是 fabless 口径，套到设备商 14.7% OPM 头上就成了"行业中位
+    # 50%→市场只给零改善定价"的幻想上行锚）。判据用**绝对差 >25pp**：修复
+    # 股（康达 2.9%→行业 20%）的合理修复情景保留；跨商业模式的幻想锚
+    # （+35pp 到 fabless 利润率）剔除。向下的行业档（均值回归情景）不受限。
+    if sector_m - cur > 0.25:
+        return [(labels[0], round(cur, 4))]
     if abs(cur - sector_m) < 0.005:
         return [(labels[0], round(cur, 4))]
     mid = (cur + sector_m) / 2.0
@@ -2292,17 +2329,22 @@ class AutoResearchOrchestrator:
                 adjusted_growth, _ = resolve_driver_revenue(
                     meta_facts.get("revenue", 0), adjusted_tree,
                 )
-                # AUDIT-A4: apply the same 30× cumulative cap as the base
-                # path (BUG-Y23). Without it, a hyper-growth bear/bull tree
+                # AUDIT-A4: apply the same cumulative cap as the base path
+                # (BUG-Y23). Without it, a hyper-growth bear/bull tree
                 # compounds past the capped base and the values shown in the
                 # report degrade to the mechanical 0.5×/2× clamp envelope.
+                # R3-1: bound is scale-tiered, identical to the base path.
+                _bb_ratio = max_cumulative_growth_ratio(
+                    meta_facts.get("revenue", 0), str(config.ticker).isdigit(),
+                )
                 adjusted_growth, _capped_yr = cap_cumulative_growth_path(
                     adjusted_growth, dcf_input_flat.terminal_growth_rate,
+                    max_ratio=_bb_ratio,
                 )
                 if _capped_yr >= 0:
                     _log(f"  ⚠ {label} driver-tree growth path capped at "
                          f"Y{_capped_yr + 1} (cumulative "
-                         f"{MAX_TERMINAL_RATIO:.0f}× revenue threshold, same as base)")
+                         f"{_bb_ratio:.0f}× scale-tier threshold, same as base)")
                 return adjusted_growth
             # Fallback: apply aggregate delta to base growth path
             return [max(g + d, growth_floor) for g, d in
@@ -2538,6 +2580,25 @@ class AutoResearchOrchestrator:
             # Warn if scenarios are too compressed (all within 30% of each other)
             if bull_v > 0 and bear_v >= 0 and (bull_v - bear_v) / bull_v < 0.15:
                 _log(f"  ⚠ CONSISTENCY: Scenario range too narrow ({_sym}{bear_v:.2f}-{_sym}{bull_v:.2f}) — mechanical fallback may be too conservative")
+
+        # AUDIT 2026-07-12: two-sided valuation sanity (Grok 20-audit P0).
+        # The 20%-of-price warn above is one-directional — a base at 10× the
+        # market price (宁德 ¥4000+ vs ¥349) passed silently and every
+        # magnitude conclusion downstream was built on it. Stamp the shared
+        # verdict into scenarios so the synthesizer (strict scrub), the
+        # publish gate (valuation_sanity_gate) and the report renderer all
+        # read one source of truth.
+        from aegis.core.truth.valuation_sanity import check_valuation_sanity
+        _sanity = check_valuation_sanity(base_v, price)
+        if _sanity is not None:
+            scenarios["valuation_sanity"] = _sanity
+            if _sanity["mismatch"]:
+                _sym = _currency_symbol_for_logs(meta_facts)
+                _log(
+                    f"  ⚠ VALUATION SANITY: base {_sym}{base_v:.2f} vs price {_sym}{price:.2f} "
+                    f"(ratio {_sanity['ratio']:.2f}×) outside sanity band — magnitude "
+                    f"conclusions withheld (strict scrub + publish gate block)"
+                )
 
         # Reverse DCF (always uses flat/consolidated input)
         solver = ReverseDCFSolver()
@@ -3976,6 +4037,17 @@ class AutoResearchOrchestrator:
             total_blocks = sum(sum(1 for i in cr.issues if i.severity == "block") for cr in critic_results)
             _log(f"  Critics: {total_blocks} blocks, {total_warns} warns")
 
+        # AUDIT 2026-07-12 (B4): gates that skipped for missing data are not
+        # passes — a thesis published while integrity gates couldn't even run
+        # must not carry high confidence (新易盛/沈飞 published+high with
+        # missing DCF artifacts). Collect skip names for the decision engine.
+        _gate_skipped_names = [
+            c.gate_name for c in gate_result.checks
+            if c.passed and c.severity == "warn" and "skipped" in c.message
+        ]
+        if _gate_skipped_names:
+            _log(f"  Gate skips (missing inputs): {_gate_skipped_names}")
+
         # ── Step 12b: Chief Analyst — Thesis Synthesis (LLM post-agent) ─
         synthesized_thesis = None
         if _agents_reuse is not None:
@@ -4371,6 +4443,9 @@ class AutoResearchOrchestrator:
                 # the decision context downstream) operates on post-iteration
                 # judgments, not the refuted round-1 set.
                 "judgments_updated_after_iteration": _judgments_updated_after_iteration,
+                # AUDIT 2026-07-12 (B4): gates skipped for missing inputs →
+                # confidence cap (published+skips 不得 high).
+                "gate_skipped_names": _gate_skipped_names,
             },
             synthesized_thesis=synthesized_thesis,
         )
@@ -4480,9 +4555,13 @@ class AutoResearchOrchestrator:
                 regime=meta_facts.get("__pricing_regime"),
                 verification_results=meta_facts.get("__verification"),
                 kill_criteria=getattr(decision, "kill_criteria", None),
+                # AUDIT 2026-07-12 (B1/B5): 证伪触发器与 bias 真值随合约落库
+                disconfirming_triggers=getattr(
+                    decision, "disconfirming_triggers", None),
                 scenarios=scenarios,
                 publishing_status=getattr(decision, "publishing_status", "draft"),
                 confidence=getattr(decision, "confidence_bucket", "medium"),
+                bias_check_status=getattr(decision, "bias_check_status", None),
                 market_id="cn" if is_a_share else "us",
                 accounting_standard="CAS" if is_a_share else "US_GAAP",
             )
@@ -5469,7 +5548,15 @@ class AutoResearchOrchestrator:
             # path applies the identical bound.
             tg = config.terminal_growth_rate
             pre_cap_path = list(growth_path)
-            growth_path, capped_year = cap_cumulative_growth_path(growth_path, tg)
+            # R3-1：封顶按公司规模分档（mega 3× / large 6× / mid 12× /
+            # small 30×），A 股按 ticker 全数字判定 CNY 口径。
+            _max_ratio = max_cumulative_growth_ratio(
+                revenue, str(config.ticker).isdigit(),
+            )
+            facts["__growth_cap_ratio"] = _max_ratio
+            growth_path, capped_year = cap_cumulative_growth_path(
+                growth_path, tg, max_ratio=_max_ratio,
+            )
             if capped_year >= 0:
                 old_y10 = revenue * 1.0
                 for g in pre_cap_path:
@@ -5486,7 +5573,7 @@ class AutoResearchOrchestrator:
                 if not already_warned:
                     msg = (
                         f"  ⚠ Driver-tree growth path capped at Y{capped_year + 1} "
-                        f"(cumulative {MAX_TERMINAL_RATIO:.0f}× revenue threshold). "
+                        f"(cumulative {_max_ratio:.0f}× scale-tier threshold). "
                         f"Pre-cap Y10 revenue would have been "
                         f"{old_y10/revenue:.0f}× base; post-cap {new_y10/revenue:.0f}×."
                     )

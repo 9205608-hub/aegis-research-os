@@ -1,6 +1,60 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-11 (**Aegis 2.0 Phase 3 落地**：事件驱动循环——watchlist 扫描器 + 水位线幂等 + delta 简报 + launchd 调度 + 90 天回看，**待用户验收**，分支 claude/phase3-events；1559 测试绿 + 对抗性审查 8 bug 全修。P0/P1/P2=PR #11/#12/#13 已合并)
+> 最新更新: 2026-07-12 (**置信度大整改 Phase A/B 落地**：估值诚信 + 契约语义 + 决策门，分支 claude/research-report-confidence-f1dac6；1607 测试绿 + 3 smoke golden 重录；Phase C Grok 复审循环进行中)
+
+## 🔧 2026-07-12 置信度大整改 Phase A/B（Grok 20 审计均分 3.1/10 → 目标 ≥6）
+
+**背景**：2026-07-11 的 20 只 Grok 独立审计均分 3.1/10（`logs/grok_audits/`），扣分集中在 4 个系统级 bug。本轮代码级侦查 + 整改计划见 **[CONFIDENCE_OVERHAUL_PLAN.md](CONFIDENCE_OVERHAUL_PLAN.md)**（含全部 file:line 证据）。KPI：5 只评测票（宁德/新易盛/茅台/北方华创/比亚迪）Grok 复审均分 ≥6 且无单票 <5，审计 prompt 冻结防 Goodhart。
+
+### Phase A：估值与文本诚信
+- ✅ **A1 双向 valuation sanity（新模块 [valuation_sanity.py](aegis/core/truth/valuation_sanity.py)）**：base/price 出 [1/3, 3] 带即 mismatch（宁德 base ¥4000 vs ¥349 此前静默通过——旧检查只查 base<0.2×price 单向）。三处消费同一真源：orchestrator 盖章进 `scenarios["valuation_sanity"]`、publish gate 新第 14 门 `valuation_sanity_gate`（block）、HTML 抑制目标价 + 情景格加"模型诊断"脚注
+- ✅ **A2 修 % 清洗自关闭**：`thesis_synthesizer.py` 旧逻辑在 sanctioned 回报全部 |>90%| 时跳过 % 检查——DCF 失配 10 倍时恰好全中，"被删数字算出的下行%"永远存活。strict 模式（失配时）以空 sanctioned 集强制清洗；非 strict 保留 BUG-A15 对"DCF 归零型公司"的让步
+- ✅ **A2.5 % 清洗从"只告警"改为"实际改写"**（旧实现 warn-only，误导 % 原样进报告）+ 失配时 `variant_magnitude` 确定性替换为诚实降级声明（"model bug > market bug"、指向条件化预期表）
+- ✅ **A3 scrubber 全字段覆盖**：`_VALUE_CLAIM_FIELDS` 6→16 字段（counter_thesis/key_assumption_disagreement/conviction_narrative 等 HTML 直渲染字段此前从不清洗="残影"通道）；替换改为按 match span 拼接（旧 `str.replace(token,tag,1)` 会错杀同 token 的第一次无害出现）；editor 5 字段同步接 strict
+- ✅ **A4 估值假设表进合约**：`ThesisContract.valuation_assumptions`（可选字段，旧 JSONL 兼容）——WACC/g/预测年限/股本/净负债/终值占比/情景每股值/sanity 判定，治"DCF 黑箱不可审计"
+
+### Phase B：契约语义与决策门
+- ✅ **B1 kill/disconfirm 管道正名**：根因是两处管道改名（非 LLM 写错）——`engine._extract_kill_criteria` 把 risk_analyst 的 disconfirming_triggers 原样改名成 kill（threshold 恒 "trigger event"）+ synthesizer 喂 LLM 时贴 "Kill Criteria:" 错标。现在：kill = 量化阈值（正则提取真实阈值文本）或二元可观察事件（评级下调/违约/立案等白名单）的子集；全部触发器以本名进 `ThesisDecision.disconfirming_triggers`（新字段）→ 合约 `disconfirming_triggers`（旧行为只塞一句 what_would_change_my_mind）；agent schema 补证伪方向定义
+- ✅ **B2 must_monitor 去 TODO 污染**：`monitorables.py` 的候选字段移除 open_questions/follow_ups/follow_up_questions——未答研究问题是"研究待办"不是"必须监控"
+- ✅ **B3 evidence gap（"结论跑在证据前"的闸）**：`engine.evidence_gap_hits` CJK bigram 重叠检测——edge/variant 叙事与自家 open_questions 强重叠 ≥2 处 → UnresolvedConflict("evidence_gap") → status=downgraded → conf 封顶 medium（复用既有语义）
+- ✅ **B4 决策门方差修复**：DeepSeek 客户端温度按 role 表传递（旧硬编码 0.2 无视 critic=0.0，三处调用点全修）；llm_judge block 级 finding 须复跑复现才计入（未复现降 warn，防单条抖动翻转 critic_gate 阈值=1 的发布决策=茅台翻盘根因）；gate 缺数据 skip 计数传入 decision → published+skips 不得 high（新易盛/沈飞失守通道）
+- ✅ **B5 bias_check_status 接真值**：persistence 硬编码 "passed" → 接 `decision.bias_check_status`（engine 真值，值域与 schema pattern 一致）
+
+### 验证
+> **1607 passed / 7 skipped**（+51 回归：[test_confidence_overhaul.py](tests/unit/test_confidence_overhaul.py) 43 个 + 改写 2 个锁旧行为的 monitorables 测试 + grok 桩接 role 参数）。
+> **golden**：3 smoke 基线重录（diff 全部为有意变更：valuationSanity 新键 / gate 13→14 / nvda kill 4→3 条），重录后零 diff。
+> ⚠ **预存在问题（非本轮引入）**：`test_golden_master[002669]`（LLM 快照）在干净 HEAD 上同样 49 处 diff——本 worktree 的 002669 pkl 与基线来源不一致（上轮 HANDOFF 记录该快照在无精确源 pkl 的 worktree 应 skip）。未重录（避免用错源锁基线），留给 main 上的 pkl 重录。
+
+### Phase C Round 1 结果（2026-07-12 下午）
+> **均分 2.8（基线 3.1）：2.5/3.0/3.5/3.0/2.0**。修复被认可（5/5 判词给"blocked 正确/诚实分"），但被 LLM 内容层新硬伤压平。完整对比见 [GROK_REAUDIT_2026-07-12.md](GROK_REAUDIT_2026-07-12.md)。
+> 三个结构性教训：①事后清洗打不赢军备竞赛（LLM 措辞绕开关键词窗口 + 占位符被当"残骸"扣分）→ 事前注入；②Kill 极性真根因 = risk_analyst 触发器证伪的是"风险判断"非"论点"（多头论点下"风险消退"是利好确认）→ kill 改由 synthesizer 结构化输出；③35 条未去重触发器被叫"agent 垃圾场" → 聚类去重。
+
+### Round 2 修复（同日已落地，评测批进行中）
+- ✅ R2-1 **估值引用规则事前注入**（`valuation_constraint_block`，synthesizer+editor）：失配时禁引一切 DCF 派生数字+语气须匹配 blocked/low；常态时限定 sanctioned 值清单
+- ✅ R2-2 **kill 由 synthesizer 结构化输出**（SYNTHESIS_TOOL_SCHEMA 新增 kill_criteria，方向硬定义"出现即推翻本论点"）；engine 做量化/二元事件校验，risk_analyst 路径降为回退；二元可观察事件（评级下调/违约/立案）白名单同样算可执行 kill
+- ✅ R2-3 disconfirm 聚类去重（token 重叠 ≥0.4 Jaccard 或 ≥0.55 overlap 合簇，量化版本胜出，封顶 12）
+- ✅ R2-4 strict 模式清洗倍数/PE 重估语言（"30× PE 空间"此前因 倍/× 后缀被当聚合量豁免）
+- ✅ R2-5 假设表补 equity_value/market_price 勾稽行
+- ✅ R2-6 行业中位假锚防护扩展：sector 档高于公司自身 OPM >25pp（跨商业模式错配包，002371 半导体设备配 fabless 50%）→ 只出维持现状档；修复股（康达 2.9%→20%）不受影响
+- ✅ R2-7 期限错配防护（终年 g 不得与近端一致预期对比造"市场自相矛盾"——宁德/比亚迪两份复审点名）
+- 测试 1618 passed（overhaul 回归 43→57）；3 smoke golden 重录（注：本日曾 rsync 主库 .cache 导致 pkl 换源触发 golden 假阳性，已按当前 pkl 重录）
+
+### Round 3（引擎数字质量，同日）
+- ✅ R3-1 **规模感知增长封顶** `max_cumulative_growth_ratio`（mega ≥¥2000亿→3× / large ≥500亿→6× / mid ≥100亿→12× / small→30×；base+bear/bull 三路同栓）。实测：宁德 base ¥4064→¥475（11.65×→1.36×）、比亚迪 18.2×→1.54×、北方华创 5.82×→2.21×——三只失配票全部回到可信带
+- ✅ R3-2 kill/disconfirm 跨清单调和（与 kill 同主题的触发器不再以第二套阈值出现）
+- ✅ R3-3 CAS 营业利润口径标注进 synthesizer prompt（防"费用漏扣"合理怀疑）
+- 测试 1601+26 golden 绿（smoke 基线随引擎有意变更重录）
+
+### 三轮收敛结果（KPI：均分 ≥6，未达标，循环继续）
+> **基线 3.1 → R1 2.8 → R2 3.33 → R3 3.5**。逐票轨迹与判词证据见 [GROK_REAUDIT_2026-07-12.md](GROK_REAUDIT_2026-07-12.md)。
+> 宁德判词已从"估值体系实质性破产"（R2）转为"算术大体自洽、不是垃圾稿"（R3 4.0）。北方华创判词给出下一步明路："若去掉 DCF 目标价族与伪精确，残余行业常识价值约 5 分"。
+
+### 遗留（R4 起点，见 trajectory_summary 排序清单）
+- **R4 旗舰**：失配票 market_implied_story 切无模型锚（相对估值分位+一致预期倍数反推），消"用坏模型反解预期=循环论证" P0
+- B3 evidence gate 灵敏度（宁德 R3 带缺口 published 未拦）；OPM core 口径；kill 内部一致性；情景机械包络；终值纪律；regime steady 误标
+- net_debt 债项映射复查（A5，低优先）
+- `test_golden_master[002669]` 预存在失败（本 worktree pkl 与基线不同源，非本轮引入）——留 main 的 pkl 重录
+- **分支未 commit**：全部改动在 worktree 工作区，等用户定夺提交/开 PR
 
 ## 🔎 2026-07-11 Grok（grok-4.5）前三期评审 + Claude triage
 

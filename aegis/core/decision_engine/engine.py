@@ -17,6 +17,7 @@ Principles:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
@@ -35,6 +36,74 @@ class UnresolvedConflict:
     conflicting_judgment_ids: list[str]
     description: str
     resolution_suggestion: str
+
+
+# ── AUDIT 2026-07-12 (B3): evidence-gap detection ────────────────────────
+# Grok's cross-cutting finding: "信息缺口的位置正好是 edge 声称的位置" —
+# the thesis cites variables as established edge while its own
+# open_questions admit they are unknown. Nothing in the pipeline checked
+# this overlap. Deterministic CJK-bigram / latin-token overlap between the
+# edge-bearing narrative fields and each open question; strong overlap on
+# ≥ EVIDENCE_GAP_CONFLICT_THRESHOLD questions becomes an UnresolvedConflict
+# → status "downgraded" → confidence capped medium (existing semantics).
+
+_CJK_SEG_RE = re.compile(r"[一-鿿]+")
+_LATIN_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9\-]{2,}")
+# Generic bigrams that would fire on any thesis/question pair.
+_STOP_BIGRAMS = frozenset({
+    "我们", "市场", "公司", "是否", "没有", "可以", "进行", "相关",
+    "当前", "一个", "这个", "对于", "如果", "以及", "还是", "什么",
+    "具体", "多少", "如何", "怎样", "数据", "需要", "分析", "判断",
+    "情况", "问题", "目前", "未来", "持续", "变化", "趋势", "水平",
+})
+EVIDENCE_GAP_MIN_SHARED = 4      # shared informative tokens per question
+EVIDENCE_GAP_MIN_RATIO = 0.28    # …as a share of the question's tokens
+EVIDENCE_GAP_CONFLICT_THRESHOLD = 2  # hit questions → unresolved conflict
+
+
+def _gap_tokens(text: str) -> set[str]:
+    toks: set[str] = set()
+    for seg in _CJK_SEG_RE.findall(text or ""):
+        for i in range(len(seg) - 1):
+            bg = seg[i:i + 2]
+            if bg not in _STOP_BIGRAMS:
+                toks.add(bg)
+    for w in _LATIN_TOKEN_RE.findall((text or "").lower()):
+        toks.add(w)
+    return toks
+
+
+def evidence_gap_hits(
+    edge_text_blob: str,
+    open_questions: list[Any],
+    min_shared: int = EVIDENCE_GAP_MIN_SHARED,
+    min_ratio: float = EVIDENCE_GAP_MIN_RATIO,
+) -> list[dict]:
+    """Open questions whose subject matter overlaps the claimed edge.
+
+    Returns one dict per hit: {"question", "shared" (sample), "ratio"}.
+    """
+    edge_toks = _gap_tokens(edge_text_blob)
+    if not edge_toks:
+        return []
+    hits: list[dict] = []
+    for q in open_questions or []:
+        q_text = q.get("question") if isinstance(q, dict) else q
+        q_text = str(q_text or "").strip()
+        if not q_text:
+            continue
+        q_toks = _gap_tokens(q_text)
+        if not q_toks:
+            continue
+        shared = q_toks & edge_toks
+        ratio = len(shared) / len(q_toks)
+        if len(shared) >= min_shared and ratio >= min_ratio:
+            hits.append({
+                "question": q_text,
+                "shared": sorted(shared)[:8],
+                "ratio": round(ratio, 2),
+            })
+    return hits
 
 
 @dataclass
@@ -72,6 +141,12 @@ class ThesisDecision:
     kill_criteria: list[dict] = field(default_factory=list)
     monitorables: list[dict] = field(default_factory=list)
     fragility_points: list[str] = field(default_factory=list)
+    # AUDIT 2026-07-12 (B1): agent falsification triggers under their honest
+    # name. Previously these were only surfaced renamed as kill_criteria,
+    # while the contract's disconfirming_triggers field got a one-line
+    # "what_would_change_my_mind" — the label swap behind Grok's
+    # "Kill 名实倒置" finding.
+    disconfirming_triggers: list[str] = field(default_factory=list)
 
     # Quality
     unresolved_conflicts: list[UnresolvedConflict] = field(default_factory=list)
@@ -119,6 +194,37 @@ class DecisionEngine:
 
         # Detect unresolved conflicts
         conflicts = self._detect_conflicts(judgments)
+
+        # AUDIT 2026-07-12 (B3): edge built on unclosed evidence is an
+        # unresolved conflict. When the synthesized edge/variant narrative
+        # substantially overlaps ≥N of its own open_questions, the thesis is
+        # claiming as edge what it admits it does not know — it must not
+        # publish clean ("结论跑在证据前面", Grok 20-audit ~全中).
+        if synthesized_thesis is not None:
+            _edge_blob = " ".join(
+                str(getattr(synthesized_thesis, f, "") or "")
+                for f in (
+                    "core_thesis", "my_variant", "edge_source",
+                    "key_assumption_disagreement", "why_market_is_wrong",
+                )
+            )
+            _gap_hits = evidence_gap_hits(
+                _edge_blob, ctx.get("open_questions") or [])
+            if len(_gap_hits) >= EVIDENCE_GAP_CONFLICT_THRESHOLD:
+                _sample = _gap_hits[0]["question"][:60]
+                conflicts.append(UnresolvedConflict(
+                    topic="evidence_gap",
+                    conflicting_judgment_ids=[],
+                    description=(
+                        f"edge/variant 引用的关键变量仍在 open_questions 中未闭合"
+                        f"（{len(_gap_hits)} 处重叠，如「{_sample}…」）——"
+                        "论点把自承未知的数据当已证实事实使用"
+                    ),
+                    resolution_suggestion=(
+                        "补齐关键数据闭合 open_questions，或把 edge 降级为"
+                        "待验证假设（幅度与置信同步下调）后再发布"
+                    ),
+                ))
 
         # Determine publishing status
         if not publish_gate_passed:
@@ -211,15 +317,22 @@ class DecisionEngine:
             },
             probability_weighted_value=scenarios.get("probability_weighted_value"),
             primary_swing_factor=scenarios.get("primary_swing_factor", ""),
-            kill_criteria=self._extract_kill_criteria(judgments),
+            kill_criteria=(_kills := self._extract_kill_criteria(
+                judgments, synthesized_thesis)),
             monitorables=self._extract_monitorables(judgments),
             fragility_points=self._extract_fragility_points(judgments),
+            # R3-2: 跨清单调和——与 kill 同主题的触发器不再在 disconfirm
+            # 里以另一套阈值重复出现（Grok round-2："Kill/触发器多阈值互相
+            # 打架"）。kill 是量化定稿，disconfirm 保留其余观察方向。
+            disconfirming_triggers=self._reconcile_disconfirm_with_kills(
+                self._extract_disconfirming_triggers(judgments), _kills),
             unresolved_conflicts=conflicts,
             critic_summary=critic_summary,
             confidence_bucket=self._determine_confidence(
                 judgments, critic_results,
                 publishing_status=status,
                 publish_gate_passed=publish_gate_passed,
+                gate_skipped_count=len(ctx.get("gate_skipped_names") or []),
             ),
             bias_check_status=bias_status,
             dcf_projections=ctx.get("dcf_projections_base", []),
@@ -410,17 +523,172 @@ class DecisionEngine:
                     summaries["counter_thesis"] = counterargs[0]
         return summaries
 
-    def _extract_kill_criteria(self, judgments: list[JudgmentContract]) -> list[dict]:
+    # AUDIT 2026-07-12 (B1): a kill criterion must carry an executable,
+    # quantified threshold. Matches either a comparator phrase followed by a
+    # number ("低于80%", "跌破¥100亿", "falls below 0.6") or a duration
+    # pattern ("连续两个季度"). Bare qualitative triggers ("增长放缓") never
+    # qualify — they stay as disconfirming triggers / monitorables.
+    _QUANT_THRESHOLD_RE = re.compile(
+        r"(?:低于|高于|超过|超出|跌破|突破|不足|少于|大于|小于|升至|降至|回落至|达到|"
+        r"下降超|上升超|环比[升降]|同比[升降]|"
+        r"below|above|under|over|exceeds?|falls?\s+below|drops?\s+below|[<>≥≤])"
+        r"[^。;；，,]{0,20}?"
+        r"\d+(?:[.,]\d+)?\s*(?:%|pp|个百分点|亿|万|元|倍|天|日|周|bp|bps|x|×)?"
+        r"|连续\s*[两三四五六0-9]+\s*[个]?\s*(?:季度|月|年|周)"
+        r"|\d+(?:[.,]\d+)?\s*(?:%|pp|个百分点|亿元?|万元?|倍|bp|bps)\s*(?:以[上下内]|或以[上下])"
+    )
+
+    # Binary observable events are executable kills even without a number —
+    # the event either happened or it didn't (credit downgrade, covenant
+    # breach, regulatory investigation…). Confirmation-style signals ("获得
+    # 订单/认证") deliberately do NOT appear here.
+    _BINARY_EVENT_RE = re.compile(
+        r"评级下调|展望转负|违约|豁免|退市|立案|调查|处罚|吊销|召回|"
+        r"流失|终止合作|资产冻结|停产|断供|减值|商誉爆雷|"
+        r"downgrade|covenant\s+breach|waiver|investigation|delisting|"
+        r"recall|suspension|impairment",
+        re.IGNORECASE,
+    )
+
+    def _extract_kill_criteria(
+        self,
+        judgments: list[JudgmentContract],
+        synthesized_thesis: Any = None,
+    ) -> list[dict]:
+        """AUDIT 2026-07-12 (B1 + R2-2): thesis-direction-aware kills.
+
+        Primary source: the SYNTHESIZER's own structured kill_criteria — it
+        knows the final thesis stance, so its kills carry the right polarity
+        (Grok round-1 caught the deeper bug: risk-analyst disconfirming
+        triggers falsify the RISK view, which for a bullish thesis makes
+        them thesis-POSITIVE confirmations — "Kill 写成多头确认").
+        Every candidate still passes the executability check: a quantified
+        threshold or a binary observable event.
+
+        Fallback (no/invalid synthesizer kills): the quantified/binary
+        subset of the risk analyst's triggers (B1 behavior). Non-qualifying
+        triggers remain in disconfirming_triggers / monitorables.
+        """
+        st_kills: list[dict] = []
+        for item in (getattr(synthesized_thesis, "kill_criteria", None) or []):
+            if not isinstance(item, dict):
+                continue
+            desc = str(item.get("description") or "").strip()
+            if not desc:
+                continue
+            probe = f"{desc} {item.get('threshold') or ''}"
+            m = self._QUANT_THRESHOLD_RE.search(probe)
+            ev = None if m else self._BINARY_EVENT_RE.search(probe)
+            if not (m or ev):
+                continue
+            threshold = str(item.get("threshold") or "").strip()
+            if not threshold:
+                threshold = m.group(0).strip() if m else f"事件触发：{ev.group(0)}"
+            st_kills.append({
+                "description": desc,
+                "threshold": threshold,
+                "check_frequency": str(item.get("check_frequency") or "quarterly"),
+            })
+        if st_kills:
+            return st_kills[:6]
+
         criteria = []
         for j in judgments:
-            if j.agent_name == "risk_analyst":
-                for dt in j.disconfirming_triggers:
-                    criteria.append({
-                        "description": dt.text,
-                        "threshold": "trigger event",
-                        "check_frequency": dt.check_frequency,
-                    })
+            if j.agent_name != "risk_analyst":
+                continue
+            for dt in j.disconfirming_triggers:
+                text = dt.text or ""
+                m = self._QUANT_THRESHOLD_RE.search(text)
+                if m:
+                    threshold = m.group(0).strip()
+                else:
+                    ev = self._BINARY_EVENT_RE.search(text)
+                    if not ev:
+                        continue
+                    threshold = f"事件触发：{ev.group(0)}"
+                criteria.append({
+                    "description": text,
+                    "threshold": threshold,
+                    "check_frequency": dt.check_frequency,
+                })
         return criteria
+
+    # R2-3: 7 agents × ~5 triggers produced a 27-35 entry "未去重的 agent
+    # 垃圾场" (Grok round-1) with conflicting thresholds for the same metric.
+    # Near-duplicates are clustered by token overlap; the quantified variant
+    # wins its cluster; hard cap keeps the list an investment-committee
+    # artifact rather than a dump.
+    _DISCONFIRM_CAP = 12
+
+    def _extract_disconfirming_triggers(
+        self, judgments: list[JudgmentContract],
+    ) -> list[str]:
+        """AUDIT 2026-07-12 (B1 + R2-3): all agents' falsification triggers
+        under their honest name — clustered, threshold-reconciled (quantified
+        variant preferred), capped at ``_DISCONFIRM_CAP``."""
+        clusters: list[tuple[set[str], str, bool]] = []  # (tokens, text, quantified)
+        for j in judgments:
+            for dt in j.disconfirming_triggers:
+                text = (dt.text or "").strip()
+                if not text:
+                    continue
+                toks = _gap_tokens(text)
+                quant = bool(self._QUANT_THRESHOLD_RE.search(text))
+                matched = False
+                for i, (ctoks, ctext, cquant) in enumerate(clusters):
+                    if not toks or not ctoks:
+                        if text.lower() == ctext.lower():
+                            matched = True
+                            break
+                        continue
+                    inter = len(toks & ctoks)
+                    # 宁并勿滥：同指标多套阈值正是 Grok 判"不可执行"的点，
+                    # 轻度过合并（量化版本存活）好于三套阈值并存。
+                    if (
+                        inter / (len(toks | ctoks) or 1) >= 0.4
+                        or inter / (min(len(toks), len(ctoks)) or 1) >= 0.55
+                    ):
+                        matched = True
+                        # Threshold reconciliation: quantified beats vague;
+                        # among equals keep the incumbent (first agent wins).
+                        if quant and not cquant:
+                            clusters[i] = (toks, text, True)
+                        break
+                if not matched:
+                    clusters.append((toks, text, quant))
+        return [text for _, text, _ in clusters[: self._DISCONFIRM_CAP]]
+
+    def _reconcile_disconfirm_with_kills(
+        self, triggers: list[str], kills: list[dict],
+    ) -> list[str]:
+        """R3-2: drop disconfirming triggers that duplicate a kill's subject.
+
+        The kill list carries the single reconciled threshold per metric;
+        a same-subject trigger with a different cutoff surviving in
+        disconfirming_triggers recreates the "同一指标多套阈值" defect."""
+        kill_tok_sets = [
+            _gap_tokens(f"{k.get('description', '')} {k.get('threshold', '')}")
+            for k in kills or []
+        ]
+        if not kill_tok_sets:
+            return triggers
+        out = []
+        for text in triggers:
+            toks = _gap_tokens(text)
+            dup = False
+            for ktoks in kill_tok_sets:
+                if not toks or not ktoks:
+                    continue
+                inter = len(toks & ktoks)
+                if (
+                    inter / (len(toks | ktoks) or 1) >= 0.4
+                    or inter / (min(len(toks), len(ktoks)) or 1) >= 0.55
+                ):
+                    dup = True
+                    break
+            if not dup:
+                out.append(text)
+        return out or triggers[:1]
 
     def _extract_monitorables(self, judgments: list[JudgmentContract]) -> list[dict]:
         monitorables = []
@@ -451,6 +719,7 @@ class DecisionEngine:
         critic_results: list[CriticResult],
         publishing_status: str = "published",
         publish_gate_passed: bool = True,
+        gate_skipped_count: int = 0,
     ) -> str:
         """Determine confidence bucket based on evidence and critic results.
 
@@ -511,6 +780,13 @@ class DecisionEngine:
         if not publish_gate_passed or publishing_status == "blocked":
             bucket = cap(bucket, "low")
         elif publishing_status == "downgraded":
+            bucket = cap(bucket, "medium")
+
+        # AUDIT 2026-07-12 (B4): integrity gates that SKIPPED for missing
+        # inputs are not passes. "published + high" while DCF artifacts /
+        # sensitivity tables were absent is exactly the 新易盛/沈飞 failure
+        # Grok called 发布门槛失守 — missing data caps confidence at medium.
+        if gate_skipped_count > 0:
             bucket = cap(bucket, "medium")
 
         return bucket

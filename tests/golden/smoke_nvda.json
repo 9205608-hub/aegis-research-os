@@ -59,13 +59,13 @@
         "name": "DCF & multiples triangulation",
         "narrative": "",
         "pros": [
-          "P/E (TTM): 30.6x",
-          "P/E (FY static): 40.6x"
+          "P/E (TTM): 42.8x",
+          "P/E (FY static): 42.8x"
         ],
         "role": "Valuation Analyst",
         "score": 3.4,
         "stance": "neutral",
-        "thesis": "Scenario spread (bull/bear): 104% — wide range of outcomes"
+        "thesis": "Scenario spread (bull/bear): 92% — wide range of outcomes"
       },
       {
         "cons": [
@@ -75,13 +75,13 @@
         "name": "Consensus gap decomposition",
         "narrative": "",
         "pros": [
-          "Market-implied revenue growth: 17.70%",
+          "Market-implied revenue growth: 18.89%",
           "Consensus revision momentum: flat, breadth=mixed"
         ],
         "role": "Variant Analyst",
         "score": 3.3,
         "stance": "bear",
-        "thesis": "Base case implies -25% downside — price above our intrinsic value estimate"
+        "thesis": "Base case implies -29% downside — price above our intrinsic value estimate"
       },
       {
         "cons": [
@@ -120,12 +120,6 @@
     "bias": "warned",
     "catalysts": [
       {
-        "date": "2026-08-26",
-        "impact": "Medium",
-        "note": "",
-        "title": "Earnings Report"
-      },
-      {
         "date": "2026-08-09",
         "impact": "Low",
         "note": "10-Q Q2 filing deadline (period ending 2026-06-30)",
@@ -154,7 +148,7 @@
       "title": "Awaiting catalyst verification"
     },
     "confidence": "Medium",
-    "coreCalloutHtml": "<strong>Core judgment: </strong>Base-case DCF $151.36; probability-weighted $160.22, implying <strong>-20.5%</strong> vs spot $201.45.",
+    "coreCalloutHtml": "<strong>Core judgment: </strong>Base-case DCF $150.66; probability-weighted $161.20, implying <strong>-23.8%</strong> vs spot $211.50.",
     "critics": [
       {
         "issues": 0,
@@ -208,123 +202,123 @@
           1,
           274.84651,
           165.952322738,
-          4.0394526153248185,
+          2.843,
           140.89352200456202,
           6.87116275,
           0.6506751,
-          137.41113676988684,
-          125.48962262090123
+          136.214684154562,
+          124.39697183065026
         ],
         [
           2,
           337.41739013,
           199.143743654726,
-          5.345327823719622,
+          4.21723255,
           169.07303836286238,
           8.43543475325,
           0.6257088013000001,
-          165.357222632032,
-          137.90973718815872
+          164.22912735831238,
+          136.9688933577802
         ],
         [
           3,
           414.28633981489,
           238.8775035372656,
-          7.037337152268917,
+          5.90431950065,
           202.80700050313848,
           10.357158495372252,
           0.7686894968489002,
-          198.71848966318626,
-          151.35470298931907
+          197.58547201156733,
+          150.49173573129943
         ],
         [
           4,
           495.4229121344767,
           278.97264182292383,
-          8.982718167049963,
+          7.975751199724451,
           236.84777290766232,
           12.385572803361917,
           0.8113657231958668,
-          232.6335525481545,
-          161.81391895427143
+          231.62658558082902,
+          161.11349861741263
         ],
         [
           5,
           576.5286001325129,
           316.8024657728159,
-          11.113268345155369,
+          10.452865760396833,
           268.96529344112065,
           14.413215003312827,
           0.8110568799803626,
-          264.8542899029828,
-          168.24277221495709
+          264.1938873182243,
+          167.8232662228948
         ],
         [
           6,
           652.4086129949615,
           349.62577570399986,
-          13.322799093712526,
+          13.3355087610594,
           296.8322835726959,
           16.310215324874036,
           0.7588001286244849,
-          293.08606721290994,
-          170.0240896824653
+          293.09877688025676,
+          170.0314627713377
         ],
         [
           7,
           717.3060412711161,
           374.64894535590395,
-          15.469212090613793,
+          15.223319276034207,
           318.0769546071624,
           17.932651031777905,
           0.6489742827615466,
-          314.96454138323674,
-          166.86406894722438
+          314.71864856865716,
+          166.73379817012218
         ],
         [
           8,
           765.5069788907917,
           389.41340016174587,
-          17.385024424236615,
+          17.122762531739788,
           330.6119767373222,
           19.137674472269794,
           0.4820093761967566,
-          328.3773173130923,
-          158.87669508364175
+          328.11505542059547,
+          158.74980659125987
         ],
         [
           9,
           792.2997231519694,
           392.26759293253997,
-          18.900496678942066,
+          18.878865727119297,
           333.03518639972646,
           19.807493078799236,
           0.26792744261177615,
-          331.8602625572575,
-          146.63180473283867
+          331.8386316054347,
+          146.62224713929186
         ],
         [
           10,
           820.0302134622882,
           394.8445477820918,
-          20.500755336557205,
+          20.36324978220676,
           335.22302106699595,
           20.500755336557205,
           0.27730490310318845,
-          334.94571616389277,
-          135.155348259734
+          334.80821060954236,
+          135.09986281779817
         ]
       ],
-      "sharesBase": 24.22,
+      "sharesBase": 24.3,
       "subtitle": "DCF Engine · Two-stage FCFF",
       "summary": {
-        "equity": 3666.2,
-        "ev": 3664.1,
+        "equity": 3661.0,
+        "ev": 3658.8,
         "netDebt": -2.1,
-        "perShare": 151.36,
-        "pvCashflows": 1522.4,
-        "pvTerminal": 2141.7,
-        "shares": 24.22
+        "perShare": 150.66,
+        "pvCashflows": 1518.0,
+        "pvTerminal": 2140.8,
+        "shares": 24.3
       },
       "title": "10-year FCFF bridge & EV decomposition",
       "unit": "USD billions",
@@ -340,19 +334,19 @@
     },
     "driverSensitivity": [
       {
-        "delta": 26.1,
+        "delta": 26.0,
         "k": "Revenue Growth",
-        "shock": 191
+        "shock": 190
       },
       {
-        "delta": -14.7,
+        "delta": -14.8,
         "k": "WACC",
-        "shock": 129
+        "shock": 128
       },
       {
-        "delta": 10.1,
+        "delta": 10.3,
         "k": "Operating Margin",
-        "shock": 167
+        "shock": 166
       },
       {
         "delta": 3.3,
@@ -362,12 +356,12 @@
       {
         "delta": -1.8,
         "k": "Effective Tax Rate",
-        "shock": 149
+        "shock": 148
       },
       {
-        "delta": -0.1,
+        "delta": -0.3,
         "k": "Capex / Revenue",
-        "shock": 151
+        "shock": 150
       }
     ],
     "exchange": "NASDAQ",
@@ -411,11 +405,11 @@
         },
         {
           "label": "P/E (static)",
-          "value": "30.6×"
+          "value": "42.8×"
         },
         {
           "label": "EV / EBITDA",
-          "value": "36.6×"
+          "value": "38.6×"
         }
       ],
       "kpisTitle": "FY2026 Key Metrics",
@@ -448,7 +442,7 @@
       "subtitle": "Accounting Analyst · Business Analyst",
       "title": "Income statement vs cash flow"
     },
-    "headline": "NVIDIA Corporation: rule-based DCF implies 20.5% downside",
+    "headline": "NVIDIA Corporation: rule-based DCF implies 23.8% downside",
     "lede": "",
     "macro": {
       "kpis": [
@@ -502,25 +496,25 @@
       "change": 0.0,
       "changePct": 0.0,
       "currency": "$",
-      "last": 201.45,
+      "last": 211.5,
       "market": "US"
     },
     "pricedIn": null,
     "quick": [
       {
         "lbl": "Market Cap",
-        "sub": "P/S 22.6×",
-        "val": "$4.88T"
+        "sub": "P/S 23.8×",
+        "val": "$5.14T"
       },
       {
         "lbl": "P/E (TTM)",
         "sub": "EPS 4.93",
-        "val": "30.6×"
+        "val": "42.8×"
       },
       {
         "lbl": "EV / EBITDA",
         "sub": "",
-        "val": "36.6×"
+        "val": "38.6×"
       },
       {
         "lbl": "Op. Margin",
@@ -538,7 +532,7 @@
       "marketKvs": [
         {
           "k": "Market Cap",
-          "v": "$4.88T"
+          "v": "$5.14T"
         },
         {
           "k": "Revenue (TTM)",
@@ -559,20 +553,20 @@
         },
         {
           "k": "EV / EBITDA",
-          "v": "36.6×"
+          "v": "38.6×"
         }
       ],
       "openQuestions": [],
       "priceHistory": [
-        201.45
+        211.5
       ]
     },
     "rating": {
-      "bookValuePerShare": 6.49,
+      "bookValuePerShare": 6.47,
       "dcfMeaningful": true,
       "downgraded": false,
       "riskLevel": "Medium-High",
-      "target": 160.22,
+      "target": 161.2,
       "timeHorizon": "12 months",
       "tone": "avoid",
       "weighted": "Probability-weighted",
@@ -587,7 +581,7 @@
         "key": "bear",
         "narrative": "",
         "prob": 0.25,
-        "px": 111.1,
+        "px": 117.49,
         "tag": "Bear Case"
       },
       {
@@ -595,23 +589,21 @@
         "key": "base",
         "narrative": "",
         "prob": 0.5,
-        "px": 151.36,
+        "px": 150.66,
         "tag": "Base Case"
       },
       {
-        "clamped": true,
-        "footnote": "⚠ Value clamped to a conservative bound (raw model output $84.44)",
+        "clamped": false,
         "key": "bull",
-        "narrative": "⚠ Value clamped to a conservative bound (raw model output $84.44)",
+        "narrative": "",
         "prob": 0.25,
-        "px": 227.05,
-        "rawPx": 84.44,
+        "px": 225.99,
         "tag": "Bull Case"
       }
     ],
     "sector": "—",
     "sensitivity": {
-      "baseValue": 151.36419645463684,
+      "baseValue": 150.6576853520558,
       "cols": [
         2.0,
         2.5,
@@ -622,53 +614,53 @@
       "footnote": "Green = above base (more upside), red = below.",
       "matrix": [
         [
-          178.9,
-          190.4,
-          204.21,
-          221.09,
-          242.18
+          178.14,
+          189.65,
+          203.46,
+          220.34,
+          241.44
         ],
         [
-          162.97,
-          172.31,
-          183.35,
-          196.59,
-          212.78
+          162.23,
+          171.57,
+          182.61,
+          195.86,
+          212.05
         ],
         [
-          149.36,
-          157.04,
-          166.0,
-          176.59,
-          189.3
+          148.64,
+          156.32,
+          165.28,
+          175.87,
+          188.59
         ],
         [
-          137.6,
-          143.99,
-          151.36,
-          159.96,
-          170.13
+          136.9,
+          143.29,
+          150.66,
+          159.26,
+          169.42
         ],
         [
+          126.66,
+          132.03,
+          138.16,
+          145.24,
+          153.49
+        ],
+        [
+          117.67,
+          122.21,
           127.36,
-          132.72,
-          138.85,
-          145.93,
-          154.18
+          133.25,
+          140.04
         ],
         [
-          118.35,
+          109.7,
+          113.58,
+          117.95,
           122.89,
-          128.04,
-          133.93,
-          140.72
-        ],
-        [
-          110.37,
-          114.25,
-          118.61,
-          123.56,
-          129.21
+          128.55
         ]
       ],
       "paragraphs": [
@@ -694,16 +686,17 @@
       "whyNow": ""
     },
     "tickerMark": "NV",
-    "valuationPullquote": null
+    "valuationPullquote": null,
+    "valuationSanity": null
   },
   "summary": {
     "bias_check_status": "warned",
     "confidence_bucket": "medium",
     "entity_id": "nvda",
-    "gate_checks_passed": 13,
-    "gate_checks_total": 13,
+    "gate_checks_passed": 14,
+    "gate_checks_total": 14,
     "gate_publishable": true,
-    "kill_criteria_count": 4,
+    "kill_criteria_count": 3,
     "monitorables_count": 26,
     "publishing_status": "published",
     "signal_conviction": "medium",

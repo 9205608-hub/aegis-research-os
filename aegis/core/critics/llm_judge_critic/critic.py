@@ -308,11 +308,43 @@ class LLMJudgeCritic(CriticBase):
                 overall_risk="medium",
             )
 
+        # AUDIT 2026-07-12 (B4): block-level findings must reproduce before
+        # they can flip the publish decision. With critic_gate threshold=1,
+        # a single stochastic block used to flip published↔blocked run-to-run
+        # (茅台 翻盘 — Grok 20-audit 元发现). When the first pass found any
+        # block-type issue, rerun the judge once and keep block severity only
+        # for (issue_type, agent) pairs that appear in BOTH passes;
+        # non-reproduced blocks demote to warn. Infra failure on the rerun
+        # keeps the original blocks (a network hiccup must not un-gate).
+        _blocks_present = any(
+            raw.get("issue_type", "other") in _BLOCK_TYPES for raw in llm_issues
+        )
+        _confirmed_block_keys: set[tuple[str, str]] | None = None
+        if _blocks_present:
+            try:
+                _rerun = self._call_llm(user_message, shared_client=shared_client)
+                _confirmed_block_keys = {
+                    (r.get("issue_type", "other"), r.get("agent_name", "unknown"))
+                    for r in _rerun
+                    if r.get("issue_type", "other") in _BLOCK_TYPES
+                }
+            except Exception:
+                _confirmed_block_keys = None
+
         # Map LLM output to CriticIssues
         for raw in llm_issues:
             issue_type = raw.get("issue_type", "other")
             # Override severity: CAGR/growth errors always block
             severity = "block" if issue_type in _BLOCK_TYPES else "warn"
+            _demoted_unreproduced = False
+            if (
+                severity == "block"
+                and _confirmed_block_keys is not None
+                and (issue_type, raw.get("agent_name", "unknown"))
+                not in _confirmed_block_keys
+            ):
+                severity = "warn"
+                _demoted_unreproduced = True
 
             agent_name = raw.get("agent_name", "unknown")
             source_label = raw.get("source_label", "")
@@ -327,6 +359,12 @@ class LLMJudgeCritic(CriticBase):
                 f"(cited: {claimed}, actual: {correct}). "
                 f"{explanation}"
             )
+            if _demoted_unreproduced:
+                msg += (
+                    " [block→warn: finding did not reproduce on confirmation "
+                    "rerun — treated as sampling noise, not a gate-flipping "
+                    "fact error]"
+                )
 
             # Find matching judgment_id
             jid = None

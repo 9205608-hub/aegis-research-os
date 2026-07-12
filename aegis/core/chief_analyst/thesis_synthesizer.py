@@ -26,6 +26,12 @@ from aegis.core.chief_analyst.preamble import (
 
 # Fields that may contain narrative dollar-value claims and must be checked
 # against the model's DCF scenarios for consistency.
+#
+# AUDIT 2026-07-12 (Grok 20-audit sweep): the original six fields were the
+# only scrubbed ones, but html_report_v2 renders key_assumption_disagreement,
+# counter_thesis, conviction_narrative etc. verbatim — invented fair values
+# scrubbed out of core_thesis survived in those fields ("¥406 残影").
+# Every narrative string field of SynthesizedThesis is now in scope.
 _VALUE_CLAIM_FIELDS = (
     "core_thesis",
     "my_variant",
@@ -33,6 +39,16 @@ _VALUE_CLAIM_FIELDS = (
     "variant_decomposition_narrative",
     "why_market_is_wrong",
     "market_implied_story",
+    "why_now",
+    "key_assumption_disagreement",
+    "counter_thesis",
+    "what_would_change_my_mind",
+    "edge_source",
+    "management_quality_summary",
+    "capital_allocation_assessment",
+    "conviction_narrative",
+    "hypothesis_evolution",
+    "biggest_surprise",
 )
 
 # Match dollar amounts in narrative text. We capture broadly here and then
@@ -143,6 +159,19 @@ _FAIR_VALUE_CONTEXT = (
     "定价", "价值区间", "对应股价", "股价应", "看至", "上看", "应达",
     "fair value", "price target", "target price", "intrinsic",
     "worth", "per share", "per-share", "valuation", "should trade",
+)
+
+# AUDIT 2026-07-12 R2-4: multiple-based valuation claims that both the
+# money scrub (倍/× suffix exempted as aggregates) and the % scrub miss.
+# Only enforced in strict (valuation mismatch) mode, and only when the
+# match sits next to valuation context (below) — "两倍现金回收" stays.
+_STRICT_MULTIPLE_RE = re.compile(
+    r"\d+(?:\.\d+)?\s*[×xX倍](?:\s*(?:PE|P/E|市盈率))?"
+    r"|(?:PE|P/E|市盈率)\s*(?:从\s*)?\d+(?:\.\d+)?\s*[×xX倍]?"
+)
+_MULTIPLE_CONTEXT = (
+    "PE", "P/E", "市盈率", "估值", "重估", "安全边际", "对应", "空间",
+    "re-rating", "multiple", "upside",
 )
 
 
@@ -370,12 +399,138 @@ def relative_valuation_sanctioned_pcts(relval: dict[str, Any] | None) -> list[fl
     return sorted(out)
 
 
+def _valuation_sanity_verdict(
+    scenarios: dict[str, Any] | None,
+    market_data: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """AUDIT 2026-07-12: shared two-sided DCF-vs-price magnitude check.
+
+    Prefers the verdict the orchestrator already stamped into
+    ``scenarios["valuation_sanity"]`` (single source of truth); recomputes
+    from base_value + current_price when absent (replay / unit tests).
+    """
+    if not isinstance(scenarios, dict):
+        return None
+    stamped = scenarios.get("valuation_sanity")
+    if isinstance(stamped, dict) and "mismatch" in stamped:
+        return stamped
+    from aegis.core.truth.valuation_sanity import check_valuation_sanity
+    price = None
+    if isinstance(market_data, dict):
+        price = market_data.get("current_price") or market_data.get("price")
+    return check_valuation_sanity(scenarios.get("base_value"), price)
+
+
+def valuation_constraint_block(
+    scenarios: dict[str, Any] | None,
+    market_data: dict[str, Any] | None,
+) -> str:
+    """AUDIT 2026-07-12 R2-1：估值引用规则的**事前注入**。
+
+    Round-1 Grok 复审证明事后清洗打不赢军备竞赛：LLM 会用绕开关键词窗口的
+    措辞携带发明的锚（"¥1640"、"现价仅5.5%"、"30× PE 空间"、"22.6× 安全
+    边际"），而清洗补丁本身又被审计者当"残骸"扣分（"占位符残骸"）。这里在
+    生成前把引用规则写死进 prompt——scrub 降级为兜底而非主防线。
+    R2-7 期限错配防护同样在此注入（宁德/比亚迪两份复审都点名"终年 g vs
+    近端一致预期"的假矛盾主叙事）。
+    """
+    if not isinstance(scenarios, dict):
+        return ""
+    sanity = _valuation_sanity_verdict(scenarios, market_data) or {}
+    lines = ["", "", "=== VALUATION CITATION RULES (HARD CONSTRAINTS) ==="]
+    if sanity.get("mismatch"):
+        lines += [
+            (
+                "This run's DCF FAILED its magnitude sanity check: base "
+                f"{sanity.get('base_value', 0.0):.2f}/share vs market price "
+                f"{sanity.get('market_price', 0.0):.2f} "
+                f"(ratio {sanity.get('ratio', 0.0):.2f}x, allowed band 1/3x-3x). "
+                "Treat this as MODEL BUG > market bug."
+            ),
+            "1. Do NOT cite ANY DCF-derived number anywhere in your output: no per-share "
+            "fair value, no price target, no upside/downside %, no 'PE re-rating to Nx' "
+            "headroom, no '安全边际' figures, no '现价仅为价值的 N%' phrasing.",
+            "2. Magnitude language must be DIRECTION-ONLY (方向性表述). In variant_magnitude, "
+            "state the model failure plainly and withhold all quantification.",
+            "3. The ONLY quotable quantitative frameworks: the conditional expectations "
+            "frontier lines provided (若利润率 X 则现价需增速 Y) and relative-valuation "
+            "anchors (PE/PB percentile), quoted verbatim in conditional form.",
+            "4. Tone must match a blocked / low-confidence draft: no '重估迫在眉睫 / 显著"
+            "安全边际 / 上行 N 倍 / 翻倍空间 / 极端错误定价' rhetoric anywhere, including "
+            "core_thesis and why_now.",
+        ]
+    else:
+        _vals = [
+            f"{scenarios.get(k):.2f}" for k in (
+                "bear_value", "base_value", "bull_value",
+                "probability_weighted_value",
+            ) if isinstance(scenarios.get(k), (int, float))
+        ]
+        _price = None
+        if isinstance(market_data, dict):
+            _price = market_data.get("current_price") or market_data.get("price")
+        lines += [
+            "1. The ONLY per-share values you may cite: "
+            f"{', '.join(_vals) or '(none provided)'}"
+            + (f" and the market price {_price:.2f}." if isinstance(_price, (int, float)) else ".")
+            + " Do NOT invent any other fair value, target price, or price range.",
+            "2. Any return % you cite must be exactly (sanctioned value / market price − 1); "
+            "no alternate-framework returns without naming the framework and flagging it "
+            "as non-DCF.",
+        ]
+    lines += [
+        "5. HORIZON RULE: terminal-year implied growth (reverse-DCF perpetuity g) is NOT "
+        "comparable to near-term consensus growth. NEVER present '终年隐含增速 g% vs 明年"
+        "一致预期 X%' as evidence that the market contradicts itself — they live on "
+        "different horizons. Market-implied expectations must be quoted in the conditional "
+        "frontier form only.",
+        "6. NUMERIC HUMILITY: any decomposition (e.g. margin split into N+M+K pp) or "
+        "per-share figure you cannot derive from data provided above must be phrased as a "
+        "hypothesis to verify (待验证假设), never as established fact.",
+    ]
+    return "\n".join(lines)
+
+
+def _magnitude_mismatch_disclosure(sanity: dict[str, Any], zh: bool) -> str:
+    """Deterministic, honest replacement for variant_magnitude on mismatch.
+
+    Grok's audits reward honesty ("blocked 决策本身是诚实的") and punish
+    magnitude claims built on a broken anchor. This text states the model
+    failure plainly, withholds targets/returns, and points the reader to
+    the conditional expectations frontier as the quotable framework.
+    """
+    base = sanity.get("base_value")
+    price = sanity.get("market_price")
+    ratio = sanity.get("ratio") or 0.0
+    if zh:
+        return (
+            f"〔估值失配声明〕本轮 DCF 基准值 ¥{base:.2f}/股 与市价 ¥{price:.2f} "
+            f"偏离约 {ratio:.1f} 倍，超出模型可信区间（>{sanity.get('ratio_threshold', 3.0):.0f}×）。"
+            "在股本口径、净负债、营收路径与终值假设复核之前，应视为模型口径问题而非市场定价错误"
+            "（model bug > market bug）。因此本论点不提供目标价与上行/下行百分比，"
+            "幅度判断降级为方向性观点；可引用的量化框架以「市场在定价什么」的条件化预期表"
+            "（若利润率 X 则现价需增速 Y）为准。DCF 情景值保留在估值区块仅作模型诊断展示。"
+        )
+    return (
+        f"[Valuation mismatch disclosure] This run's DCF base of {base:.2f}/share "
+        f"deviates from the market price {price:.2f} by ~{ratio:.1f}x, beyond the "
+        f"model's sanity band (>{sanity.get('ratio_threshold', 3.0):.0f}x). Until share "
+        "count, net debt, revenue path and terminal assumptions are re-audited, treat this as "
+        "a model artifact rather than market mispricing (model bug > market bug). "
+        "No price target or up/downside % is provided; magnitude is degraded to a "
+        "direction-only view. The quotable quantitative framework is the conditional "
+        "expectations frontier (at margin X the price requires growth Y). DCF scenario "
+        "values remain visible in the valuation section as a model diagnostic only."
+    )
+
+
 def _scrub_fair_value_claims(
     raw: dict[str, Any],
     scenarios: dict[str, float],
     market_data: dict[str, float] | None = None,
     fields: tuple[str, ...] | None = None,
     extra_sanctioned_pcts: Sequence[float] | None = None,
+    strict: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
     """Detect and rewrite per-share fair-value claims that contradict scenarios.
 
@@ -393,6 +548,13 @@ def _scrub_fair_value_claims(
     81-89%") that don't match any DCF-vs-price gap. Editors sometimes
     quote alternate-framework returns next to DCF numbers, mixing
     incompatible anchors and misleading readers.
+
+    AUDIT 2026-07-12 (strict mode): when the DCF base and the market price
+    are in different magnitude regimes (see aegis.core.truth.valuation_sanity),
+    even the sanctioned scenario values must not appear as narrative
+    fair-value anchors, and NO directional return % is sanctioned — the
+    caller passes ``strict=True`` and this function scrubs everything except
+    the market price and the frontier/relval whitelists.
     """
     bear = scenarios.get("bear_value")
     base = scenarios.get("base_value")
@@ -411,6 +573,10 @@ def _scrub_fair_value_claims(
     _pw = scenarios.get("probability_weighted_value")
     if isinstance(_pw, (int, float)) and _pw > 0:
         sanctioned.append(float(_pw))
+    # AUDIT 2026-07-12 strict mode: scenario values are model diagnostics,
+    # not quotable anchors — nothing but the market price is sanctioned.
+    if strict:
+        sanctioned = []
     market_price = None
     if market_data:
         mp = market_data.get("current_price") or market_data.get("price")
@@ -447,7 +613,7 @@ def _scrub_fair_value_claims(
         text = out.get(field_name) or ""
         if not isinstance(text, str) or sigil not in text:
             continue
-        bad: list[tuple[str, float]] = []
+        bad: list[tuple[int, int, str]] = []
         for m in money_re.finditer(text):
             try:
                 v1 = float(m.group(1).replace(",", ""))
@@ -502,21 +668,25 @@ def _scrub_fair_value_claims(
             # A claim is bad if neither endpoint matches a sanctioned scenario.
             if v2 is not None:
                 if not _matches_scenario(v1) and not _matches_scenario(v2):
-                    bad.append((m.group(0), (v1 + v2) / 2))
+                    bad.append((m.start(), m.end(), m.group(0)))
             else:
                 if not _matches_scenario(v1):
-                    bad.append((m.group(0), v1))
+                    bad.append((m.start(), m.end(), m.group(0)))
         if not bad:
             continue
         # Rewrite the offending dollar tokens with a [see scenarios] tag.
         # 中文化铁律: the tag itself must be Chinese in CN reports — the
         # English tag was leaking into A-share ledes mid-sentence.
+        # AUDIT 2026-07-12: splice by match span instead of str.replace —
+        # replace(token, tag, 1) hit the FIRST occurrence of the token,
+        # which could be an innocuous earlier mention (unit-economics prose
+        # exempted by _FAIR_VALUE_CONTEXT), leaving the offending claim live.
         _tag = "〔详见DCF情景估值〕" if is_cny else "[see DCF scenarios]"
         new_text = text
-        for token, _ in bad:
-            new_text = new_text.replace(token, _tag, 1)
+        for _start, _end, _ in sorted(bad, reverse=True):
+            new_text = new_text[:_start] + _tag + new_text[_end:]
         out[field_name] = new_text
-        bad_str = ", ".join(t for t, _ in bad[:3])
+        bad_str = ", ".join(t for _, _, t in bad[:3])
         warnings.append(
             f"VALUATION CONSISTENCY OVERRIDE — synthesizer cited fair-value "
             f"figure(s) {bad_str} in '{field_name}' that do not match any sanctioned "
@@ -552,18 +722,37 @@ def _scrub_fair_value_claims(
         # and shouldn't be scrubbed. Heuristic: skip when |min_return| > 90
         # (DCF is essentially saying "company is worthless" and headlines
         # quoting alternate frameworks are doing a service).
-        if sanctioned_returns and min(abs(r) for r in sanctioned_returns) < 90:
+        #
+        # AUDIT 2026-07-12: that heuristic had a fatal blind spot — a DCF
+        # that is 10× the market price ALSO yields all-|>90%| returns, so
+        # the % check switched itself off exactly when the narrative was
+        # most misleading ("〔详见DCF〕占位符旁挂着由被删数字算出的下行%").
+        # strict mode (valuation mismatch) now enforces with an EMPTY
+        # sanctioned set: every directional, non-whitelisted return claim
+        # is scrubbed, because no return framework survives a magnitude
+        # mismatch. The loss-making concession only applies outside strict.
+        _enforce_pct = strict or (
+            sanctioned_returns and min(abs(r) for r in sanctioned_returns) < 90
+        )
+        if strict:
+            sanctioned_returns = []
+        if _enforce_pct:
             for field_name in field_list:
                 text = out.get(field_name) or ""
-                if not isinstance(text, str) or "%" not in text:
+                if not isinstance(text, str):
+                    continue
+                # R2-4: strict mode also scans multiple-based claims, which
+                # need neither a % character nor direction keywords.
+                _has_pct = "%" in text
+                if not _has_pct and not strict:
                     continue
                 # Only scrub when we can identify the % is in downside /
                 # upside framing (vs e.g. "毛利率17.9%" which is a margin).
                 _has_dir = any(k in text for k in (_DOWNSIDE_KEYWORDS + _UPSIDE_KEYWORDS))
-                if not _has_dir:
+                if not _has_dir and not strict:
                     continue
-                bad_pct: list[str] = []
-                for m in _PCT_RANGE_RE.finditer(text):
+                bad_pct: list[tuple[int, int, str]] = []
+                for m in _PCT_RANGE_RE.finditer(text) if (_has_pct and _has_dir) else ():
                     # Look at 24 chars before AND after for downside/upside
                     # context, since either order is common ("下行 81%",
                     # "implied 45% downside"). Prefer leading context.
@@ -599,7 +788,7 @@ def _scrub_fair_value_claims(
                             continue
                         cited = sorted([sign * v1, sign * v2])
                         if not any(cited[0] - 10 <= r <= cited[1] + 10 for r in sanctioned_returns):
-                            bad_pct.append(m.group(0))
+                            bad_pct.append((m.start(), m.end(), m.group(0)))
                     # Single-value form (group 3) — already-signed
                     elif m.group(3):
                         try:
@@ -624,14 +813,38 @@ def _scrub_fair_value_claims(
                         if _is_extra_sanctioned(v):
                             continue
                         if not any(abs(v - r) <= 10 for r in sanctioned_returns):
-                            bad_pct.append(m.group(0))
+                            bad_pct.append((m.start(), m.end(), m.group(0)))
+                # R2-4 (strict only): multiple-based valuation language
+                # ("30× PE 重估空间", "PE 从22倍到30倍", "安全边际 22.6×")
+                # evaded both the money scrub (倍/× suffix = aggregate
+                # exemption) and the % scrub. Under a magnitude mismatch no
+                # multiple-based headroom claim is anchored either.
+                if strict:
+                    for m in _STRICT_MULTIPLE_RE.finditer(text):
+                        _win = text[max(0, m.start() - 24):m.end() + 24]
+                        if any(k in _win for k in _MULTIPLE_CONTEXT):
+                            bad_pct.append((m.start(), m.end(), m.group(0)))
+                    bad_pct.sort()
                 if bad_pct:
+                    # AUDIT 2026-07-12: this branch used to WARN ONLY — the
+                    # misleading % stayed in reader-facing text (Grok's
+                    # highest-frequency finding). Now the offending tokens
+                    # are spliced out like the money claims above.
+                    if strict:
+                        _pct_tag = "〔估值失配·幅度结论已停用〕" if is_cny else "[withheld: valuation sanity]"
+                    else:
+                        _pct_tag = "〔回报口径详见DCF情景〕" if is_cny else "[see DCF scenario returns]"
+                    _pct_text = text
+                    for _start, _end, _ in sorted(bad_pct, reverse=True):
+                        _pct_text = _pct_text[:_start] + _pct_tag + _pct_text[_end:]
+                    out[field_name] = _pct_text
                     warnings.append(
                         f"% RETURN CONSISTENCY OVERRIDE — '{field_name}' cites "
-                        f"{', '.join(bad_pct[:3])} but sanctioned DCF-vs-price "
+                        f"{', '.join(t for _, _, t in bad_pct[:3])} but sanctioned DCF-vs-price "
                         f"returns are {[f'{r:+.0f}%' for r in sanctioned_returns]}. "
                         f"Either the headline conflates DCF with an alternate "
-                        f"valuation framework, or the % is a hallucination."
+                        f"valuation framework, or the % is a hallucination. "
+                        f"The offending token(s) were rewritten in-place."
                     )
     return out, warnings
 
@@ -682,6 +895,14 @@ class SynthesizedThesis:
 
     # Open research questions that agents raised but couldn't be answered from available data
     open_questions: list[dict[str, str]] = field(default_factory=list)
+
+    # AUDIT 2026-07-12 R2-2: thesis-direction-aware kill criteria. Agent
+    # disconfirming triggers falsify THAT AGENT's judgment — the risk
+    # analyst's "risk fades" triggers are thesis-POSITIVE for a bullish
+    # thesis, so promoting them to kills inverted polarity (Grok round-1:
+    # "Kill Criteria 写成多头确认"). Only the synthesizer knows the final
+    # stance, so it authors the kills.
+    kill_criteria: list[dict[str, str]] = field(default_factory=list)
 
 
 SYNTHESIS_TOOL_SCHEMA = {
@@ -775,6 +996,34 @@ SYNTHESIS_TOOL_SCHEMA = {
             "type": "array",
             "items": {"type": "string"},
             "description": "Which agents produced findings that contradicted or significantly modified the initial hypothesis? List agent names. Empty array if all agents confirmed.",
+        },
+        "kill_criteria": {
+            "type": "array",
+            "description": (
+                "3-6 FALSIFICATION thresholds for THIS thesis (证伪方向：该条件"
+                "一旦发生即推翻你的论点). DIRECTION CHECK before writing each one: "
+                "if your thesis is bullish, every kill must be a BEARISH observation; "
+                "if bearish, every kill must be BULLISH. Confirmation signals are "
+                "forbidden here. Each criterion names ONE observable with a "
+                "quantified threshold (e.g. '单季营收同比增速低于80%') or a binary "
+                "event (e.g. '信用评级下调'). Use ONE consistent threshold per "
+                "metric — never two different cutoffs for the same variable."
+            ),
+            "items": {
+                "type": "object",
+                "required": ["description", "threshold", "check_frequency"],
+                "properties": {
+                    "description": {"type": "string", "minLength": 1},
+                    "threshold": {
+                        "type": "string", "minLength": 1,
+                        "description": "The quantified cutoff or named binary event, extracted verbatim",
+                    },
+                    "check_frequency": {
+                        "type": "string",
+                        "enum": ["daily", "weekly", "monthly", "quarterly", "event-driven"],
+                    },
+                },
+            },
         },
     },
 }
@@ -898,6 +1147,9 @@ class ThesisSynthesizer:
             implied_growth, sensitivity_rankings, meta_facts,
             narrative_supplements, open_questions,
         )
+        # AUDIT 2026-07-12 R2-1/R2-7：估值引用规则事前注入（失配时禁引 DCF
+        # 派生数字 + 语气降调；常态时限定 sanctioned 值清单；期限错配防护）。
+        user_message += valuation_constraint_block(scenarios, market_data)
 
         _sys_prompt = AEGIS_PROJECT_PREAMBLE + THESIS_SYNTHESIZER_SYSTEM_PROMPT
         if isinstance(scenarios, dict) and scenarios.get("currency") == "CNY":
@@ -927,6 +1179,14 @@ class ThesisSynthesizer:
         # 设计红线 9：前沿隐含增速/margin 百分数注册进 % 白名单，防止
         # 「若利润率 X% 需 Y% 增速」句式被误判成 return 主张。
         # Phase 1 同则：相对估值锚的 PE/PB/分位数字同步注册。
+        #
+        # AUDIT 2026-07-12: valuation sanity → strict scrub. When the DCF
+        # base and the market price live in different magnitude regimes
+        # (>3× either way), scenario values stop being quotable anchors,
+        # every directional return % is scrubbed, and variant_magnitude is
+        # deterministically replaced with a direction-only disclosure.
+        _sanity = _valuation_sanity_verdict(scenarios, market_data)
+        _mismatch = bool(_sanity and _sanity.get("mismatch"))
         raw, valuation_warnings = _scrub_fair_value_claims(
             raw, scenarios, market_data,
             extra_sanctioned_pcts=(
@@ -937,7 +1197,21 @@ class ThesisSynthesizer:
                     (meta_facts or {}).get("__relative_valuation")
                 )
             ),
+            strict=_mismatch,
         )
+        if _mismatch:
+            raw["variant_magnitude"] = _magnitude_mismatch_disclosure(
+                _sanity, zh=bool(scenarios.get("currency") == "CNY"),
+            )
+            valuation_warnings = list(valuation_warnings) + [
+                "VALUATION SANITY OVERRIDE — DCF base "
+                f"{_sanity['base_value']:.2f} vs market price "
+                f"{_sanity['market_price']:.2f} (ratio {_sanity['ratio']:.2f}×) "
+                "is outside the sanity band; variant_magnitude was replaced "
+                "with a direction-only disclosure and all price-target / "
+                "return-% claims were scrubbed (model bug > market bug until "
+                "DCF inputs are re-audited)."
+            ]
         if valuation_warnings:
             existing = list(raw.get("unresolved_tensions", []) or [])
             existing.extend(valuation_warnings)
@@ -965,6 +1239,10 @@ class ThesisSynthesizer:
             biggest_surprise=raw.get("biggest_surprise", ""),
             agents_that_challenged=_coerce_list(raw.get("agents_that_challenged")),
             open_questions=open_questions or [],
+            kill_criteria=[
+                k for k in _coerce_list(raw.get("kill_criteria"))
+                if isinstance(k, dict) and str(k.get("description") or "").strip()
+            ],
         )
 
     def _build_message(
@@ -1087,6 +1365,16 @@ class ThesisSynthesizer:
                     parts.append(f"  {m}: {val:.4f}" if abs(val) < 1 else f"  {m}: {val:.2f}")
                 else:
                     parts.append(f"  {m}: {val:,.0f}")
+        # AUDIT 2026-07-12 R3-3（Grok round-2 复审 300750）：A 股 operating
+        # margin 是 CAS「营业利润」口径（含投资收益/公允价值变动/减值），
+        # 与 US-GAAP operating income 不可比。不标口径时，审计者会用
+        # 毛利率−费用率勾稽并合理地怀疑"费用口径漏扣"。
+        if isinstance(scenarios, dict) and scenarios.get("currency") == "CNY":
+            parts.append(
+                "  (口径注: operating_margin 为 CAS 营业利润口径——含投资收益/"
+                "公允价值变动等非核心项，不等于毛利−三费的 US-GAAP operating "
+                "income；引用时请标注口径)"
+            )
         parts.append("")
 
         # All agent judgments
@@ -1117,9 +1405,14 @@ class ThesisSynthesizer:
                     parts.append(f"  [{ca.strength}] {ca.text}")
 
             # Disconfirming triggers
+            # AUDIT 2026-07-12 (B1): the header used to say "Kill Criteria:",
+            # mislabeling falsification triggers as kill conditions in the
+            # very context the LLM synthesizes from — one of the two label
+            # swaps behind Grok's "Kill 名实倒置" finding (the other is
+            # decision_engine._extract_kill_criteria).
             dts = getattr(j, "disconfirming_triggers", [])
             if dts:
-                parts.append("Kill Criteria:")
+                parts.append("Disconfirming Triggers (证伪触发——观察到即削弱/推翻论点):")
                 for dt in dts:
                     parts.append(f"  - {dt.text}")
 

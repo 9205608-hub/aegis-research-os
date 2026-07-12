@@ -248,7 +248,9 @@ class TestBuildMonitorables:
         assert "0.6" in hit[0].description  # LLM 填的阈值保留
 
     def test_llm_free_text_keyword_maps_into_catalog(self):
-        st = {"follow_ups": ["跟踪存货周转与营收的背离", "关注股价是否偏离建仓价"]}
+        # AUDIT 2026-07-12 (B2)：follow_ups 不再是监控来源——改用仍然合法的
+        # monitorables 通道验证关键词挂目录逻辑。
+        st = {"monitorables": ["跟踪存货周转与营收的背离", "关注股价是否偏离建仓价"]}
         ms = build_monitorables(synthesized_thesis=st)
         models = {monitorable_model_id(m) for m in ms}
         assert "inventory_vs_revenue" in models
@@ -280,13 +282,19 @@ class TestBuildMonitorables:
         # 体制验证点未命中的不降级 watch_only（清单已在报告展示）
         assert not any(m.data_source == WATCH_ONLY_SOURCE for m in ms)
 
-    def test_open_questions_feed_watch_candidates(self):
+    def test_open_questions_no_longer_feed_monitorables(self):
+        # AUDIT 2026-07-12 (B2)：未答研究问题是「研究待办」不是「必须监控」。
+        # 旧行为把 open_questions 整份复制成监控条目——Grok 20 审计判为
+        # must_monitor 被 TODO 污染。open_questions 只留在合约同名字段。
         st = {"open_questions": [
             {"agent": "accounting_analyst", "question": "应收账款集中度是否恶化？"},
         ]}
         ms = build_monitorables(synthesized_thesis=st)
-        assert any(
+        assert not any(
             monitorable_model_id(m) == "receivables_vs_revenue" for m in ms)
+        assert not any("应收账款集中度" in m.description for m in ms)
+        # 合同 min_length=1 兜底仍然成立（如实的人工复核占位）
+        assert len(ms) == 1 and ms[0].data_source == WATCH_ONLY_SOURCE
 
     def test_empty_inputs_yield_nonempty_fallback(self):
         """合同 must_monitor 要求 min_length=1 —— 空输入如实兜底人工关注。"""

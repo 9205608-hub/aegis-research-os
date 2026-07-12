@@ -83,6 +83,14 @@ JUDGMENT_TOOL_SCHEMA = {
         },
         "disconfirming_triggers": {
             "type": "array",
+            "description": (
+                "FALSIFICATION direction ONLY: observable conditions that, if "
+                "they occur, WEAKEN or REFUTE your judgment (证伪方向——出现即"
+                "削弱/推翻你的结论). NEVER list confirmation signals here (events "
+                "that would prove the thesis right belong in inferences). Each "
+                "trigger should name ONE observable with a quantified threshold "
+                "where possible (e.g. '单季营收增速低于80%', not '增长放缓')."
+            ),
             "items": {
                 "type": "object",
                 "required": ["text"],

@@ -224,6 +224,64 @@ def _open_questions(synthesized_thesis: Any) -> list[str]:
     return out
 
 
+def _valuation_assumptions(scenarios: Any) -> dict[str, Any] | None:
+    """AUDIT 2026-07-12 (A4)：sanctioned DCF 假设表进合约。
+
+    Grok 20 审计反复扣分「DCF 点位像黑箱、无假设表不可审计」——根因是
+    合约里根本没有 WACC/g/年限/股本/净负债附录，审计者只能看到裸点位。
+    这里从 orchestrator 已写入 scenarios 的 dcf_assumptions / dcf_bridge /
+    valuation_sanity 抽一张可勾稽的假设表，随 thesis 落库。
+    """
+    if not isinstance(scenarios, dict):
+        return None
+    assumptions = scenarios.get("dcf_assumptions") or {}
+    bridge = scenarios.get("dcf_bridge") or {}
+    sanity = scenarios.get("valuation_sanity") or {}
+    out: dict[str, Any] = {}
+
+    def _num(src: Any, key: str, dst: str | None = None, nd: int = 6) -> None:
+        v = src.get(key) if isinstance(src, dict) else None
+        if isinstance(v, (int, float)):
+            out[dst or key] = round(float(v), nd)
+
+    _num(assumptions, "wacc")
+    _num(assumptions, "terminal_growth_rate")
+    capex_path = (assumptions.get("capex_to_revenue_path")
+                  if isinstance(assumptions, dict) else None)
+    if isinstance(capex_path, (list, tuple)) and capex_path:
+        out["forecast_years"] = len(capex_path)
+        try:
+            out["terminal_capex_to_revenue"] = round(float(capex_path[-1]), 6)
+        except (TypeError, ValueError):
+            pass
+    _num(bridge, "net_debt", nd=2)
+    _num(bridge, "future_shares", dst="shares_outstanding", nd=2)
+    _num(bridge, "enterprise_value", nd=2)
+    # R2-5：勾稽闭合行——审计者应能验证 equity = EV − net_debt 且
+    # per_share × shares ≈ equity（分部 DCF 缩放时两套口径的缝也因此可见）。
+    _num(bridge, "equity_value", nd=2)
+    _num(sanity, "market_price", nd=2)
+    ev = bridge.get("enterprise_value") if isinstance(bridge, dict) else None
+    tv = bridge.get("pv_terminal_value") if isinstance(bridge, dict) else None
+    if isinstance(ev, (int, float)) and isinstance(tv, (int, float)) and ev > 0:
+        out["terminal_value_pct_of_ev"] = round(tv / ev, 4)
+    for key, dst in (
+        ("bear_value", "per_share_bear"),
+        ("base_value", "per_share_base"),
+        ("bull_value", "per_share_bull"),
+        ("probability_weighted_value", "per_share_prob_weighted"),
+    ):
+        v = scenarios.get(key)
+        if isinstance(v, (int, float)):
+            out[dst] = round(float(v), 2)
+    if isinstance(sanity, dict) and "mismatch" in sanity:
+        out["valuation_sanity"] = {
+            "mismatch": bool(sanity.get("mismatch")),
+            "ratio": round(float(sanity.get("ratio") or 0.0), 2),
+        }
+    return out or None
+
+
 # ---------------------------------------------------------------------------
 # 合同构建
 # ---------------------------------------------------------------------------
@@ -237,11 +295,13 @@ def build_thesis_contract(
     regime: Any = None,
     verification_results: Any = None,
     kill_criteria: Any = None,
+    disconfirming_triggers: Any = None,
     monitorables: list[Monitorable] | None = None,
     scenarios: Any = None,
     supporting_claim_ids: list[str] | None = None,
     publishing_status: Any = "draft",
     confidence: Any = "medium",
+    bias_check_status: Any = None,
     market_id: Any = "cn",
     accounting_standard: Any = AccountingStandard.CAS,
     thesis_horizon: str = "12_months",
@@ -277,6 +337,24 @@ def build_thesis_contract(
     fragility = [str(x).strip() for x in
                  coerce_list(_get(st, "unresolved_tensions")) if str(x).strip()]
     change_mind = _text(st, "what_would_change_my_mind", "")
+
+    # AUDIT 2026-07-12 (B1)：证伪触发器回归本名。旧行为只把一句
+    # what_would_change_my_mind 塞进 disconfirming_triggers，真正的 agent
+    # 证伪触发器被改名成了 kill_criteria——Grok「Kill 名实倒置」的另一半。
+    disconfirm = [
+        str(t).strip() for t in coerce_list(disconfirming_triggers)
+        if str(t).strip()
+    ]
+    if change_mind and change_mind not in disconfirm:
+        disconfirm.append(change_mind)
+
+    # AUDIT 2026-07-12 (B5)：bias_check_status 接决策引擎真值。旧行为硬编码
+    # "passed"，与 engine._aggregate_bias_status 脱钩（Grok 评审 §假 passed）。
+    # 值域与 schema pattern ^(passed|warned|blocked)$ 一致；legacy 调用方
+    # 不传时保持旧默认。
+    _bias = str(bias_check_status or "").strip().lower()
+    if _bias not in ("passed", "warned", "blocked"):
+        _bias = "passed"
 
     try:
         accounting = AccountingStandard(accounting_standard)
@@ -319,10 +397,11 @@ def build_thesis_contract(
         ),
         counter_thesis=_text(st, "counter_thesis"),
         fragility_points=fragility or [PLACEHOLDER],
-        disconfirming_triggers=[change_mind] if change_mind else [PLACEHOLDER],
+        disconfirming_triggers=disconfirm or [PLACEHOLDER],
         kill_criteria=_kill_criteria(kill_criteria),
         must_monitor=must_monitor,
         open_questions=_open_questions(st),
+        valuation_assumptions=_valuation_assumptions(scenarios),
         # 上下文
         macro_dependency=_text(st, "macro_dependency"),
         sector_cycle_position=sector_cycle,
@@ -332,7 +411,7 @@ def build_thesis_contract(
         # 发布
         publishing_status=_normalize_publishing_status(publishing_status),
         confidence_bucket=_normalize_confidence(confidence),
-        bias_check_status="passed",
+        bias_check_status=_bias,
         # 组合信号
         data_source_tiers_used=[SourceTier.TIER_2],
         markets_covered=[_normalize_market(market_id)],

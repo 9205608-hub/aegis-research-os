@@ -113,6 +113,20 @@ class DeepSeekClient:
     def _resolve_model(self, model: str) -> str:
         return DEEPSEEK_MODEL_MAP.get(model, model)
 
+    @staticmethod
+    def _temperature_for_role(role: str) -> float:
+        """AUDIT 2026-07-12 (B4): temperature by role from AGENT_PROFILES.
+
+        Every DeepSeek call used to hardcode temperature=0.2, silently
+        overriding the role table (critic=0.0). llm_judge sampling at 0.2
+        with critic_gate threshold=1 meant a single stochastic block-level
+        finding flipped the entire publish decision run-to-run (茅台
+        published/high ↔ blocked/low 翻盘 — Grok 20-audit 元发现).
+        """
+        from aegis.core.llm.config import AGENT_PROFILES
+        prof = AGENT_PROFILES.get(role)
+        return prof.temperature if prof is not None else 0.2
+
     def _resolve_env_api_key(self) -> str:
         return os.environ.get("DEEPSEEK_API_KEY", "")
 
@@ -200,7 +214,7 @@ class DeepSeekClient:
                 create_kwargs = dict(
                     model=self.model,
                     max_tokens=_budget,
-                    temperature=0.2,
+                    temperature=self._temperature_for_role(role),
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_message},
@@ -292,6 +306,7 @@ class DeepSeekClient:
                                       f"falling through to JSON-mode (no tool_use)")
                                 return self._call_json_mode_fallback(
                                     system_prompt, user_message, tool_schema,
+                                    role=role,
                                 )
                             try:
                                 return json.loads(raw)
@@ -332,6 +347,7 @@ class DeepSeekClient:
                                               f"at growing budget; falling through to JSON-mode")
                                         return self._call_json_mode_fallback(
                                             system_prompt, user_message, tool_schema,
+                                            role=role,
                                         )
                                     if attempt < self.max_retries - 1:
                                         import sys as _sys
@@ -378,6 +394,7 @@ class DeepSeekClient:
                           f"falling through to JSON-mode")
                     return self._call_json_mode_fallback(
                         system_prompt, user_message, tool_schema,
+                        role=role,
                     )
 
                 raise ValueError(f"No tool call or parseable JSON in {self._provider} response (strategy={strategy}, finish={_fr}, content_len={len(msg.content or '')})")
@@ -414,6 +431,7 @@ class DeepSeekClient:
         system_prompt: str,
         user_message: str,
         tool_schema: dict[str, Any],
+        role: str = "specialist_agent",
     ) -> dict[str, Any]:
         """BUG-A20: last-resort path when tool_use returned empty repeatedly.
 
@@ -440,7 +458,7 @@ class DeepSeekClient:
             resp = self._client.chat.completions.create(
                 model=self.model,
                 max_tokens=12288,
-                temperature=0.2,
+                temperature=self._temperature_for_role(role),
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": amended_user},
@@ -492,7 +510,7 @@ class DeepSeekClient:
         response = self._client.chat.completions.create(
             model=self.model,
             max_tokens=4096,
-            temperature=0.2,
+            temperature=self._temperature_for_role(role),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},

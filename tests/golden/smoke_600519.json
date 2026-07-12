@@ -3,118 +3,118 @@
     "agents": [
       {
         "cons": [
-          "整体指标可能掩盖分部层面的问题——单一高盈利分部可能在补贴其他亏损业务",
-          "收入确认、研发费用处理及政府补助分类在不同会计准则下存在差异，可能影响指标的可比性"
+          "Aggregate metrics can mask segment-level issues — a single profitable segment may subsidize losses elsewhere",
+          "Cross-standard differences in revenue recognition, R&D treatment, and government subsidy classification may affect metric comparability"
         ],
         "fallback": false,
         "name": "财报质量与现金流真实性",
         "narrative": "",
         "pros": [
-          "应计比率为 0.0685，盈利质量尚可，应计项处于正常区间",
-          "经营现金流/净利润为 0.75——现金转化健康"
+          "Accruals ratio is 0.0783, indicating acceptable earnings quality",
+          "CFO/Net Income ratio is 0.72 — healthy"
         ],
         "role": "会计分析师",
         "score": 3.0,
         "stance": "bull",
-        "thesis": "盈利质量整体稳健——应计项与现金转化均处于正常区间"
+        "thesis": "Earnings quality appears sound — accruals and cash conversion are within normal ranges"
       },
       {
         "cons": [
-          "高毛利可能反映阶段性市场地位而非结构性护城河——新进入者或监管都可能压缩利润率"
+          "High margins may reflect temporary market position rather than structural moat — new entrants or regulation could compress margins"
         ],
         "fallback": false,
         "name": "产能利用率与资产错配",
         "narrative": "",
         "pros": [
-          "毛利率为 91.34%",
-          "ROIC 为 44.83%，资本配置能够创造价值"
+          "Gross margin is 91.34%",
+          "ROIC is 44.84%, indicating value-creating capital allocation"
         ],
         "role": "业务分析师",
         "score": 3.0,
         "stance": "bull",
-        "thesis": "业务展现出较强的定价能力与资本效率——与持续性护城河的特征一致"
+        "thesis": "Business exhibits strong pricing power and capital efficiency — consistent with a durable moat"
       },
       {
         "cons": [
-          "历史 ROIC 反映的是过去的决策——现任管理层的战略可能不同。应更多权重考察 CEO 任期与近期重大决策。",
-          "量化记录本身无法完全刻画管理层质量——沟通透明度与战略一致性同样重要"
+          "Historical ROIC reflects past decisions — current management's strategy may differ. CEO tenure and recent major decisions should be weighted more heav",
+          "Quantitative track record alone cannot capture management quality — communication transparency and strategic consistency also matter"
         ],
         "fallback": false,
         "name": "资本配置与战略纪律",
         "narrative": "",
         "pros": [
-          "ROIC 为 44.83%——反映资本配置成效",
-          "ROE 为 32.41%"
+          "ROIC is 44.84% — reflects capital allocation effectiveness",
+          "ROE is 33.59%"
         ],
         "role": "管理层分析师",
         "score": 3.0,
         "stance": "bull",
-        "thesis": "管理层资本配置能力突出——ROIC 高于资本成本"
+        "thesis": "Management demonstrates strong capital allocation — ROIC exceeds cost of capital"
       },
       {
         "cons": [
-          "DCF 估值对永续增长率与 WACC 假设高度敏感——微小的参数变化即可导致估值大幅波动"
+          "DCF valuation is highly sensitive to terminal growth and WACC assumptions — small changes drive large value swings"
         ],
         "fallback": false,
         "name": "DCF 与多组估值三角",
         "narrative": "",
         "pros": [
-          "市盈率 P/E (静态): 18.3x",
-          "EV/EBITDA: 12.4x"
+          "P/E (FY static): 20.2x",
+          "EV/EBITDA: 14.3x"
         ],
         "role": "估值分析师",
-        "score": 3.5,
+        "score": 3.4,
         "stance": "bull",
-        "thesis": "市场定价须按条件化预期解读：同一现价在不同终年利润率情景下对应不同的隐含增速，结论应表述为「若利润率 X%，需 Y% 增速支撑」，并对照业绩预告、公告与财务证据检验该预期的可信度"
+        "thesis": "Scenario spread (bull/bear): 78% — wide range of outcomes"
       },
       {
         "cons": [
-          "表观低估可能对应我们低估了的风险——市场折价或许是合理的",
-          "缺乏近期催化剂的差异化论点可能在持有期内无法收敛——「市场保持非理性的时间，可以比你保持偿付能力的时间更长」"
+          "Apparent undervaluation may reflect risks we underestimate — market discount could be warranted",
+          "Variant thesis without near-term catalyst may fail to converge within horizon — 'the market can stay irrational longer than you can stay solvent'"
         ],
         "fallback": false,
         "name": "市场共识与错价机制",
         "narrative": "",
         "pros": [
-          "市场隐含预期（条件化反解）: 若终年营业利润率为 66.7%（维持现状），现价 ¥1204.98 需要约 +4.0% 的年营收增速支撑（WACC±1% 区间: +1.8% ~ +6.0%）",
-          "市场隐含预期（条件化反解）: 若终年营业利润率为 52.5%（行业中位），现价 ¥1204.98 需要约 +6.5% 的年营收增速支撑（WACC±1% 区间: +4.3% ~ +8.6%）"
+          "Market-implied revenue growth: 6.18%",
+          "Consensus revision momentum: neutral"
         ],
         "role": "变体分析师",
-        "score": 3.5,
+        "score": 3.4,
         "stance": "bull",
-        "thesis": "变体判断的锚是条件化预期：先确认现价在哪个利润率情景下需要多高增速，再判断可验证事实（业绩预告、公告、财务证据）能否支撑该组合——支撑不了的部分即为预期差"
+        "thesis": "Base case implies 165% upside — price below our intrinsic value estimate"
       },
       {
         "cons": [
-          "风险评估可能偏保守——尾部风险的发生概率本来就低"
+          "Risk assessment may be overly conservative — tail risks by definition have low probability"
         ],
         "fallback": false,
         "name": "客户集中度与偿付能力",
         "narrative": "",
         "pros": [
-          "净负债/EBITDA: -0.4x——杠杆水平可控",
-          "流动比率: 5.09x"
+          "Net Debt/EBITDA: -0.4x — leverage is manageable",
+          "Current ratio: 5.09x"
         ],
         "role": "风险分析师",
         "score": 3.8,
-        "stance": "bear",
-        "thesis": "净现金头寸提供资产负债表期权价值——降低压力情景下的下行风险"
+        "stance": "bull",
+        "thesis": "Net cash position provides balance sheet optionality — reduces downside risk in stress scenarios"
       },
       {
         "cons": [
-          "行业分析包的基准是通用性的——公司特有因素可能足以支撑对行业常态的偏离"
+          "Sector pack benchmarks are general — company-specific factors may justify deviation from sector norms"
         ],
         "fallback": false,
         "name": "行业周期与政策环境",
         "narrative": "",
         "pros": [
-          "公司所属行业: 白酒 / Chinese Baijiu & Spirits（分析包: sp_baijiu_cn_v1）",
-          "行业周期属性: low_to_moderate，主要驱动: unknown"
+          "Entity classified under sector: 白酒 / Chinese Baijiu & Spirits (pack: sp_baijiu_cn_v1)",
+          "Sector cyclicality: low_to_moderate, primary driver: unknown"
         ],
         "role": "宏观分析师",
         "score": 3.8,
         "stance": "neutral",
-        "thesis": "识别出行业特有的结构性风险——须在估值折价中予以体现"
+        "thesis": "Sector-specific structural risks identified — these must be factored into valuation discount"
       }
     ],
     "bias": "warned",
@@ -147,19 +147,19 @@
       "subtitle": "首席分析师 · 终稿",
       "title": "等待关键催化剂验证"
     },
-    "confidence": "高",
-    "coreCalloutHtml": "<strong>核心判断：</strong>基准 DCF 公允价值 ¥3465.99；概率加权 ¥3460.41，较现价 ¥1204.98 存在 <strong>+187.2%</strong> 估值回归空间。",
+    "confidence": "中",
+    "coreCalloutHtml": "<strong>核心判断：</strong>基准 DCF 公允价值 ¥3649.79；概率加权 ¥3643.79，较现价 ¥1375.00 存在 <strong>+165.0%</strong> 估值回归空间。",
     "critics": [
       {
         "issues": 0,
         "name": "逻辑批评员"
       },
       {
-        "issues": 4,
+        "issues": 0,
         "name": "财务批评员"
       },
       {
-        "issues": 5,
+        "issues": 3,
         "name": "证据批评员"
       },
       {
@@ -167,7 +167,7 @@
         "name": "行业批评员"
       },
       {
-        "issues": 3,
+        "issues": 5,
         "name": "认知偏差批评员"
       },
       {
@@ -187,17 +187,11 @@
         "name": "叙述事实核查员"
       },
       {
-        "issues": 1,
+        "issues": 0,
         "name": "LLM 数值审核员"
       }
     ],
-    "dataAsOf": {
-      "announceDate": "2026-04-25",
-      "basis": "quarterly",
-      "days": "<NORMALIZED>",
-      "latestPeriod": "2026-03-31",
-      "line": "<NORMALIZED>"
-    },
+    "dataAsOf": null,
     "dcf": {
       "gBase": 3.0,
       "paragraphHtml": "FCFF 两阶段模型：Y1–Y10 明细期 + 永续期（g = 3.0%, WACC = 9.5%）。",
@@ -206,123 +200,123 @@
           1,
           2150.8870547260817,
           1435.2869316187143,
-          29.33519960723707,
-          1067.0081062365302,
+          22.5938705428,
+          1133.8766759787843,
           39.14614439601469,
           4.3034533581698176,
-          1052.8937080895826,
-          961.5467653786144
+          1113.0209487673997,
+          1016.4574874588126
         ],
         [
           2,
           2660.8172067734868,
           1756.6715199118557,
-          37.63850536918304,
-          1305.9289473407737,
+          30.42309942200294,
+          1387.7705007303662,
           48.426873163277456,
           5.0993015204740475,
-          1290.0412780262052,
-          1075.908574071604
+          1364.6674254686175,
+          1138.1475994817602
         ],
         [
           3,
           3257.1435942523194,
           2127.2404814061897,
-          47.724595368229615,
-          1581.4139929603107,
+          40.10847405465843,
+          1680.5199803108899,
           59.28001341539222,
           5.9632638747883275,
-          1563.89531103836,
-          1191.1468867833808
+          1655.3851770753681,
+          1260.8304956112977
         ],
         [
           4,
           3945.2151785381216,
           2548.214483817773,
-          59.80591615542893,
-          1894.3707009137568,
+          51.964476737736874,
+          2013.0894422160407,
           71.80291624939382,
           6.88071584285802,
-          1875.492984976934,
-          1304.5447079588507
+          1986.3702868615255,
+          1381.6681088805976
         ],
         [
           5,
           4728.375898414545,
           3020.486523907212,
-          74.0743475297966,
-          2245.4629348240715,
+          66.32505998761565,
+          2386.1843538866974,
           86.05644135114473,
           7.83160719876424,
-          2225.649233803959,
-          1413.7939665256524
+          2358.621365324404,
+          1498.2615431789377
         ],
         [
           6,
           5607.125645631295,
           3542.0212703452894,
-          90.68255232675325,
-          2633.177606973871,
+          83.53634825784458,
+          2798.196803572778,
           102.04968675048958,
           8.7874974721675,
-          2613.0229750779677,
-          1515.8579760608593
+          2770.895967607966,
+          1607.4427180297105
         ],
         [
           7,
           6578.862948521781,
           4109.157797646705,
-          109.73247744716578,
-          3054.7931450537517,
+          96.11705672873957,
+          3246.2346601408967,
           119.73530566309643,
           9.71737302890486,
-          3035.072943808916,
-          1607.9417026799977
+          3212.899038177635,
+          1702.1516272037009
         ],
         [
           8,
           7636.994107436128,
           4715.843861341809,
-          131.25218402165456,
-          3505.8102438949854,
+          110.37874322870337,
+          3725.5166504600293,
           138.99329275533754,
           10.58131158914347,
-          3487.487823572159,
-          1687.328905928352
+          3686.320789344252,
+          1783.5289867805552
         ],
         [
           9,
           8770.866259561277,
           5353.736764836203,
-          155.1845464797744,
-          3980.0268510034016,
+          126.32139909669243,
+          4229.4520442206,
           159.62976592401526,
           11.33872152125149,
-          3964.242910037909,
-          1751.5929380003035
+          4184.804955872027,
+          1849.047844432928
         ],
         [
           10,
           9965.66874490375,
           6012.287953800432,
-          181.37517115724827,
-          4469.601054959997,
+          143.88676903161672,
+          4749.707483502341,
           181.37517115724827,
           11.948024853424744,
-          4457.653030106572,
-          1798.7262372100743
+          4700.271056523285,
+          1896.626052827943
         ]
       ],
-      "sharesBase": 12.5,
+      "sharesBase": 12.52,
       "subtitle": "DCF 引擎 · FCFF 两阶段模型",
       "summary": {
-        "equity": 43327.7,
-        "ev": 42811.3,
-        "netDebt": -516.5,
-        "perShare": 3465.99,
-        "pvCashflows": 14308.4,
-        "pvTerminal": 28502.9,
-        "shares": 12.5
+        "equity": 45705.3,
+        "ev": 45188.4,
+        "netDebt": -516.9,
+        "perShare": 3649.79,
+        "pvCashflows": 15134.2,
+        "pvTerminal": 30054.2,
+        "shares": 12.52
       },
       "title": "十年现金流桥接与企业价值拆解",
       "unit": "亿元人民币",
@@ -338,35 +332,40 @@
     },
     "driverSensitivity": [
       {
-        "delta": 15.0,
-        "k": "收入增速",
-        "shock": 3985
-      },
-      {
         "delta": -14.8,
         "k": "加权资本成本 WACC",
-        "shock": 2953
+        "shock": 3109
       },
       {
-        "delta": 9.9,
+        "delta": 14.8,
+        "k": "收入增速",
+        "shock": 4190
+      },
+      {
+        "delta": 10.0,
         "k": "营业利润率",
-        "shock": 3810
-      },
-      {
-        "delta": -3.4,
-        "k": "有效税率",
-        "shock": 3347
+        "shock": 4015
       },
       {
         "delta": 3.4,
         "k": "永续增长率",
-        "shock": 3583
+        "shock": 3773
+      },
+      {
+        "delta": -2.7,
+        "k": "有效税率",
+        "shock": 3553
+      },
+      {
+        "delta": -0.1,
+        "k": "资本开支 / 营收",
+        "shock": 3644
       }
     ],
     "exchange": "SH",
     "executiveParagraphs": [],
     "financials": {
-      "calloutHtml": "<strong>会计分析师提示 · </strong>CFO / NI = <span class='mono'>0.75</span>。",
+      "calloutHtml": "<strong>会计分析师提示 · </strong>CFO / NI = <span class='mono'>0.72</span>。",
       "kpis": [
         {
           "label": "营收",
@@ -374,7 +373,7 @@
         },
         {
           "label": "净利润",
-          "value": "¥823.2 亿"
+          "value": "¥853.1 亿"
         },
         {
           "label": "EBITDA",
@@ -405,15 +404,15 @@
         },
         {
           "label": "ROE",
-          "value": "32.4%"
+          "value": "33.6%"
         },
         {
           "label": "市盈率 (静态)",
-          "value": "18.3×"
+          "value": "20.2×"
         },
         {
           "label": "EV / EBITDA",
-          "value": "12.4×"
+          "value": "14.3×"
         }
       ],
       "kpisTitle": "FY2025 关键指标",
@@ -457,289 +456,25 @@
       "change": 0.0,
       "changePct": 0.0,
       "currency": "¥",
-      "last": 1204.98,
+      "last": 1375.0,
       "market": "CN"
     },
-    "pricedIn": {
-      "events": {
-        "announcements": [
-          {
-            "category": "分配方案实施",
-            "date": "2026-06-22",
-            "title": "贵州茅台:贵州茅台2025年年度权益分派实施公告"
-          },
-          {
-            "category": "高管人员任职变动",
-            "date": "2026-06-12",
-            "title": "贵州茅台:贵州茅台关于聘任董事会秘书的公告"
-          },
-          {
-            "category": "法律意见书",
-            "date": "2026-06-12",
-            "title": "贵州茅台:北京市金杜律师事务所关于贵州茅台酒股份有限公司2025年度股东会之法律意见书"
-          },
-          {
-            "category": "高管人员任职变动/董事会决议公告",
-            "date": "2026-06-12",
-            "title": "贵州茅台:贵州茅台第五届董事会2026年度第一次会议决议公告"
-          },
-          {
-            "category": "高管人员任职变动",
-            "date": "2026-06-12",
-            "title": "贵州茅台:贵州茅台关于职工董事选举结果的公告"
-          },
-          {
-            "category": "分配方案决议公告/股东大会决议公告/高管人员任职变动",
-            "date": "2026-06-12",
-            "title": "贵州茅台:贵州茅台2025年度股东会决议公告"
-          },
-          {
-            "category": "管理办法/制度",
-            "date": "2026-06-12",
-            "title": "贵州茅台:贵州茅台董事、高级管理人员考核和薪酬管理办法"
-          },
-          {
-            "category": "股东大会资料",
-            "date": "2026-06-03",
-            "title": "贵州茅台:贵州茅台2025年度股东会会议资料"
-          },
-          {
-            "category": "分配方案调整",
-            "date": "2026-06-03",
-            "title": "贵州茅台:贵州茅台关于调整2025年年度利润分配方案每股分红金额的公告"
-          },
-          {
-            "category": "股本变动/回购进展情况/回购实施公告",
-            "date": "2026-05-28",
-            "title": "贵州茅台:贵州茅台关于回购股份实施结果暨股份变动的公告"
-          }
-        ],
-        "asOf": "2026-07-10",
-        "consensusLine": "覆盖机构 44 家（近6个月），最近研报日期 2026-05-25",
-        "forecasts": [
-          {
-            "indicator": "营业收入",
-            "noticeDate": "2025-01-03",
-            "period": "2024-12-31",
-            "range": "1738.00亿元",
-            "type": "略增"
-          },
-          {
-            "indicator": "归属于上市公司股东的净利润",
-            "noticeDate": "2025-01-03",
-            "period": "2024-12-31",
-            "range": "857.00亿元",
-            "type": "略增"
-          }
-        ]
-      },
-      "frontier": {
-        "note": "「若利润率为 X%，现价需要 Y% 年增速支撑」。⚠=极端预期（累计营收 scale >30×）；多解=价格-增速曲线非单调。",
-        "priceLine": "现价 ¥1204.98 隐含的条件化增速要求（基准 WACC 9.5%）",
-        "rows": [
-          {
-            "cells": [
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+1.8%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+4.0%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+6.0%"
-              }
-            ],
-            "label": "维持现状",
-            "margin": "66.7%"
-          },
-          {
-            "cells": [
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+4.3%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+6.5%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+8.6%"
-              }
-            ],
-            "label": "行业中位",
-            "margin": "52.5%"
-          },
-          {
-            "cells": [
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+3.0%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+5.2%"
-              },
-              {
-                "diag": "",
-                "flags": [],
-                "text": "+7.2%"
-              }
-            ],
-            "label": "两者中点",
-            "margin": "59.6%"
-          }
-        ],
-        "waccCols": [
-          "WACC−1%",
-          "基准",
-          "WACC+1%"
-        ]
-      },
-      "regime": {
-        "dominant": "mixed",
-        "dominantLabel": "混合（增长溢价 × 稳态现金流）",
-        "mixed": true,
-        "narrative": "市场定价框架处于「增长溢价」与「稳态现金流」之间的混合状态，单一框架不足以解释现价，需同时跟踪两套验证点。",
-        "weights": [
-          {
-            "key": "growth",
-            "label": "增长溢价",
-            "pct": 30.4
-          },
-          {
-            "key": "steady",
-            "label": "稳态现金流",
-            "pct": 29.6
-          },
-          {
-            "key": "turnaround",
-            "label": "困境反转",
-            "pct": 23.8
-          },
-          {
-            "key": "story",
-            "label": "题材叙事",
-            "pct": 16.3
-          }
-        ]
-      },
-      "relative": {
-        "dataDate": "2026-07-10",
-        "industry": "白酒Ⅱ",
-        "insufficient": false,
-        "lossMaking": 1,
-        "note": "东财行业板块「白酒Ⅱ」 · 市值最接近的 10 家（板块成分共 19 家） · 1 家亏损已剔除 PE 样本",
-        "peerCount": 10,
-        "rows": [
-          {
-            "lbl": "PE(TTM)",
-            "median": "14.9×",
-            "pct": "第 56 分位",
-            "sample": "有效样本 9 家",
-            "target": "18.2×"
-          },
-          {
-            "lbl": "PB",
-            "median": "2.23×",
-            "pct": "第 100 分位",
-            "sample": "有效样本 10 家",
-            "target": "5.56×"
-          }
-        ],
-        "universe": 19
-      },
-      "subtitle": "条件化预期前沿 · 定价体制 · 相对估值 · 验证点",
-      "title": "市场在定价什么",
-      "verification": [
-        {
-          "evidence": "",
-          "state": "insufficient",
-          "status": "数据不足",
-          "text": "收入增速的边际变化（最新季报/业绩预告 vs 溢价所需增速）"
-        },
-        {
-          "evidence": "",
-          "state": "unverified",
-          "status": "未核验",
-          "text": "利润率随规模扩张的兑现路径"
-        },
-        {
-          "evidence": "",
-          "state": "unverified",
-          "status": "未核验",
-          "text": "增长溢价对应的兑现时间窗与竞争壁垒证据"
-        },
-        {
-          "evidence": "",
-          "state": "unverified",
-          "status": "未核验",
-          "text": "核心利润率与市场份额的稳定性（季报/年报边际变化）"
-        },
-        {
-          "evidence": "2025-12-31 期经营现金流 615.22亿元 / 归母净利润 823.20亿元 = 0.75，现金流对利润的覆盖正常",
-          "state": "pass",
-          "status": "已核验·通过",
-          "text": "自由现金流与分红/回购的匹配度"
-        },
-        {
-          "evidence": "",
-          "state": "unverified",
-          "status": "未核验",
-          "text": "稳态假设的均值回归风险（提价能力、竞争格局）"
-        },
-        {
-          "evidence": "2026-03-31 期应收账款同比 +112.8%，显著快于营收同比 +6.3%（缺口 106pp，超 20pp 阈值）",
-          "state": "fail",
-          "status": "已核验·未通过",
-          "text": "应收增速 vs 营收增速"
-        },
-        {
-          "evidence": "2026-03-31 期存货同比 +10.8% vs 营收同比 +6.3%（缺口 4pp，阈值内）",
-          "state": "pass",
-          "status": "已核验·通过",
-          "text": "存货增速 vs 营收增速"
-        },
-        {
-          "evidence": "2026-03-31 期扣非/归母 = 100%（扣非 272.40亿元 vs 归母 272.43亿元），主业利润成色正常",
-          "state": "pass",
-          "status": "已核验·通过",
-          "text": "扣非 / 归母净利润比"
-        },
-        {
-          "evidence": "2026-03-31 期资产负债率 12.1%，较上年同期 14.1% 变动 -2.0pp，趋势平稳",
-          "state": "pass",
-          "status": "已核验·通过",
-          "text": "资产负债率趋势"
-        }
-      ]
-    },
+    "pricedIn": null,
     "quick": [
       {
         "lbl": "市值",
-        "sub": "市销率 8.8×",
-        "val": "¥1.51 万亿"
+        "sub": "市销率 10.0×",
+        "val": "¥1.72 万亿"
       },
       {
         "lbl": "市盈率 (TTM)",
         "sub": "每股收益 65.66",
-        "val": "18.3×"
+        "val": "20.2×"
       },
       {
         "lbl": "EV / EBITDA",
         "sub": "",
-        "val": "12.4×"
+        "val": "14.3×"
       },
       {
         "lbl": "营业利润率",
@@ -748,7 +483,7 @@
       },
       {
         "lbl": "自由现金流",
-        "sub": "CFO / NI = 0.75",
+        "sub": "CFO / NI = 0.72",
         "val": "¥583.9 亿"
       }
     ],
@@ -757,7 +492,7 @@
       "marketKvs": [
         {
           "k": "市值",
-          "v": "¥1.51 万亿"
+          "v": "¥1.72 万亿"
         },
         {
           "k": "营收 (TTM)",
@@ -768,30 +503,21 @@
           "v": "¥516.9 亿"
         },
         {
-          "k": "有息负债",
-          "v": "¥0.4 亿"
-        },
-        {
-          "k": "净负债",
-          "tone": "up",
-          "v": "¥-516.5 亿"
-        },
-        {
           "k": "EV / EBITDA",
-          "v": "12.4×"
+          "v": "14.3×"
         }
       ],
       "openQuestions": [],
       "priceHistory": [
-        1204.98
+        1375.0
       ]
     },
     "rating": {
-      "bookValuePerShare": 203.15,
+      "bookValuePerShare": 202.8,
       "dcfMeaningful": true,
       "downgraded": false,
       "riskLevel": "中高",
-      "target": 3460.41,
+      "target": 3643.79,
       "timeHorizon": "12 个月",
       "tone": "buy",
       "weighted": "概率加权",
@@ -806,7 +532,7 @@
         "key": "bear",
         "narrative": "",
         "prob": 0.25,
-        "px": 2475.97,
+        "px": 2616.98,
         "tag": "悲观情景"
       },
       {
@@ -814,7 +540,7 @@
         "key": "base",
         "narrative": "",
         "prob": 0.5,
-        "px": 3465.99,
+        "px": 3649.79,
         "tag": "基准情景"
       },
       {
@@ -822,13 +548,13 @@
         "key": "bull",
         "narrative": "",
         "prob": 0.25,
-        "px": 4433.69,
+        "px": 4658.59,
         "tag": "乐观情景"
       }
     ],
-    "sector": "食品饮料-饮料-白酒",
+    "sector": "—",
     "sensitivity": {
-      "baseValue": 3465.994122084315,
+      "baseValue": 3649.7941248387633,
       "cols": [
         2.0,
         2.5,
@@ -839,53 +565,53 @@
       "footnote": "红色表示高于基准（更乐观），绿色反之。",
       "matrix": [
         [
-          4094.34,
-          4364.62,
-          4688.95,
-          5085.36,
-          5580.87
+          4311.46,
+          4595.95,
+          4937.34,
+          5354.59,
+          5876.16
         ],
         [
-          3726.54,
-          3945.92,
-          4205.2,
-          4516.32,
-          4896.59
+          3924.22,
+          4155.14,
+          4428.05,
+          4755.54,
+          5155.8
         ],
         [
-          3413.0,
-          3593.42,
-          3803.91,
-          4052.67,
-          4351.19
+          3594.1,
+          3784.01,
+          4005.57,
+          4267.41,
+          4581.63
         ],
         [
-          3142.8,
-          3292.85,
-          3465.99,
-          3667.99,
-          3906.72
+          3309.6,
+          3467.55,
+          3649.79,
+          3862.41,
+          4113.69
         ],
         [
-          2907.76,
-          3033.78,
-          3177.81,
-          3343.99,
-          3537.88
+          3062.12,
+          3194.77,
+          3346.37,
+          3521.29,
+          3725.37
         ],
         [
-          2701.62,
-          2808.37,
-          2929.35,
-          3067.62,
-          3227.16
+          2845.05,
+          2957.42,
+          3084.76,
+          3230.3,
+          3398.23
         ],
         [
-          2519.52,
-          2610.63,
-          2713.13,
-          2829.3,
-          2962.06
+          2653.3,
+          2749.2,
+          2857.09,
+          2979.36,
+          3119.11
         ]
       ],
       "paragraphs": [
@@ -911,19 +637,20 @@
       "whyNow": ""
     },
     "tickerMark": "贵",
-    "valuationPullquote": null
+    "valuationPullquote": null,
+    "valuationSanity": null
   },
   "summary": {
     "bias_check_status": "warned",
-    "confidence_bucket": "high",
+    "confidence_bucket": "medium",
     "entity_id": "600519",
-    "gate_checks_passed": 13,
-    "gate_checks_total": 13,
+    "gate_checks_passed": 14,
+    "gate_checks_total": 14,
     "gate_publishable": true,
-    "kill_criteria_count": 4,
+    "kill_criteria_count": 3,
     "monitorables_count": 26,
     "publishing_status": "published",
-    "signal_conviction": "high",
+    "signal_conviction": "medium",
     "signal_direction": "hold",
     "signal_sizing_tier": "starter_position"
   }

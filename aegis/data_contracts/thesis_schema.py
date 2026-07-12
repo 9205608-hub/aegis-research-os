@@ -1,6 +1,7 @@
 """Section 9.7 — Thesis Contract."""
 
 from datetime import date
+from typing import Any
 
 from pydantic import Field
 
@@ -83,6 +84,12 @@ class ThesisContract(StrictModel):
     kill_criteria: list[KillCriterion] = Field(min_length=1)
     must_monitor: list[Monitorable] = Field(min_length=1)
     open_questions: list[str] = Field(default_factory=list)
+    # AUDIT 2026-07-12 (A4): sanctioned DCF assumptions appendix — WACC /
+    # terminal growth / forecast years / shares / net debt / TV share /
+    # per-share scenario values / valuation sanity verdict. Optional so
+    # pre-2026-07-12 JSONL records load unchanged. Without this the contract
+    # exposed bare price points with no way to audit them ("DCF 黑箱").
+    valuation_assumptions: dict[str, Any] | None = None
 
     # Context
     macro_dependency: str = Field(min_length=1)
