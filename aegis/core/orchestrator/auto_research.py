@@ -4536,6 +4536,28 @@ class AutoResearchOrchestrator:
                         pass
         _log(f"Decision: {decision.publishing_status}, confidence={decision.confidence_bucket}")
 
+        # ── R5-L4: 产品形态诚实化 ────────────────────────────────────
+        # 平台期结论（GROK_REAUDIT_2026-07-12.md）：数据缺口大的票产出的是
+        # 高质量观察框架，却自称投资论点，按后者的尺子挨打。决策定稿后做
+        # 确定性形态判定并盖章进 scenarios——Editor 语气注入、thesis 合约、
+        # HTML 横幅三处消费同一真源。失败不阻断主流程。
+        try:
+            from aegis.core.thesis.product_form import derive_product_form
+            _pf = derive_product_form(
+                valuation_mismatch=bool(
+                    (scenarios.get("valuation_sanity") or {}).get("mismatch")),
+                evidence_gap_hits=sum(
+                    1 for _c in (decision.unresolved_conflicts or [])
+                    if getattr(_c, "topic", "") == "evidence_gap"),
+                publishing_status=decision.publishing_status,
+                open_question_count=len(open_questions or []),
+            )
+            scenarios["product_form"] = _pf
+            if _pf["form"] == "observation_framework":
+                _log("产品形态: 条件化观察框架 + 监控合约（非可执行投资论点）")
+        except Exception as _pf_err:
+            _log(f"  ⚠ 产品形态判定失败（不阻断）: {_pf_err}")
+
         # ── Step 14: Portfolio Signal ────────────────────────────────
         from aegis.core.portfolio.portfolio_integration import PortfolioIntegration
 

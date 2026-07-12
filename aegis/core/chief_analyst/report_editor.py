@@ -238,6 +238,28 @@ class ReportEditor:
                 "Use A-share conventions: 市值以'亿'为单位、货币符号用 ¥。"
             )
 
+        # R5-L4：观察框架票的 editor 语气硬约束。orchestrator 决策后把
+        # product_form 盖进 scenarios（Editor 在 Step 14b、决策之后运行，
+        # 能看到章）；headline/摘要正是"可下单研报"错觉到达读者的第一跳。
+        _pf_stamp = (
+            scenarios.get("product_form") if isinstance(scenarios, dict) else None
+        )
+        if isinstance(_pf_stamp, dict) and _pf_stamp.get("form") == "observation_framework":
+            _sys_prompt += (
+                "\n\nPRODUCT FORM (HARD CONSTRAINT): this run's deliverable is a "
+                "CONDITIONAL OBSERVATION FRAMEWORK + monitoring contract, NOT an "
+                "actionable investment thesis (data gaps / valuation sanity / "
+                "publish gate did not clear).\n"
+                "- The headline and executive_summary must present the output as "
+                "an observation framework（观察框架/监控合约）—— never as a rated "
+                "call, a target-price story, or a '重估/建仓时机' pitch.\n"
+                "- State conditions, not conclusions: prefer '若 X 得到验证，则 Y' "
+                "framing for every forward-looking claim.\n"
+                "- Do NOT use 买入/增持/建仓/抄底/上行空间/翻倍 language anywhere.\n"
+                "- It is GOOD to say plainly what data is missing and what to "
+                "monitor to close it — that is the product."
+            )
+
         raw = self._llm.call_structured(
             system_prompt=_sys_prompt,
             user_message=user_message,

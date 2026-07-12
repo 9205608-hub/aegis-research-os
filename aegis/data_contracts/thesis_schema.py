@@ -90,6 +90,17 @@ class ThesisContract(StrictModel):
     # pre-2026-07-12 JSONL records load unchanged. Without this the contract
     # exposed bare price points with no way to audit them ("DCF 黑箱").
     valuation_assumptions: dict[str, Any] | None = None
+    # R5-L4 (2026-07-12): honest product form. Data-gap-heavy runs (valuation
+    # mismatch / evidence gap / blocked / downgraded with open questions)
+    # self-label as a conditional observation framework + monitoring contract
+    # instead of an actionable investment thesis — the four-round Grok
+    # plateau finding ("作为问题清单/监控框架值 5-6 分，作为可下单 thesis
+    # 只值 3-4 分"). Defaults keep pre-R5 JSONL records loading unchanged.
+    product_form: str = Field(
+        default="investment_thesis",
+        pattern=r"^(investment_thesis|observation_framework)$",
+    )
+    product_form_reason: str | None = None
 
     # Context
     macro_dependency: str = Field(min_length=1)

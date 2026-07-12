@@ -1,6 +1,29 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-12 深夜 (**置信度大整改 R1-R5.1 全落地**：四轮 Grok 复审 3.1→2.8→3.33→3.5→3.2，平台期确认在 ~3.5±0.5；R5-1 驱动树原型守卫已修 NVDA 模板套 A 股的根源级 bug；突破平台期的 L1-L4 杠杆清单见 GROK_REAUDIT_2026-07-12.md，等用户拍板)
+> 最新更新: 2026-07-12 深夜+ (**R5-L4 产品形态诚实化 + R5-L3 审计均值测量落地**：数据缺口票全链路自我标注「条件化观察框架 + 监控合约」，审计脚本支持 AUDIT_RUNS=N 重复采样 + audit_scores.py 均值汇总。下一步 = R5 评测轮：5 票重生成 + 每票 2-3 次审计取均值，验证"观察框架形态能否站上审计者自己说的 5-6 分")
+
+## 🏷 2026-07-12 深夜+ R5-L4/L3：产品形态诚实化 + 审计测量修正（平台期突破杠杆前两发）
+
+**背景**：四轮复审平台期锁定的 #4（产品形态错位——"作为问题清单/监控框架值 5-6 分，作为可下单 thesis 只值 3-4 分"）与 #3（审计员采样噪声 ±0.5 > 轮间增量）。杠杆清单见 [GROK_REAUDIT_2026-07-12.md](GROK_REAUDIT_2026-07-12.md)。
+
+### L4 产品形态诚实化（确定性规则，不调 LLM）
+- ✅ **新模块 [product_form.py](aegis/core/thesis/product_form.py)**：`derive_product_form` 单一真源。估值失配 / evidence gap ≥1 / blocked·needs_review·under_review / downgraded+open_questions≥3 → `observation_framework`（含中英双语 reason）；干净发布 → `investment_thesis`（无需声明）
+- ✅ **五处消费**：① orchestrator 决策定稿后盖章 `scenarios["product_form"]`（在 BUG-40 needs_review 改写之后判定，evidence_gap 从 decision.unresolved_conflicts 数）；② 合约新字段 `product_form` / `product_form_reason`（默认值兼容旧 JSONL，A 股取中文 reason）+ build_thesis_contract 优先读章、replay 缺章降级重算；③ Report Editor 观察框架票语气硬约束（headline/摘要禁"可下单研报"语态，须条件化表述）；④ synthesizer 失配票事前注入 rule 7（生成时就按观察框架写，不靠下游降调）；⑤ HTML 报告顶部形态声明横幅（`REPORT.productForm`，投资论点票为 null 隐藏）+ 审计 prompt header 与第一节透传（送审材料新增字段，审计指令不变——与 A4 假设表同先例）
+- 已在渲染层真实验证：失配 blocked 票的报告顶部出金色声明框，与"预期无法验证 · 暂不评级"评级语义呼应
+
+### L3 审计测量修正
+- ✅ [grok_audit_stock.sh](scripts/grok_audit_stock.sh) 支持 `AUDIT_RUNS=N`（默认 1）：同一 prompt 独立重复采样 → `{code}_audit_run{i}.md`，run1 复制到 `{code}_audit.md` 保持旧消费者兼容
+- ✅ **新脚本 [audit_scores.py](scripts/audit_scores.py)**：从审计 md 提取第 7 节 0-10 分（取最后一个 N/10 匹配），按票聚合均值±极差 + 整体均分；run 文件存在时自动忽略 `_audit.md` 副本防重复计数。已在 2026-07-11 基线 21 票实测：均分 3.12（与 HANDOFF 记录的 3.1 对上）
+
+### 验证
+> **1638 passed / 7 skipped**（+26 回归 [test_product_form.py](tests/unit/test_product_form.py)：派生规则/合约接线/横幅/注入/分数提取五组）。
+> ⚠ **golden 3 smoke 预存在失败（非本轮引入，stash 验证干净 HEAD 同样失败）**：本 worktree 的 smoke pkl 与审计分支重录基线时不同源（agents 文本/催化剂全 diff）——002669 同款问题的扩大版。本轮的 golden 足迹恰好是每快照 +1 个 `added $.report.productForm`（已用 diff_structures 直接核实）。**基线重录留给 pkl 同源的环境**，重录时 productForm 键属有意变更。
+
+### 下一步（R5 评测轮）
+1. `./scripts/eval_batch.sh eval_round5` 重生成 5 票（观察框架形态生效需要重跑 LLM）
+2. 每票 `AUDIT_RUNS=2 bash scripts/grok_audit_stock.sh <code> <name>`（临界票加到 3）
+3. `python scripts/audit_scores.py logs/grok_audits` 出均值——KPI 检验从"单次采样 ≥6"改为"均值 ≥6 且无票均值 <5"
+4. 观察框架票若真如审计者所说站上 5-6 分 → 证明产品形态成立；L1 年报附注摄取（天花板杠杆）随后开工
 
 ## 🔧 2026-07-12 置信度大整改 Phase A/B（Grok 20 审计均分 3.1/10 → 目标 ≥6）
 

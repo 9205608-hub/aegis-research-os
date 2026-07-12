@@ -500,6 +500,19 @@ def valuation_constraint_block(
         "per-share figure you cannot derive from data provided above must be phrased as a "
         "hypothesis to verify (待验证假设), never as established fact.",
     ]
+    # R5-L4：估值失配 ⇒ 该 run 的产出物形态确定性判为「条件化观察框架 +
+    # 监控合约」（见 aegis.core.thesis.product_form）——生成时就按这个形态
+    # 写，而不是写一份多头备忘录再靠下游降调。
+    if sanity.get("mismatch"):
+        lines.append(
+            "7. PRODUCT FORM: because the valuation model failed sanity, this "
+            "deliverable ships as a CONDITIONAL OBSERVATION FRAMEWORK + "
+            "monitoring contract, not an actionable thesis. Write core_thesis / "
+            "my_variant as conditional hypotheses to verify (若…得到验证，则…), "
+            "and let the monitoring plan (what to watch, thresholds, "
+            "falsifiers) carry the value of the output. Do not write it as an "
+            "actionable long/short memo."
+        )
     return "\n".join(lines)
 
 

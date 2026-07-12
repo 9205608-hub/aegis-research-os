@@ -2121,6 +2121,37 @@ def build_report_dict(
         except ValueError:
             pass
 
+    # ── R5-L4: 产品形态声明横幅 ──
+    # orchestrator 决策后盖进 scenarios["product_form"]；replay / 旧 pkl
+    # 缺章时按决策对象上可得的信号降级重算（同一 derive 函数 = 同一规则）。
+    # 仅观察框架票出横幅；干净发布的投资论点无需自我声明。
+    _pf_stamp = sc.get("product_form") if isinstance(sc.get("product_form"), dict) else None
+    if _pf_stamp is None and decision is not None:
+        try:
+            from aegis.core.thesis.product_form import derive_product_form
+            _pf_stamp = derive_product_form(
+                valuation_mismatch=_sanity_mismatch,
+                evidence_gap_hits=sum(
+                    1 for _c in (_g(decision, "unresolved_conflicts", None) or [])
+                    if getattr(_c, "topic", "") == "evidence_gap"),
+                publishing_status=str(_g(decision, "publishing_status", "") or ""),
+                open_question_count=len(_g(decision, "open_questions", None) or []),
+            )
+        except Exception:
+            _pf_stamp = None
+    product_form_block = None
+    if isinstance(_pf_stamp, dict) and _pf_stamp.get("form") == "observation_framework":
+        product_form_block = {
+            "form": "observation_framework",
+            "label": (
+                _pf_stamp.get("label_zh") if is_zh else _pf_stamp.get("label_en")
+            ) or ("条件化观察框架 + 监控合约" if is_zh
+                  else "Conditional observation framework + monitoring contract"),
+            "reason": (
+                _pf_stamp.get("reason_zh") if is_zh else _pf_stamp.get("reason_en")
+            ) or "",
+        }
+
     # ── 市场在定价什么（Aegis 2.0 Phase 0 第一公民区块；Phase 1 扩展） ──
     priced_in_block = _build_priced_in_block(
         meta_facts.get("__expectations_frontier") if isinstance(meta_facts, dict) else None,
@@ -2217,6 +2248,9 @@ def build_report_dict(
         "pipelineDuration": pipeline_duration or "—",
         "model": model_name or "—",
         "staleBanner": stale_banner_text,
+        # R5-L4：产品形态声明。None = 投资论点（无需声明），前端隐藏横幅；
+        # 观察框架票 = {form,label,reason}，渲染在时效横幅之前。
+        "productForm": product_form_block,
         # Aegis 2.0 Phase 1（任务 D3）：数据截至行（最新报告期 + 时效天数）。
         # None = 无时效信息，前端隐藏该行。
         "dataAsOf": data_as_of,

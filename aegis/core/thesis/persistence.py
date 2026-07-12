@@ -384,6 +384,28 @@ def build_thesis_contract(
     except ValueError:
         accounting = AccountingStandard.CAS
 
+    # R5-L4：产品形态。优先 orchestrator 决策后盖进 scenarios 的判定（含
+    # evidence gap 信号）；replay / 旧路径缺章时按可得信号降级重算
+    # （evidence gap 引擎侧信号缺失记 0）。注意 needs_review 会被
+    # _normalize_publishing_status 归一成 draft，形态判定须用归一前的原值。
+    _pub = _normalize_publishing_status(publishing_status)
+    _pf = scenarios.get("product_form") if isinstance(scenarios, dict) else None
+    if not (isinstance(_pf, dict) and _pf.get("form")):
+        from aegis.core.thesis.product_form import derive_product_form
+        _pf_sanity = (
+            scenarios.get("valuation_sanity")
+            if isinstance(scenarios, dict) else None
+        ) or {}
+        _pf = derive_product_form(
+            valuation_mismatch=bool(_pf_sanity.get("mismatch")),
+            publishing_status=str(publishing_status or _pub.value),
+            open_question_count=len(_open_questions(st)),
+        )
+    _is_cn = "cn" in str(market_id or "").lower()
+    _pf_reason = (
+        _pf.get("reason_zh") if _is_cn else _pf.get("reason_en")
+    ) or None
+
     return ThesisContract(
         thesis_id=f"thesis_{eid}",
         thesis_version=max(1, int(thesis_version)),
@@ -425,6 +447,8 @@ def build_thesis_contract(
         must_monitor=must_monitor,
         open_questions=_open_questions(st),
         valuation_assumptions=_valuation_assumptions(scenarios),
+        product_form=str(_pf.get("form") or "investment_thesis"),
+        product_form_reason=_pf_reason,
         # 上下文
         macro_dependency=_text(st, "macro_dependency"),
         sector_cycle_position=sector_cycle,
@@ -432,7 +456,7 @@ def build_thesis_contract(
         capital_allocation_assessment=_text(
             st, "capital_allocation_assessment"),
         # 发布
-        publishing_status=_normalize_publishing_status(publishing_status),
+        publishing_status=_pub,
         confidence_bucket=_normalize_confidence(confidence),
         bias_check_status=_bias,
         # 组合信号

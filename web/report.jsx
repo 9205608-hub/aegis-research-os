@@ -302,6 +302,23 @@ const fmtPx = (n) => `${CURR()}${fmtNum(n, n < 100 ? 2 : 2)}`;
 
 // ---------- Small building blocks ----------
 
+// R5-L4：产品形态声明——观察框架票在报告最顶部自我声明「这不是可下单的
+// 投资论点」，与时效横幅共用告警样式。REPORT.productForm 为 null 时隐藏。
+function ProductFormBanner() {
+  if (!REPORT.productForm) return null;
+  return (
+    <div className="stale-banner" role="note">
+      <div className="icon">◎</div>
+      <div>
+        <div className="title">
+          {L("产出物形态声明", "Deliverable form")} · {REPORT.productForm.label}
+        </div>
+        <div className="body">{REPORT.productForm.reason}</div>
+      </div>
+    </div>
+  );
+}
+
 function StaleBanner() {
   if (!REPORT.staleBanner) return null;
   return (
@@ -539,6 +556,7 @@ function Hero() {
           {REPORT.dataAsOf.line}
         </div>
       )}
+      <ProductFormBanner/>
       <StaleBanner/>
 
       <div className="stat-strip">
