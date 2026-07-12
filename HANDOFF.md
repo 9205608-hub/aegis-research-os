@@ -1,6 +1,6 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-12 (**置信度大整改 Phase A/B 落地**：估值诚信 + 契约语义 + 决策门，分支 claude/research-report-confidence-f1dac6；1607 测试绿 + 3 smoke golden 重录；Phase C Grok 复审循环进行中)
+> 最新更新: 2026-07-12 深夜 (**置信度大整改 R1-R5.1 全落地**：四轮 Grok 复审 3.1→2.8→3.33→3.5→3.2，平台期确认在 ~3.5±0.5；R5-1 驱动树原型守卫已修 NVDA 模板套 A 股的根源级 bug；突破平台期的 L1-L4 杠杆清单见 GROK_REAUDIT_2026-07-12.md，等用户拍板)
 
 ## 🔧 2026-07-12 置信度大整改 Phase A/B（Grok 20 审计均分 3.1/10 → 目标 ≥6）
 
