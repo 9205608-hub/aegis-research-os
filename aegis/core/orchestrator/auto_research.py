@@ -6388,6 +6388,19 @@ class AutoResearchOrchestrator:
         if not decomp or not decomp.get("tree"):
             return None
 
+        # R5-1 (AUDIT 2026-07-12, Grok R4 复审 002371)：原型限定守卫。
+        # 部分 pack 的驱动分解是为原型公司写死的（semiconductor pack 的
+        # "GPU_Units × ASP + Networking + Software" 连 base_value 都是英伟达
+        # 的出货量），套给同行业其他商业模式（刻蚀设备商北方华创）是审计
+        # 判词里的"业务对象错误"——错误模板还会诱导 ScenarioArchitect 按
+        # 原型的叙事编 driver_deltas（幻想增长路径的另一半根源）。声明了
+        # applies_to 的分解只对清单内实体生效；其余实体回退共识增长路径。
+        applies_to = decomp.get("applies_to")
+        if applies_to:
+            _allowed = {str(x).strip().lower() for x in applies_to}
+            if str(entity_id).strip().lower() not in _allowed:
+                return None
+
         from aegis.core.truth.scenario_engine.dcf_engine import (
             RevenueDriver, RevenueDriverTree,
         )

@@ -49,6 +49,10 @@ cost_structure:
 
 revenue_drivers:
   decomposition:
+    # R5-1 (2026-07-12): 本分解是 NVDA 原型专用（H100/B100 出货 × ASP），
+    # 对同行业其他商业模式（设备商/代工/国产 CPU）是业务对象错误——
+    # applies_to 之外的实体回退共识增长路径。
+    applies_to: ["NVDA", "nvda"]
     formula: "Revenue = GPU_Units x ASP + Networking_Revenue + Software_Revenue"
     tree:
       - name: "GPU_Units"

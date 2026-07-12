@@ -796,3 +796,41 @@ class TestEvidenceGapSensitivity:
             synthesized_thesis=st,
         )
         assert decision.publishing_status == "downgraded"
+
+
+class TestDriverTreeArchetypeGuard:
+    """R5-1：原型限定的驱动分解不得套给其他商业模式（002371 业务对象错误）。"""
+
+    _PACK = {"revenue_drivers": {"decomposition": {
+        "applies_to": ["NVDA"],
+        "formula": "Revenue = GPU_Units x ASP",
+        "tree": [
+            {"name": "GPU_Units", "base_value": 8.5, "near_growth": 0.25, "long_growth": 0.08},
+            {"name": "GPU_ASP", "base_value": 25000, "near_growth": 0.10, "long_growth": 0.02},
+        ],
+    }}}
+
+    def _build(self, entity):
+        from aegis.core.orchestrator.auto_research import AutoResearchOrchestrator
+        return AutoResearchOrchestrator._build_driver_tree(
+            AutoResearchOrchestrator.__new__(AutoResearchOrchestrator),
+            self._PACK, {"revenue": 3e11}, {}, entity,
+        )
+
+    def test_archetype_entity_keeps_tree(self):
+        assert self._build("NVDA") is not None
+
+    def test_non_archetype_entity_blocked(self):
+        assert self._build("002371") is None
+
+    def test_pack_without_applies_to_unchanged(self):
+        pack = {"revenue_drivers": {"decomposition": {
+            k: v for k, v in self._PACK["revenue_drivers"]["decomposition"].items()
+            if k != "applies_to"
+        }}}
+        from aegis.core.orchestrator.auto_research import AutoResearchOrchestrator
+        tree = AutoResearchOrchestrator._build_driver_tree(
+            AutoResearchOrchestrator.__new__(AutoResearchOrchestrator),
+            pack, {"revenue": 3e11}, {}, "002371",
+        )
+        assert tree is not None
