@@ -684,3 +684,115 @@ class TestKillDisconfirmReconciliation:
     def test_no_kills_passthrough(self):
         triggers = ["任意触发器"]
         assert DecisionEngine()._reconcile_disconfirm_with_kills(triggers, []) == triggers
+
+
+# ═══ Round 4 ═══════════════════════════════════════════════════════════
+
+from aegis.core.truth.model_free_anchors import build_model_free_implied
+from aegis.core.thesis.persistence import _model_free_story
+
+
+_MFI_META = {
+    "shares_outstanding": 4.4e9,
+    "__relative_valuation": {
+        "insufficient_peers": False,
+        "target_pe_ttm": 22.4, "peer_pe_median": 33.3, "pe_percentile": 44,
+        "target_pb": 5.1, "peer_pb_median": 3.2, "pb_percentile": 88,
+    },
+    "__recent_events": {"consensus": {
+        "insufficient_coverage": False, "org_count": 32,
+        "predictions": [
+            {"year": 2026, "eps": 20.7, "net_profit": 948.6e8, "revenue": 5943e8},
+            {"year": 2027, "eps": 25.6, "net_profit": 1171.6e8, "revenue": 7267e8},
+        ],
+    }},
+}
+
+
+class TestModelFreeAnchors:
+    """R4-1：DCF 失配时的无模型隐含预期锚。"""
+
+    def test_builds_relval_and_consensus_lines(self):
+        out = build_model_free_implied(_MFI_META, {"current_price": 349.0})
+        assert out is not None
+        blob = " ".join(out["lines_zh"])
+        assert "PE(TTM) 22.4×" in blob and "第 44 分位" in blob
+        assert "2026E" in blob and "949亿" in blob
+        assert "维持现价的条件化表述" in blob
+        assert out["sanctioned_pcts"]
+
+    def test_gates_respected(self):
+        meta = {"shares_outstanding": 4.4e9,
+                "__relative_valuation": {"insufficient_peers": True},
+                "__recent_events": {"consensus": {"insufficient_coverage": True}}}
+        assert build_model_free_implied(meta, {"current_price": 349.0}) is None
+
+    def test_no_price_none(self):
+        assert build_model_free_implied(_MFI_META, {}) is None
+
+    def test_contract_story_prefers_model_free(self):
+        mfi = build_model_free_implied(_MFI_META, {"current_price": 349.0})
+        story = _model_free_story(mfi)
+        assert story.startswith("市场隐含预期（无模型锚")
+        c = build_thesis_contract(
+            entity_id="300750", run_id="run_x", model_free_implied=mfi,
+        )
+        assert "无模型锚" in c.market_implied_story
+
+    def test_constraint_block_points_to_anchors(self):
+        meta = dict(_MFI_META)
+        meta["__model_free_implied"] = {"lines_zh": ["x"]}
+        block = valuation_constraint_block(MISMATCH_SCEN, MKT, meta_facts=meta)
+        assert "MODEL-FREE" in block and "circular" in block
+
+
+class TestKillInternalConsistency:
+    """R4-4：kill 同指标去重 + 频率期限匹配。"""
+
+    def _st(self, kills):
+        return SimpleNamespace(kill_criteria=kills)
+
+    def test_same_metric_kills_deduped(self):
+        st = self._st([
+            {"description": "毛利率连续两个季度低于22%", "threshold": "低于22%",
+             "check_frequency": "quarterly"},
+            {"description": "毛利率连续两季度跌破25%", "threshold": "低于25%",
+             "check_frequency": "quarterly"},
+            {"description": "欧盟反补贴关税超过20%落地", "threshold": "超过20%",
+             "check_frequency": "event-driven"},
+        ])
+        kc = DecisionEngine()._extract_kill_criteria([], st)
+        assert len(kc) == 2  # 两条毛利率合一，关税保留
+        assert kc[0]["threshold"] == "低于22%"  # 第一条（synthesizer 优先级）胜出
+
+    def test_annual_metric_frequency_corrected(self):
+        st = self._st([{
+            "description": "2026年全年营收低于¥5200亿",
+            "threshold": "低于¥5200亿", "check_frequency": "quarterly",
+        }])
+        kc = DecisionEngine()._extract_kill_criteria([], st)
+        assert kc[0]["check_frequency"] == "annually"
+
+
+class TestEvidenceGapSensitivity:
+    """R4-2：单处强重叠即降级（宁德 R3 带缺口 published 的修正）。"""
+
+    def test_single_hit_now_downgrades(self):
+        from aegis.core.chief_analyst.thesis_synthesizer import SynthesizedThesis
+        st = SynthesizedThesis(
+            core_thesis=_EDGE_BLOB, my_variant="变异", variant_magnitude="幅度",
+            variant_decomposition_narrative="分解", why_now="现在",
+            market_implied_story="市场", key_assumption_disagreement="分歧",
+            counter_thesis="反方", why_market_is_wrong="错",
+            what_would_change_my_mind="改变", edge_source="来源",
+            edge_durability="medium_term",
+        )
+        decision = DecisionEngine().decide(
+            "300750", "run_t", [_mk_judgment(triggers=["营收增速低于80%"])],
+            [], True,
+            context={"open_questions": [
+                {"question": "前两大客户的营收集中度及应收账款集中度具体是多少？"},
+            ]},
+            synthesized_thesis=st,
+        )
+        assert decision.publishing_status == "downgraded"

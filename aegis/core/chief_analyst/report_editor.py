@@ -222,7 +222,9 @@ class ReportEditor:
             from aegis.core.chief_analyst.thesis_synthesizer import (
                 valuation_constraint_block,
             )
-            user_message += valuation_constraint_block(scenarios, market_data)
+            user_message += valuation_constraint_block(
+                scenarios, market_data, meta_facts=meta_facts,
+            )
         except Exception:
             pass
 

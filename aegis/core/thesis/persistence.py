@@ -190,6 +190,23 @@ def _frontier_story(frontier: Any) -> str:
     return "市场预期前沿（现价隐含的条件化预期）：" + "；".join(lines)
 
 
+def _model_free_story(model_free_implied: Any) -> str:
+    """R4-1：无模型隐含预期 → 合约 market_implied_story。
+
+    DCF 失配时反向 DCF 前沿是循环论证（Grok R2/R3 三票 P0），改用相对
+    估值分位 + 一致预期倍数反推的可引用表述。"""
+    if not isinstance(model_free_implied, dict):
+        return ""
+    lines = [str(x).strip() for x in
+             coerce_list(model_free_implied.get("lines_zh")) if str(x).strip()]
+    if not lines:
+        return ""
+    return (
+        "市场隐含预期（无模型锚——本 run DCF 未过数量级检验，反向 DCF "
+        "隐含预期停用）：" + "；".join(lines)
+    )
+
+
 def _kill_criteria(kill_criteria: Any) -> list[KillCriterion]:
     """透传 kill_criteria（dict/对象容错）；空 → 一条如实的人工占位。"""
     out: list[KillCriterion] = []
@@ -294,6 +311,7 @@ def build_thesis_contract(
     frontier: Any = None,
     regime: Any = None,
     verification_results: Any = None,
+    model_free_implied: Any = None,
     kill_criteria: Any = None,
     disconfirming_triggers: Any = None,
     monitorables: list[Monitorable] | None = None,
@@ -319,7 +337,12 @@ def build_thesis_contract(
     created = created_at or run_created_at(run_id) or datetime.now()
     created_date = created.date() if isinstance(created, datetime) else created
 
-    market_implied = _frontier_story(frontier) or _text(st, "market_implied_story")
+    # R4-1：失配票优先无模型锚故事，其次前沿，最后 synthesizer 叙事。
+    market_implied = (
+        _model_free_story(model_free_implied)
+        or _frontier_story(frontier)
+        or _text(st, "market_implied_story")
+    )
 
     regime_frame = str(_get(regime, "narrative_frame_zh") or "").strip()
     dominant = str(_get(regime, "dominant") or "").strip()

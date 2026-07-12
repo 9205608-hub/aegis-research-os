@@ -424,6 +424,7 @@ def _valuation_sanity_verdict(
 def valuation_constraint_block(
     scenarios: dict[str, Any] | None,
     market_data: dict[str, Any] | None,
+    meta_facts: dict[str, Any] | None = None,
 ) -> str:
     """AUDIT 2026-07-12 R2-1：估值引用规则的**事前注入**。
 
@@ -452,9 +453,20 @@ def valuation_constraint_block(
             "headroom, no '安全边际' figures, no '现价仅为价值的 N%' phrasing.",
             "2. Magnitude language must be DIRECTION-ONLY (方向性表述). In variant_magnitude, "
             "state the model failure plainly and withhold all quantification.",
-            "3. The ONLY quotable quantitative frameworks: the conditional expectations "
-            "frontier lines provided (若利润率 X 则现价需增速 Y) and relative-valuation "
-            "anchors (PE/PB percentile), quoted verbatim in conditional form.",
+            (
+                # R4-1：无模型锚可用时明确指向它；否则退回相对估值锚。
+                "3. The ONLY quotable quantitative framework: the MODEL-FREE "
+                "ANCHORS section provided above (relative-valuation percentiles "
+                "+ consensus forward multiples). The reverse-DCF frontier is "
+                "DISABLED this run — citing it would be circular reasoning."
+                if isinstance(
+                    (meta_facts or {}).get("__model_free_implied"), dict,
+                ) else
+                "3. The ONLY quotable quantitative frameworks: relative-valuation "
+                "anchors (PE/PB percentile), quoted verbatim. Do NOT quote any "
+                "reverse-DCF implied growth this run — it derives from the "
+                "failed model and would be circular."
+            ),
             "4. Tone must match a blocked / low-confidence draft: no '重估迫在眉睫 / 显著"
             "安全边际 / 上行 N 倍 / 翻倍空间 / 极端错误定价' rhetoric anywhere, including "
             "core_thesis and why_now.",
@@ -1149,7 +1161,10 @@ class ThesisSynthesizer:
         )
         # AUDIT 2026-07-12 R2-1/R2-7：估值引用规则事前注入（失配时禁引 DCF
         # 派生数字 + 语气降调；常态时限定 sanctioned 值清单；期限错配防护）。
-        user_message += valuation_constraint_block(scenarios, market_data)
+        # R4-1：失配时约束块改指向无模型锚。
+        user_message += valuation_constraint_block(
+            scenarios, market_data, meta_facts=meta_facts,
+        )
 
         _sys_prompt = AEGIS_PROJECT_PREAMBLE + THESIS_SYNTHESIZER_SYSTEM_PROMPT
         if isinstance(scenarios, dict) and scenarios.get("currency") == "CNY":
@@ -1187,6 +1202,10 @@ class ThesisSynthesizer:
         # deterministically replaced with a direction-only disclosure.
         _sanity = _valuation_sanity_verdict(scenarios, market_data)
         _mismatch = bool(_sanity and _sanity.get("mismatch"))
+        _mfi_pcts = list(
+            ((meta_facts or {}).get("__model_free_implied") or {})
+            .get("sanctioned_pcts") or []
+        )
         raw, valuation_warnings = _scrub_fair_value_claims(
             raw, scenarios, market_data,
             extra_sanctioned_pcts=(
@@ -1196,6 +1215,7 @@ class ThesisSynthesizer:
                 + relative_valuation_sanctioned_pcts(
                     (meta_facts or {}).get("__relative_valuation")
                 )
+                + _mfi_pcts  # R4-1：无模型锚数字进白名单（红线 9 同则）
             ),
             strict=_mismatch,
         )
@@ -1314,18 +1334,35 @@ class ThesisSynthesizer:
 
         # ── Aegis 2.0 Phase 0：预期前沿 / 定价体制 / 近事件事实块 ──
         _lang = "zh" if disp["currency"] == "CNY" else "en"
-        _frontier_lines = frontier_prompt_lines(
-            (meta_facts or {}).get("__expectations_frontier"), _lang,
-        )
-        if _frontier_lines:
-            parts.append("=== MARKET-IMPLIED EXPECTATIONS FRONTIER (conditional reverse-DCF) ===")
+        # R4-1 (AUDIT 2026-07-12)：DCF 失配时反向 DCF 前沿=循环论证（Grok
+        # R2/R3 三票 P0）——整段替换为无模型锚（相对估值分位 + 一致预期
+        # 倍数反推），前沿行不再注入。
+        _mfi = (meta_facts or {}).get("__model_free_implied")
+        if isinstance(_mfi, dict) and _mfi.get("lines_zh"):
+            parts.append("=== MARKET-IMPLIED EXPECTATIONS (MODEL-FREE ANCHORS) ===")
             parts.append(
-                "(One margin scenario per line. Quote these in conditional form only; "
-                "a single-point 'market implies Z% growth' is prohibited.)"
+                "(This run's DCF FAILED its magnitude sanity check, so the "
+                "reverse-DCF frontier is DISABLED — it would be circular. The "
+                "lines below are the ONLY quotable market-implied framework: "
+                "relative-valuation percentiles and consensus forward "
+                "multiples. Quote them verbatim / conditionally.)"
             )
-            for _ln in _frontier_lines:
+            for _ln in _mfi["lines_zh"]:
                 parts.append(f"  - {_ln}")
             parts.append("")
+        else:
+            _frontier_lines = frontier_prompt_lines(
+                (meta_facts or {}).get("__expectations_frontier"), _lang,
+            )
+            if _frontier_lines:
+                parts.append("=== MARKET-IMPLIED EXPECTATIONS FRONTIER (conditional reverse-DCF) ===")
+                parts.append(
+                    "(One margin scenario per line. Quote these in conditional form only; "
+                    "a single-point 'market implies Z% growth' is prohibited.)"
+                )
+                for _ln in _frontier_lines:
+                    parts.append(f"  - {_ln}")
+                parts.append("")
 
         _regime = (meta_facts or {}).get("__pricing_regime")
         if isinstance(_regime, dict) and _regime.get("weights"):

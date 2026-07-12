@@ -4048,6 +4048,23 @@ class AutoResearchOrchestrator:
         if _gate_skipped_names:
             _log(f"  Gate skips (missing inputs): {_gate_skipped_names}")
 
+        # R4-1 (AUDIT 2026-07-12): 失配票的无模型隐含预期锚。DCF 未过数量级
+        # 检验时，反向 DCF 前沿是循环论证（Grok R2/R3 三票 P0）——改用相对
+        # 估值分位 + 一致预期倍数反推。放在 events/relval 拉取之后、
+        # synthesizer/persistence 消费之前。
+        if (scenarios.get("valuation_sanity") or {}).get("mismatch"):
+            try:
+                from aegis.core.truth.model_free_anchors import (
+                    build_model_free_implied,
+                )
+                _mfi = build_model_free_implied(meta_facts, market_data)
+                if _mfi:
+                    meta_facts["__model_free_implied"] = _mfi
+                    _log(f"Model-free anchors: {len(_mfi['lines_zh'])} 行"
+                         f"（DCF 失配，反向 DCF 隐含预期停用）")
+            except Exception as _mfi_err:
+                _log(f"  ⚠ model-free anchors failed (non-blocking): {_mfi_err}")
+
         # ── Step 12b: Chief Analyst — Thesis Synthesis (LLM post-agent) ─
         synthesized_thesis = None
         if _agents_reuse is not None:
@@ -4554,6 +4571,8 @@ class AutoResearchOrchestrator:
                 frontier=meta_facts.get("__expectations_frontier"),
                 regime=meta_facts.get("__pricing_regime"),
                 verification_results=meta_facts.get("__verification"),
+                # R4-1：失配票的无模型隐含预期锚（None 时合约走前沿故事）
+                model_free_implied=meta_facts.get("__model_free_implied"),
                 kill_criteria=getattr(decision, "kill_criteria", None),
                 # AUDIT 2026-07-12 (B1/B5): 证伪触发器与 bias 真值随合约落库
                 disconfirming_triggers=getattr(

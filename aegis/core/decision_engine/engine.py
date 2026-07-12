@@ -56,9 +56,14 @@ _STOP_BIGRAMS = frozenset({
     "具体", "多少", "如何", "怎样", "数据", "需要", "分析", "判断",
     "情况", "问题", "目前", "未来", "持续", "变化", "趋势", "水平",
 })
-EVIDENCE_GAP_MIN_SHARED = 4      # shared informative tokens per question
+# R4-2 (AUDIT 2026-07-12): sensitivity retuned against Grok round-3 ground
+# truth — 002371 (downgraded, judged correct) vs 300750 (published with
+# segment/overseas gaps, judged 发布级别过高). Old (4 shared, ≥2 hits)
+# missed the CATL case; 3 shared + 1 hit catches it while unrelated
+# questions still fail the 0.28 ratio bar.
+EVIDENCE_GAP_MIN_SHARED = 3      # shared informative tokens per question
 EVIDENCE_GAP_MIN_RATIO = 0.28    # …as a share of the question's tokens
-EVIDENCE_GAP_CONFLICT_THRESHOLD = 2  # hit questions → unresolved conflict
+EVIDENCE_GAP_CONFLICT_THRESHOLD = 1  # hit questions → unresolved conflict
 
 
 def _gap_tokens(text: str) -> set[str]:
@@ -590,7 +595,33 @@ class DecisionEngine:
                 "check_frequency": str(item.get("check_frequency") or "quarterly"),
             })
         if st_kills:
-            return st_kills[:6]
+            # R4-4：kill 内部一致性——同指标去重（第一条胜出=synthesizer
+            # 排序即优先级）+ 检查频率与阈值期限匹配（"全年营收低于X"配
+            # quarterly 是 Grok R3 点名的"年度 Kill 配季度频率"缺陷）。
+            deduped: list[dict] = []
+            seen_toks: list[set[str]] = []
+            for k in st_kills:
+                toks = _gap_tokens(k["description"])
+                dup = any(
+                    toks and ktoks
+                    and (
+                        len(toks & ktoks) / (len(toks | ktoks) or 1) >= 0.4
+                        or len(toks & ktoks) / (min(len(toks), len(ktoks)) or 1) >= 0.55
+                    )
+                    for ktoks in seen_toks
+                )
+                if dup:
+                    continue
+                seen_toks.append(toks)
+                blob = f"{k['description']} {k['threshold']}"
+                if re.search(r"年报|全年|年度|financial year|annual", blob) and \
+                        k.get("check_frequency") == "quarterly":
+                    k = dict(k, check_frequency="annually")
+                elif re.search(r"半年报|中报|H1|上半年", blob) and \
+                        k.get("check_frequency") == "quarterly":
+                    k = dict(k, check_frequency="semiannually")
+                deduped.append(k)
+            return deduped[:6]
 
         criteria = []
         for j in judgments:
