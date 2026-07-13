@@ -170,3 +170,50 @@ class TestNormalizeStrength:
     def test_non_string_input_never_raises(self):
         assert normalize_strength(2) == "moderate"
         assert normalize_strength(["strong"]) == "moderate"
+
+
+class TestCoerceDict:
+    """BUG-Y25 dict 版（2026-07-13 R7 宁德实锤）：Director 的 agent_depth
+    被 LLM 序列化成 JSON 字符串 → orchestrator agent_depth.get(n) 炸掉整条
+    run（'str' object has no attribute 'get'）。"""
+
+    def test_passthrough_dict(self):
+        from aegis.core._coerce import coerce_dict
+        d = {"business_analyst": "deep"}
+        assert coerce_dict(d) is d
+
+    def test_json_string_object_parsed(self):
+        from aegis.core._coerce import coerce_dict
+        s = '{"business_analyst": "deep", "risk_analyst": "standard"}'
+        assert coerce_dict(s) == {
+            "business_analyst": "deep", "risk_analyst": "standard"}
+
+    def test_garbage_and_none_return_empty(self):
+        from aegis.core._coerce import coerce_dict
+        assert coerce_dict(None) == {}
+        assert coerce_dict("deep") == {}
+        assert coerce_dict("{broken json") == {}
+        assert coerce_dict('["a", "b"]') == {}
+        assert coerce_dict(42) == {}
+
+    def test_director_parse_boundary_wires_coercion(self):
+        # 解析边界回归：字符串形态的 agent_depth 必须在 Director 内被归一，
+        # orchestrator 侧 .get() 不再可能收到 str。
+        from unittest.mock import MagicMock
+
+        from aegis.core.chief_analyst.research_director import ResearchDirector
+        d = ResearchDirector()
+        d._llm = MagicMock()
+        d._llm.call_structured.return_value = {
+            "initial_hypothesis": "h",
+            "agent_depth": '{"business_analyst": "deep"}',
+            "agent_emphasis": '{"business_analyst": "关注毛利"}',
+        }
+        directive = d.direct(
+            entity_id="300750", entity_name="宁德时代",
+            meta_facts={}, computed_metrics={}, macro_context={},
+            sector_pack={}, segment_detail=None, market_data={},
+        )
+        assert directive.agent_depth == {"business_analyst": "deep"}
+        assert directive.agent_depth.get("risk_analyst") is None  # .get 可用
+        assert directive.agent_emphasis == {"business_analyst": "关注毛利"}
