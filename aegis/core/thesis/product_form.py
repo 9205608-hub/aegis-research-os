@@ -32,6 +32,12 @@ _REVIEW_STATUSES = ("blocked", "needs_review", "under_review")
 # 未解决冲突，再叠加成堆的 open_questions 时论点的关键变量事实上未闭合。
 DOWNGRADED_OPEN_QUESTION_THRESHOLD = 3
 
+# 合流 2026-07-13（B 支 port）：缺口密度达到该数时，无论发布状态如何都判
+# 观察框架。与 orchestrator 的生成前 provisional 判定单向兼容——provisional
+# 用同一常量触发 F1-F5 形态生成，若最终标签可漂回论点，就会出现
+# "narrative 是框架形态、标签却是论点"的撕裂（Grok 仲裁回归点 #2）。
+STANDALONE_OPEN_QUESTION_THRESHOLD = 8
+
 _LABEL_ZH = "条件化观察框架 + 监控合约"
 _LABEL_EN = "conditional observation framework + monitoring contract"
 
@@ -71,6 +77,10 @@ def derive_product_form(
     if status in _REVIEW_STATUSES:
         reasons_zh.append(f"发布状态 {status}（未通过发布门 / 待人工复核）")
         reasons_en.append(f"publishing status is {status}")
+    elif n_open >= STANDALONE_OPEN_QUESTION_THRESHOLD:
+        reasons_zh.append(f"关键数据缺口密度过高（待解问题 {n_open} 项）")
+        reasons_en.append(
+            f"{n_open} open questions — key-variable closure too low")
     elif status == "downgraded" and n_open >= DOWNGRADED_OPEN_QUESTION_THRESHOLD:
         reasons_zh.append(f"降级发布且待解问题 {n_open} 项（关键变量未闭合）")
         reasons_en.append(f"downgraded with {n_open} unresolved open questions")

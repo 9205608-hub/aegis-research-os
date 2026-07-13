@@ -65,6 +65,23 @@ EVIDENCE_GAP_MIN_SHARED = 3      # shared informative tokens per question
 EVIDENCE_GAP_MIN_RATIO = 0.28    # …as a share of the question's tokens
 EVIDENCE_GAP_CONFLICT_THRESHOLD = 1  # hit questions → unresolved conflict
 
+# 合流 2026-07-13（Grok 仲裁蓝图 §5.3）：edge 主张字段清单收口成单一真源。
+# 此前同一份清单在 engine.decide / 合成期镜像 / orchestrator 形态盖章三处
+# 手抄，阈值与字段漂移风险由此产生。
+EVIDENCE_GAP_CLAIM_FIELDS = (
+    "core_thesis", "my_variant", "edge_source",
+    "key_assumption_disagreement", "why_market_is_wrong",
+)
+
+
+def edge_claim_blob(src: Any) -> str:
+    """拼接 edge 主张叙事字段（dict 或对象皆可），供 gap 检查消费。"""
+    def _val(f: str) -> str:
+        if isinstance(src, dict):
+            return str(src.get(f) or "")
+        return str(getattr(src, f, "") or "")
+    return " ".join(_val(f) for f in EVIDENCE_GAP_CLAIM_FIELDS)
+
 
 def _gap_tokens(text: str) -> set[str]:
     toks: set[str] = set()
@@ -206,15 +223,9 @@ class DecisionEngine:
         # claiming as edge what it admits it does not know — it must not
         # publish clean ("结论跑在证据前面", Grok 20-audit ~全中).
         if synthesized_thesis is not None:
-            _edge_blob = " ".join(
-                str(getattr(synthesized_thesis, f, "") or "")
-                for f in (
-                    "core_thesis", "my_variant", "edge_source",
-                    "key_assumption_disagreement", "why_market_is_wrong",
-                )
-            )
             _gap_hits = evidence_gap_hits(
-                _edge_blob, ctx.get("open_questions") or [])
+                edge_claim_blob(synthesized_thesis),
+                ctx.get("open_questions") or [])
             if len(_gap_hits) >= EVIDENCE_GAP_CONFLICT_THRESHOLD:
                 _sample = _gap_hits[0]["question"][:60]
                 conflicts.append(UnresolvedConflict(

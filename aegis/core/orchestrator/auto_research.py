@@ -4065,6 +4065,29 @@ class AutoResearchOrchestrator:
             except Exception as _mfi_err:
                 _log(f"  ⚠ model-free anchors failed (non-blocking): {_mfi_err}")
 
+        # ── 合流 2026-07-13（B 支 port）：生成前 provisional 形态判定 ──
+        # 形态必须在 synthesizer 之前可知（narrative 要按 F1-F5 形态生成），
+        # 判据全部为生成前可得的确定性信号：估值失配，或关键数据缺口密度
+        # 过高（阈值与 product_form.STANDALONE_OPEN_QUESTION_THRESHOLD 同源，
+        # 保证 provisional=框架 ⇒ 决策后最终形态必为框架的单调性——否则
+        # narrative 已按框架形态生成、标签却漂回论点）。
+        try:
+            from aegis.core.thesis.product_form import (
+                STANDALONE_OPEN_QUESTION_THRESHOLD,
+            )
+            _provisional_form = "investment_thesis"
+            if (
+                (scenarios.get("valuation_sanity") or {}).get("mismatch")
+                or len(open_questions) >= STANDALONE_OPEN_QUESTION_THRESHOLD
+            ):
+                _provisional_form = "observation_framework"
+                _log(f"Provisional form: 条件化观察框架（失配="
+                     f"{bool((scenarios.get('valuation_sanity') or {}).get('mismatch'))}, "
+                     f"open_questions={len(open_questions)}）")
+            meta_facts["__provisional_product_form"] = _provisional_form
+        except Exception as _prov_err:
+            _log(f"  ⚠ provisional 形态判定失败（不阻断）: {_prov_err}")
+
         # ── Step 12b: Chief Analyst — Thesis Synthesis (LLM post-agent) ─
         synthesized_thesis = None
         if _agents_reuse is not None:
@@ -4558,16 +4581,11 @@ class AutoResearchOrchestrator:
             if synthesized_thesis is not None:
                 from aegis.core.decision_engine.engine import (
                     EVIDENCE_GAP_CONFLICT_THRESHOLD,
+                    edge_claim_blob,
                     evidence_gap_hits,
                 )
-                _edge_blob_pf = " ".join(
-                    str(getattr(synthesized_thesis, _f, "") or "")
-                    for _f in (
-                        "core_thesis", "my_variant", "edge_source",
-                        "key_assumption_disagreement", "why_market_is_wrong",
-                    )
-                )
-                _hits_pf = evidence_gap_hits(_edge_blob_pf, open_questions or [])
+                _hits_pf = evidence_gap_hits(
+                    edge_claim_blob(synthesized_thesis), open_questions or [])
                 if len(_hits_pf) >= EVIDENCE_GAP_CONFLICT_THRESHOLD:
                     _gap_n = len(_hits_pf)
             _pf = derive_product_form(

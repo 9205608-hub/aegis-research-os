@@ -11,7 +11,8 @@
 ③ build_report_dict 的 productForm 键：观察框架票出 {form,label,reason}
    横幅数据，投资论点票为 None（前端隐藏）；replay 缺章时从 decision
    降级重算；
-④ 失配票 synthesizer 事前注入新增 PRODUCT FORM 规则（rule 7），常态票无；
+④ 观察框架票（provisional 章/失配）synthesizer 事前注入 F1-F5 形态化
+   生成规则（合流 2026-07-13：B 支主体 + A 支首句硬禁令），常态票无；
 ⑤ audit_scores.extract_score：从审计 md 提取 0-10 可信度分（取最后一个
    N/10 匹配），多次采样按票聚合均值±极差，run 文件存在时忽略
    _audit.md 兼容副本。
@@ -337,33 +338,97 @@ class TestMergedOpenQuestions:
 
 
 # ---------------------------------------------------------------------------
-# R6-3：生成时条件化注入扩面
+# 合流 2026-07-13：F1-F5 形态化生成（B 支 port，吸收原 observation_framing_block）
 # ---------------------------------------------------------------------------
 
-class TestObservationFramingBlock:
+class TestF1F5Framing:
 
-    def _questions(self, n):
-        return [{"question": f"未闭合变量 {i}？"} for i in range(n)]
-
-    def test_fires_on_question_pileup_without_mismatch(self):
+    def _block(self, *, provisional=None, mismatch=False):
         from aegis.core.chief_analyst.thesis_synthesizer import (
-            observation_framing_block,
+            valuation_constraint_block,
         )
-        block = observation_framing_block(self._questions(5), mismatch=False)
-        assert "CONDITIONAL OBSERVATION FRAMING" in block
-        assert "待验假设" in block
+        scen = {"base_value": 100.0,
+                "valuation_sanity": {
+                    "mismatch": mismatch, "ratio": 5.0 if mismatch else 1.1,
+                    "base_value": 100.0, "market_price": 90.0}}
+        meta = ({"__provisional_product_form": provisional}
+                if provisional else {})
+        return valuation_constraint_block(scen, {"current_price": 90.0}, meta)
 
-    def test_silent_below_threshold(self):
-        from aegis.core.chief_analyst.thesis_synthesizer import (
-            observation_framing_block,
-        )
-        assert observation_framing_block(self._questions(2), mismatch=False) == ""
+    def test_fires_on_provisional_stamp_without_mismatch(self):
+        block = self._block(provisional="observation_framework")
+        assert "CONDITIONAL OBSERVATION FRAMEWORK" in block
+        for marker in ("F1.", "F2.", "F3.", "F4.", "F5."):
+            assert marker in block
+        # A 支首句硬禁令并入 F1
+        assert "OPENING sentence" in block
 
-    def test_silent_on_mismatch_rule7_owns_it(self):
-        from aegis.core.chief_analyst.thesis_synthesizer import (
-            observation_framing_block,
+    def test_fires_on_mismatch_without_stamp(self):
+        block = self._block(mismatch=True)
+        assert "CONDITIONAL OBSERVATION FRAMEWORK" in block
+
+    def test_silent_on_clean_investment_thesis(self):
+        block = self._block(provisional="investment_thesis")
+        assert "CONDITIONAL OBSERVATION FRAMEWORK" not in block
+
+    def test_old_framing_block_is_gone(self):
+        # 合流后单入口——独立 observation_framing_block 必须已删除
+        import aegis.core.chief_analyst.thesis_synthesizer as syn
+        assert not hasattr(syn, "observation_framing_block")
+
+
+class TestProvisionalFinalMonotonicity:
+    """provisional=框架 ⇒ 最终形态必为框架（Grok 仲裁回归点 #2）。
+
+    provisional 触发 = mismatch ∨ openq≥STANDALONE。两条路径逐一验证
+    最终 derive_product_form 不会漂回 investment_thesis。
+    """
+
+    def test_mismatch_path_is_monotone(self):
+        pf = derive_product_form(
+            valuation_mismatch=True, publishing_status="published")
+        assert pf["form"] == OBSERVATION_FRAMEWORK
+
+    def test_standalone_openq_path_is_monotone(self):
+        from aegis.core.thesis.product_form import (
+            STANDALONE_OPEN_QUESTION_THRESHOLD,
         )
-        assert observation_framing_block(self._questions(9), mismatch=True) == ""
+        # 即使干净 published、无失配、无 gap——缺口密度达标即观察框架
+        pf = derive_product_form(
+            publishing_status="published",
+            open_question_count=STANDALONE_OPEN_QUESTION_THRESHOLD,
+        )
+        assert pf["form"] == OBSERVATION_FRAMEWORK
+        assert "缺口密度" in pf["reason_zh"]
+
+    def test_below_standalone_published_stays_thesis(self):
+        from aegis.core.thesis.product_form import (
+            STANDALONE_OPEN_QUESTION_THRESHOLD,
+        )
+        pf = derive_product_form(
+            publishing_status="published",
+            open_question_count=STANDALONE_OPEN_QUESTION_THRESHOLD - 1,
+        )
+        assert pf["form"] == INVESTMENT_THESIS
+
+
+class TestEdgeClaimBlob:
+
+    def test_dict_and_object_parity(self):
+        from aegis.core.decision_engine.engine import (
+            EVIDENCE_GAP_CLAIM_FIELDS,
+            edge_claim_blob,
+        )
+        payload = {f: f"文本{i}" for i, f in enumerate(EVIDENCE_GAP_CLAIM_FIELDS)}
+
+        class _Obj:
+            pass
+        obj = _Obj()
+        for k, v in payload.items():
+            setattr(obj, k, v)
+        assert edge_claim_blob(payload) == edge_claim_blob(obj)
+        for v in payload.values():
+            assert v in edge_claim_blob(payload)
 
 
 # ---------------------------------------------------------------------------

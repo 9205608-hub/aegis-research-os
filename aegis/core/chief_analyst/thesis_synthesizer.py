@@ -500,19 +500,34 @@ def valuation_constraint_block(
         "per-share figure you cannot derive from data provided above must be phrased as a "
         "hypothesis to verify (待验证假设), never as established fact.",
     ]
-    # R5-L4：估值失配 ⇒ 该 run 的产出物形态确定性判为「条件化观察框架 +
-    # 监控合约」（见 aegis.core.thesis.product_form）——生成时就按这个形态
-    # 写，而不是写一份多头备忘录再靠下游降调。
-    if sanity.get("mismatch"):
-        lines.append(
-            "7. PRODUCT FORM: because the valuation model failed sanity, this "
-            "deliverable ships as a CONDITIONAL OBSERVATION FRAMEWORK + "
-            "monitoring contract, not an actionable thesis. Write core_thesis / "
-            "my_variant as conditional hypotheses to verify (若…得到验证，则…), "
-            "and let the monitoring plan (what to watch, thresholds, "
-            "falsifiers) carry the value of the output. Do not write it as an "
-            "actionable long/short memo."
-        )
+    # 合流 2026-07-13（Grok 仲裁 §4/§5.4）：B 支 F1-F5 形态化生成为主体
+    # （"生产好框架"而非"禁止坏句"——中心问题+双竞争假设+判别检验的产品
+    # 定义），触发 = orchestrator 生成前盖的 provisional 章或估值失配；
+    # F1 内嵌 A 支的首句硬禁令。A 支的 observation_framing_block 已被本块
+    # 吸收删除；生成后仍有 gap 同源 strict 清洗 + magnitude 确定性降级兜底
+    # （R1 教训：prompt 结构赢不了顽固话术的终局，deterministic 执法必须在）。
+    _pf_prov = (meta_facts or {}).get("__provisional_product_form")
+    if _pf_prov == "observation_framework" or bool(sanity.get("mismatch")):
+        lines += [
+            "",
+            "=== PRODUCT FORM: CONDITIONAL OBSERVATION FRAMEWORK (NOT an investment thesis) ===",
+            "Material data gaps and/or valuation-model failure mean this run produces a "
+            "条件化观察框架, not a recommendation. Hard requirements:",
+            "F1. core_thesis states the CENTRAL QUESTION the current price is asking, then "
+            "the TWO competing hypotheses (偏多假设 vs 偏空假设) side by side — do NOT "
+            "crown either as the established conclusion. The OPENING sentence must never "
+            "contain a fair value, price target, or upside/downside % ('上行 X% / 目标价 Y' "
+            "openings are forbidden).",
+            "F2. my_variant = the DISCRIMINATING TEST: which specific observable evidence "
+            "(下一份定期报告/公告中的哪个数字) would tell the two hypotheses apart.",
+            "F3. variant_magnitude = conditional statements only（若观察到 A 则偏向假设一"
+            "……）; no conviction sizing, no 方向建议.",
+            "F4. edge_source must honestly state this is a monitoring framework awaiting "
+            "data closure — claiming an analytical edge over the market is forbidden here.",
+            "F5. why_now = the concrete upcoming disclosures/events (with dates when known) "
+            "that will close the key gaps — that timetable IS the reason this framework "
+            "exists now.",
+        ]
     return "\n".join(lines)
 
 
@@ -525,57 +540,15 @@ def _synthesis_evidence_gap_hits(
     决策引擎在合成**之后**才把 evidence gap 判成 UnresolvedConflict——
     R5 复审证明这来不及：4/5 观察框架票由 gap/downgraded 触发，生成时
     没有任何条件化约束，core_thesis 首句照样甩「135.52/+50.6%」。这里
-    用同一个纯函数、同一组字段在合成期先算一遍，供 strict 清洗与
-    variant_magnitude 降级即刻生效（与引擎判定天然对齐）。
+    用同一个纯函数、同一组字段（EVIDENCE_GAP_CLAIM_FIELDS 单一真源）在
+    合成期先算一遍，供 strict 清洗与 variant_magnitude 降级即刻生效
+    （与引擎判定天然对齐）。
     """
-    from aegis.core.decision_engine.engine import evidence_gap_hits
-    blob = " ".join(
-        str(raw.get(f) or "") for f in (
-            "core_thesis", "my_variant", "edge_source",
-            "key_assumption_disagreement", "why_market_is_wrong",
-        )
+    from aegis.core.decision_engine.engine import (
+        edge_claim_blob,
+        evidence_gap_hits,
     )
-    return evidence_gap_hits(blob, open_questions or [])
-
-
-def observation_framing_block(
-    open_questions: list[Any] | None,
-    mismatch: bool,
-) -> str:
-    """R6-3（2026-07-13）：待解问题堆积票的生成时条件化注入。
-
-    agent 追问在合成前已知——R5 判词的通用扣法是"形态正确，执行不彻底：
-    观察框架不应在 core_thesis 首句甩出目标价/上行%"。失配票由 rule 7
-    覆盖；这里补上不失配但研究问题成堆的票（R5 里 4/5 属此类）。
-    """
-    n = len(open_questions or [])
-    from aegis.core.thesis.product_form import (
-        DOWNGRADED_OPEN_QUESTION_THRESHOLD,
-    )
-    if mismatch or n < DOWNGRADED_OPEN_QUESTION_THRESHOLD:
-        return ""
-    return "\n".join([
-        "", "",
-        "=== CONDITIONAL OBSERVATION FRAMING (HARD CONSTRAINTS) ===",
-        (
-            f"{n} open research questions from the specialist agents remain "
-            "unresolved (listed above). Under the publication policy this "
-            "deliverable will very likely ship as a CONDITIONAL OBSERVATION "
-            "FRAMEWORK + monitoring contract, NOT an actionable investment "
-            "thesis. Therefore:"
-        ),
-        "1. Do NOT open core_thesis with a fair value, price target, or "
-        "upside/downside % — lead with the hypothesis and its verification "
-        "path. '上行 X% / 目标价 Y' openings are forbidden.",
-        "2. Write core_thesis / my_variant as hypotheses to verify "
-        "(若…得到验证，则…), each tied to an open question or a monitorable.",
-        "3. Scenario per-share values may appear deeper in the narrative as "
-        "model diagnostics only, never as the headline claim.",
-        "4. Never state as established fact anything that overlaps an open "
-        "question above — phrase it as 待验假设 with its falsifier.",
-        "5. Let the monitoring plan (what to watch, thresholds, falsifiers) "
-        "carry the value of the output.",
-    ])
+    return evidence_gap_hits(edge_claim_blob(raw), open_questions or [])
 
 
 def _magnitude_evidence_gap_disclosure(
@@ -1265,15 +1238,11 @@ class ThesisSynthesizer:
         # AUDIT 2026-07-12 R2-1/R2-7：估值引用规则事前注入（失配时禁引 DCF
         # 派生数字 + 语气降调；常态时限定 sanctioned 值清单；期限错配防护）。
         # R4-1：失配时约束块改指向无模型锚。
+        # 合流 2026-07-13：F1-F5 形态化生成并入 valuation_constraint_block
+        # （触发 = meta_facts["__provisional_product_form"] 或失配），独立的
+        # observation_framing_block 已删除——单入口、单触发、可测。
         user_message += valuation_constraint_block(
             scenarios, market_data, meta_facts=meta_facts,
-        )
-        # R6-3：待解问题堆积票（不失配）也注入条件化写法——R5 复审 4/5
-        # 观察框架票由 gap/downgraded 触发，生成时没受任何约束。
-        _pre_sanity = _valuation_sanity_verdict(scenarios, market_data)
-        user_message += observation_framing_block(
-            open_questions,
-            mismatch=bool(_pre_sanity and _pre_sanity.get("mismatch")),
         )
 
         _sys_prompt = AEGIS_PROJECT_PREAMBLE + THESIS_SYNTHESIZER_SYSTEM_PROMPT

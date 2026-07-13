@@ -189,3 +189,42 @@
 剩余表达层残敌（软性话术清洗 + 驱动树守卫扩展）值得顺手清掉（半天工作
 量），但站上 4.5-5 乃至 KPI 6 分需要 L1（年报附注：客户集中度/分部收入）
 与 L2（独立预测层）。
+
+---
+
+## 分支合流（2026-07-13 · Grok 仲裁后执行）
+
+两个并行 session 的 L4/R6 实现分叉（A=continuation-01688f"决策后确定性
+执行"，B=research-report-confidence-f1dac6"生成前形态化+双轨尺"）。Grok
+仲裁全文见 `logs/branch_arbitration_verdict.md`，核心裁定：
+
+- **底权给 A**（测量诚实 + 确定性执法 + merge 双源）；"不可比的高分比
+  偏低的真分更危险"
+- **生成定义 port B**：F1-F5（中心问题+双竞争假设+判别检验）是"生产好
+  框架"，A 的禁令式注入只是"禁止坏句"——两者组合，缺一不可
+- **测量学红线**：主 KPI 锁死冻结 thesis 尺（07-11）；FRAMEWORK_RUBRIC_V1
+  （B 支 2026-07-13 冻结）只做副仪表；**框架尺分数（如 B 支 3.87）禁止与
+  thesis 尺历史轨迹接龙——谁接龙谁在做 Goodhart**
+
+### 合流实施（本分支，测试 1653 绿）
+- F1-F5 并入 valuation_constraint_block（触发 = `__provisional_product_form`
+  章或失配；F1 内嵌 A 支首句硬禁令），删独立 observation_framing_block
+- orchestrator 生成前 provisional 盖章（阈值与 STANDALONE_OPEN_QUESTION_
+  THRESHOLD=8 常量同源，保 provisional⇒最终单调性）
+- product_form 补 standalone≥8 分支（B）+ 保留 gap 措辞（A）
+- edge 主张字段清单收口 `EVIDENCE_GAP_CLAIM_FIELDS` + `edge_claim_blob`
+  （engine/synthesizer/orchestrator 三处同源，消灭手抄漂移）
+- 审计脚本双轨（B 的冻结 FRAMEWORK_RUBRIC_V1 + FORCE_RUBRIC 路由）×
+  A 的 AUDIT_RUNS 内部循环；eval_pipeline.sh 主 KPI 轨强制
+  FORCE_RUBRIC=thesis，框架尺进 `_fw` 旁路目录，汇总分轨打印
+- 保留 A：merged_open_questions（并集真源，弃 B 的 or-fallback）、合成期
+  gap strict + magnitude 确定性降级、re-synth open_questions 修复
+
+### 合流后验证清单（Grok 蓝图 §6，待跑）
+1. 整合冒烟：1 票（比亚迪）× thesis 尺 × 2 采样——验证 F1-F5 + gap 兜底
+   共存无风格断裂
+2. 主 KPI 轮 R7：5 票 × 冻结 thesis 尺 × 2 采样——唯一可宣告"是否超过
+   3.50"的轮次
+3. 副轨基线：同产物 × FRAMEWORK_RUBRIC_V1 × 2-3 采样（新轨迹首点，
+   与 3.50 不比大小）
+4. B 支（quirky-mendel worktree）应停止独立开发，否则三度分叉
