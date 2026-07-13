@@ -4226,6 +4226,10 @@ class AutoResearchOrchestrator:
                                 sensitivity_rankings=sensitivity_rankings,
                                 meta_facts=meta_facts,
                                 narrative_supplements=narr_supps_v2,
+                                # R6-3：re-synth 此前漏传 open_questions——
+                                # DEEP 迭代后的二次合成会丢失条件化注入
+                                # 与合成期 evidence gap 检查。
+                                open_questions=open_questions,
                             )
                         _log(f"  Re-synthesis complete: core_thesis length={len(synthesized_thesis.core_thesis)}")
                         validated_v2 = "CONFIRMED" if synthesized_thesis.hypothesis_validated else "STILL REVISED"
@@ -4543,14 +4547,35 @@ class AutoResearchOrchestrator:
         # HTML 横幅三处消费同一真源。失败不阻断主流程。
         try:
             from aegis.core.thesis.product_form import derive_product_form
+            from aegis.core.thesis.persistence import merged_open_questions
+            # R6-2：形态判定与合约字段消费同一份双源合并清单（R5 三票被
+            # 点名"reason 说 16 项 vs open_questions 字段（空）"的根修）。
+            _oq_merged = merged_open_questions(synthesized_thesis, open_questions)
+            # R6：gap 计数改用引擎同款重叠检查的真实处数（decision 的
+            # conflict 是聚合后的 0/1，reason 里"证据缺口 1 处"被比亚迪
+            # 判词讥为"点缀"；阈值=B3 同源，触发面不变）。
+            _gap_n = 0
+            if synthesized_thesis is not None:
+                from aegis.core.decision_engine.engine import (
+                    EVIDENCE_GAP_CONFLICT_THRESHOLD,
+                    evidence_gap_hits,
+                )
+                _edge_blob_pf = " ".join(
+                    str(getattr(synthesized_thesis, _f, "") or "")
+                    for _f in (
+                        "core_thesis", "my_variant", "edge_source",
+                        "key_assumption_disagreement", "why_market_is_wrong",
+                    )
+                )
+                _hits_pf = evidence_gap_hits(_edge_blob_pf, open_questions or [])
+                if len(_hits_pf) >= EVIDENCE_GAP_CONFLICT_THRESHOLD:
+                    _gap_n = len(_hits_pf)
             _pf = derive_product_form(
                 valuation_mismatch=bool(
                     (scenarios.get("valuation_sanity") or {}).get("mismatch")),
-                evidence_gap_hits=sum(
-                    1 for _c in (decision.unresolved_conflicts or [])
-                    if getattr(_c, "topic", "") == "evidence_gap"),
+                evidence_gap_hits=_gap_n,
                 publishing_status=decision.publishing_status,
-                open_question_count=len(open_questions or []),
+                open_question_count=len(_oq_merged),
             )
             scenarios["product_form"] = _pf
             if _pf["form"] == "observation_framework":
@@ -4600,6 +4625,9 @@ class AutoResearchOrchestrator:
                 disconfirming_triggers=getattr(
                     decision, "disconfirming_triggers", None),
                 scenarios=scenarios,
+                # R6-2：orchestrator 层 agent 追问并进合约 open_questions
+                # （与形态判定的计数同源，审计者可见字段不再与 reason 冲突）
+                extra_open_questions=open_questions,
                 publishing_status=getattr(decision, "publishing_status", "draft"),
                 confidence=getattr(decision, "confidence_bucket", "medium"),
                 bias_check_status=getattr(decision, "bias_check_status", None),

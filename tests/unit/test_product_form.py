@@ -1,4 +1,4 @@
-"""R5-L4/L3（2026-07-12 平台期突破杠杆）回归测试。
+"""R5-L4/L3 + R6-1/2/3（2026-07-12/13 平台期突破杠杆）回归测试。
 
 锁定的行为：
 
@@ -57,7 +57,7 @@ class TestDeriveProductForm:
         pf = derive_product_form(
             evidence_gap_hits=2, publishing_status="published")
         assert pf["form"] == OBSERVATION_FRAMEWORK
-        assert "证据缺口 2 处" in pf["reason_zh"]
+        assert "证据缺口（核心叙事有 2 处引用" in pf["reason_zh"]
 
     @pytest.mark.parametrize("status", ["blocked", "needs_review", "under_review"])
     def test_review_statuses_force_observation(self, status):
@@ -287,3 +287,122 @@ class TestAuditScores:
         assert summary["tickers"]["300750"]["n"] == 2
         assert summary["overall_mean"] == 3.5
         assert summary["n_tickers"] == 2
+
+
+# ---------------------------------------------------------------------------
+# R6-2：open_questions 双源统一
+# ---------------------------------------------------------------------------
+
+class TestMergedOpenQuestions:
+
+    def test_merges_and_dedupes_both_sources(self):
+        from aegis.core.thesis.persistence import merged_open_questions
+
+        class _ST:
+            open_questions = ["分部毛利结构？", {"question": "前五大客户集中度？"}]
+
+        extra = [
+            {"question": "前五大客户集中度？"},   # 与 synth 重复 → 去重
+            {"question": "海外收入占比趋势？"},
+            "CAPEX 拆分口径？",
+        ]
+        out = merged_open_questions(_ST(), extra)
+        assert out == [
+            "分部毛利结构？", "前五大客户集中度？",
+            "海外收入占比趋势？", "CAPEX 拆分口径？",
+        ]
+
+    def test_cap_applies(self):
+        from aegis.core.thesis.persistence import (
+            OPEN_QUESTION_CAP,
+            merged_open_questions,
+        )
+        extra = [f"问题 {i}？" for i in range(OPEN_QUESTION_CAP + 10)]
+        assert len(merged_open_questions(None, extra)) == OPEN_QUESTION_CAP
+
+    def test_contract_field_includes_orchestrator_questions(self):
+        # R5 茅台形态：synthesizer 没吐 open_questions，orchestrator 有 16 项
+        # → 旧行为字段为空 vs reason 说 16 项（审计"meta 与正文冲突"）。
+        extra = [{"question": f"关键变量 {i} 未闭合？"} for i in range(4)]
+        c = build_thesis_contract(
+            entity_id="600519", run_id="run_x",
+            extra_open_questions=extra,
+            publishing_status="downgraded",
+        )
+        assert len(c.open_questions) == 4
+        # fallback 派生用同一份合并清单 → downgraded + ≥3 项 → 观察框架，
+        # 且 reason 计数与字段一致
+        assert c.product_form == OBSERVATION_FRAMEWORK
+        assert "待解问题 4 项" in c.product_form_reason
+
+
+# ---------------------------------------------------------------------------
+# R6-3：生成时条件化注入扩面
+# ---------------------------------------------------------------------------
+
+class TestObservationFramingBlock:
+
+    def _questions(self, n):
+        return [{"question": f"未闭合变量 {i}？"} for i in range(n)]
+
+    def test_fires_on_question_pileup_without_mismatch(self):
+        from aegis.core.chief_analyst.thesis_synthesizer import (
+            observation_framing_block,
+        )
+        block = observation_framing_block(self._questions(5), mismatch=False)
+        assert "CONDITIONAL OBSERVATION FRAMING" in block
+        assert "待验假设" in block
+
+    def test_silent_below_threshold(self):
+        from aegis.core.chief_analyst.thesis_synthesizer import (
+            observation_framing_block,
+        )
+        assert observation_framing_block(self._questions(2), mismatch=False) == ""
+
+    def test_silent_on_mismatch_rule7_owns_it(self):
+        from aegis.core.chief_analyst.thesis_synthesizer import (
+            observation_framing_block,
+        )
+        assert observation_framing_block(self._questions(9), mismatch=True) == ""
+
+
+# ---------------------------------------------------------------------------
+# R6-1：合成期 evidence gap 检查 + 幅度确定性降级
+# ---------------------------------------------------------------------------
+
+class TestSynthesisGapEnforcement:
+
+    def test_gap_hits_mirror_engine_fields(self):
+        from aegis.core.chief_analyst.thesis_synthesizer import (
+            _synthesis_evidence_gap_hits,
+        )
+        raw = {
+            "core_thesis": "半导体设备国产替代加速，公司刻蚀设备市占率提升带来经营杠杆释放",
+            "my_variant": "市场低估了刻蚀设备市占率提升的持续性",
+        }
+        oq = [{"question": "刻蚀设备市占率提升的持续性有无订单数据支撑？"}]
+        hits = _synthesis_evidence_gap_hits(raw, oq)
+        assert len(hits) >= 1
+
+    def test_no_hits_on_unrelated_questions(self):
+        from aegis.core.chief_analyst.thesis_synthesizer import (
+            _synthesis_evidence_gap_hits,
+        )
+        raw = {"core_thesis": "白酒批价企稳，渠道库存去化完成"}
+        oq = [{"question": "海外芯片出口管制对设备交付的影响？"}]
+        assert _synthesis_evidence_gap_hits(raw, oq) == []
+
+    def test_gap_disclosure_zh_and_en(self):
+        from aegis.core.chief_analyst.thesis_synthesizer import (
+            _magnitude_evidence_gap_disclosure,
+        )
+        zh = _magnitude_evidence_gap_disclosure(n_hits=3, n_open=16, zh=True)
+        assert "观察框架声明" in zh and "3 处" in zh and "16 项" in zh
+        assert "目标价" in zh
+        en = _magnitude_evidence_gap_disclosure(n_hits=2, n_open=8, zh=False)
+        assert "Observation-framework disclosure" in en and "monitoring contract" in en
+
+    def test_reason_wording_systemic_not_decorative(self):
+        # R5 比亚迪判词讥"证据缺口不是 1 处点缀"——新措辞按处数指认核心叙事
+        pf = derive_product_form(evidence_gap_hits=4, publishing_status="published")
+        assert "4 处引用仍未闭合" in pf["reason_zh"]

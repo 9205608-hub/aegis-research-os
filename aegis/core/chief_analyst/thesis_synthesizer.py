@@ -516,6 +516,96 @@ def valuation_constraint_block(
     return "\n".join(lines)
 
 
+def _synthesis_evidence_gap_hits(
+    raw: dict[str, Any],
+    open_questions: list[Any] | None,
+) -> list[dict]:
+    """R6-1（2026-07-13）：引擎 B3 证据缺口检查的合成期镜像。
+
+    决策引擎在合成**之后**才把 evidence gap 判成 UnresolvedConflict——
+    R5 复审证明这来不及：4/5 观察框架票由 gap/downgraded 触发，生成时
+    没有任何条件化约束，core_thesis 首句照样甩「135.52/+50.6%」。这里
+    用同一个纯函数、同一组字段在合成期先算一遍，供 strict 清洗与
+    variant_magnitude 降级即刻生效（与引擎判定天然对齐）。
+    """
+    from aegis.core.decision_engine.engine import evidence_gap_hits
+    blob = " ".join(
+        str(raw.get(f) or "") for f in (
+            "core_thesis", "my_variant", "edge_source",
+            "key_assumption_disagreement", "why_market_is_wrong",
+        )
+    )
+    return evidence_gap_hits(blob, open_questions or [])
+
+
+def observation_framing_block(
+    open_questions: list[Any] | None,
+    mismatch: bool,
+) -> str:
+    """R6-3（2026-07-13）：待解问题堆积票的生成时条件化注入。
+
+    agent 追问在合成前已知——R5 判词的通用扣法是"形态正确，执行不彻底：
+    观察框架不应在 core_thesis 首句甩出目标价/上行%"。失配票由 rule 7
+    覆盖；这里补上不失配但研究问题成堆的票（R5 里 4/5 属此类）。
+    """
+    n = len(open_questions or [])
+    from aegis.core.thesis.product_form import (
+        DOWNGRADED_OPEN_QUESTION_THRESHOLD,
+    )
+    if mismatch or n < DOWNGRADED_OPEN_QUESTION_THRESHOLD:
+        return ""
+    return "\n".join([
+        "", "",
+        "=== CONDITIONAL OBSERVATION FRAMING (HARD CONSTRAINTS) ===",
+        (
+            f"{n} open research questions from the specialist agents remain "
+            "unresolved (listed above). Under the publication policy this "
+            "deliverable will very likely ship as a CONDITIONAL OBSERVATION "
+            "FRAMEWORK + monitoring contract, NOT an actionable investment "
+            "thesis. Therefore:"
+        ),
+        "1. Do NOT open core_thesis with a fair value, price target, or "
+        "upside/downside % — lead with the hypothesis and its verification "
+        "path. '上行 X% / 目标价 Y' openings are forbidden.",
+        "2. Write core_thesis / my_variant as hypotheses to verify "
+        "(若…得到验证，则…), each tied to an open question or a monitorable.",
+        "3. Scenario per-share values may appear deeper in the narrative as "
+        "model diagnostics only, never as the headline claim.",
+        "4. Never state as established fact anything that overlaps an open "
+        "question above — phrase it as 待验假设 with its falsifier.",
+        "5. Let the monitoring plan (what to watch, thresholds, falsifiers) "
+        "carry the value of the output.",
+    ])
+
+
+def _magnitude_evidence_gap_disclosure(
+    n_hits: int, n_open: int, zh: bool,
+) -> str:
+    """R6-1：非失配观察框架票的 variant_magnitude 确定性降级声明。
+
+    与 _magnitude_mismatch_disclosure 同一族——失配票的降级理由是模型
+    口径，gap 票的降级理由是证据缺口。审计奖励这种诚实（"降级诚实"）。
+    """
+    if zh:
+        return (
+            f"〔观察框架声明〕本论点的核心叙事有 {n_hits} 处引用仍未闭合的"
+            f"研究问题（待解问题共 {n_open} 项）——在这些证据缺口闭合前，"
+            "幅度判断不具备可执行性，降级为方向性观点，不提供目标价与"
+            "上行/下行百分比。本产出物按「条件化观察框架 + 监控合约」交付："
+            "可引用的量化框架以条件化预期表与相对估值锚为准，验证/证伪"
+            "路径见监控清单与待解问题。"
+        )
+    return (
+        f"[Observation-framework disclosure] {n_hits} core claim(s) in this "
+        f"thesis cite research questions that remain open ({n_open} in "
+        "total). Until those evidence gaps close, magnitude is degraded to a "
+        "direction-only view — no price target or up/downside % is provided. "
+        "This deliverable ships as a conditional observation framework + "
+        "monitoring contract; the quotable quantitative frameworks are the "
+        "conditional expectations frontier and relative-valuation anchors."
+    )
+
+
 def _magnitude_mismatch_disclosure(sanity: dict[str, Any], zh: bool) -> str:
     """Deterministic, honest replacement for variant_magnitude on mismatch.
 
@@ -1178,6 +1268,13 @@ class ThesisSynthesizer:
         user_message += valuation_constraint_block(
             scenarios, market_data, meta_facts=meta_facts,
         )
+        # R6-3：待解问题堆积票（不失配）也注入条件化写法——R5 复审 4/5
+        # 观察框架票由 gap/downgraded 触发，生成时没受任何约束。
+        _pre_sanity = _valuation_sanity_verdict(scenarios, market_data)
+        user_message += observation_framing_block(
+            open_questions,
+            mismatch=bool(_pre_sanity and _pre_sanity.get("mismatch")),
+        )
 
         _sys_prompt = AEGIS_PROJECT_PREAMBLE + THESIS_SYNTHESIZER_SYSTEM_PROMPT
         if isinstance(scenarios, dict) and scenarios.get("currency") == "CNY":
@@ -1215,6 +1312,15 @@ class ThesisSynthesizer:
         # deterministically replaced with a direction-only disclosure.
         _sanity = _valuation_sanity_verdict(scenarios, market_data)
         _mismatch = bool(_sanity and _sanity.get("mismatch"))
+        # R6-1：证据缺口票在合成期即进 strict——引擎 B3 的同一检查提前跑
+        # （阈值对齐 EVIDENCE_GAP_CONFLICT_THRESHOLD），观察框架票的
+        # core_thesis 不再携带目标价/上行% 开头（R5 判词"形态正确，执行
+        # 不彻底"的直接处方）。
+        _gap_hits_syn = _synthesis_evidence_gap_hits(raw, open_questions)
+        from aegis.core.decision_engine.engine import (
+            EVIDENCE_GAP_CONFLICT_THRESHOLD as _GAP_THRESHOLD,
+        )
+        _gap_observation = len(_gap_hits_syn) >= _GAP_THRESHOLD
         _mfi_pcts = list(
             ((meta_facts or {}).get("__model_free_implied") or {})
             .get("sanctioned_pcts") or []
@@ -1230,7 +1336,7 @@ class ThesisSynthesizer:
                 )
                 + _mfi_pcts  # R4-1：无模型锚数字进白名单（红线 9 同则）
             ),
-            strict=_mismatch,
+            strict=_mismatch or _gap_observation,
         )
         if _mismatch:
             raw["variant_magnitude"] = _magnitude_mismatch_disclosure(
@@ -1244,6 +1350,21 @@ class ThesisSynthesizer:
                 "with a direction-only disclosure and all price-target / "
                 "return-% claims were scrubbed (model bug > market bug until "
                 "DCF inputs are re-audited)."
+            ]
+        elif _gap_observation:
+            # R6-1：gap 票与失配票同族待遇——幅度确定性降级，理由换成
+            # 证据缺口（审计奖励"降级诚实"，惩罚建在未知上的幅度主张）。
+            raw["variant_magnitude"] = _magnitude_evidence_gap_disclosure(
+                n_hits=len(_gap_hits_syn),
+                n_open=len(open_questions or []),
+                zh=bool(scenarios.get("currency") == "CNY"),
+            )
+            valuation_warnings = list(valuation_warnings) + [
+                "EVIDENCE GAP OVERRIDE — "
+                f"{len(_gap_hits_syn)} core claim(s) overlap open research "
+                "questions; variant_magnitude was replaced with a "
+                "direction-only observation-framework disclosure and "
+                "price-target / return-% claims were scrubbed."
             ]
         if valuation_warnings:
             existing = list(raw.get("unresolved_tensions", []) or [])

@@ -16,6 +16,7 @@ from aegis.core.thesis.persistence import (
     build_thesis_contract,
     history,
     load_latest,
+    merged_open_questions,
     save_thesis_version,
 )
 
@@ -25,6 +26,7 @@ __all__ = [
     "normalize_model_id",
     "monitorable_model_id",
     "build_thesis_contract",
+    "merged_open_questions",
     "save_thesis_version",
     "load_latest",
     "history",

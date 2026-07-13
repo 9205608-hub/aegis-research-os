@@ -241,6 +241,34 @@ def _open_questions(synthesized_thesis: Any) -> list[str]:
     return out
 
 
+# 合约 open_questions 封顶——R2-3 触发器"垃圾场"教训的同则：透传要全，
+# 但清单无限长本身会被审计当噪声。20 覆盖 R5 实测最大票（18 项）。
+OPEN_QUESTION_CAP = 20
+
+
+def merged_open_questions(
+    synthesized_thesis: Any,
+    extra_open_questions: Any = None,
+) -> list[str]:
+    """R6-2（2026-07-13）：open_questions 双源统一。
+
+    R5 复审三票（600519/002371/002594）被点名"meta 与正文计数冲突"——
+    product_form_reason 数的是 orchestrator 层 agent 追问（15-18 项），而
+    合约 open_questions 字段只取 synthesizer 输出（茅台/北方华创恰为空）。
+    审计者看到"声明 16 项待解 vs 字段（空）"。这里把两源合并去重（synthesizer
+    在前，orchestrator 追问补后），形态判定与合约字段消费同一份清单。
+    """
+    out = _open_questions(synthesized_thesis)
+    seen = {q.strip().casefold() for q in out}
+    for q in coerce_list(extra_open_questions):
+        text = q.get("question") if isinstance(q, dict) else q
+        text = str(text or "").strip()
+        if text and text.casefold() not in seen:
+            seen.add(text.casefold())
+            out.append(text)
+    return out[:OPEN_QUESTION_CAP]
+
+
 def _valuation_assumptions(scenarios: Any) -> dict[str, Any] | None:
     """AUDIT 2026-07-12 (A4)：sanctioned DCF 假设表进合约。
 
@@ -317,6 +345,7 @@ def build_thesis_contract(
     monitorables: list[Monitorable] | None = None,
     scenarios: Any = None,
     supporting_claim_ids: list[str] | None = None,
+    extra_open_questions: Any = None,
     publishing_status: Any = "draft",
     confidence: Any = "medium",
     bias_check_status: Any = None,
@@ -384,6 +413,9 @@ def build_thesis_contract(
     except ValueError:
         accounting = AccountingStandard.CAS
 
+    # R6-2：合约 open_questions 与形态判定消费同一份双源合并清单。
+    _oq_merged = merged_open_questions(st, extra_open_questions)
+
     # R5-L4：产品形态。优先 orchestrator 决策后盖进 scenarios 的判定（含
     # evidence gap 信号）；replay / 旧路径缺章时按可得信号降级重算
     # （evidence gap 引擎侧信号缺失记 0）。注意 needs_review 会被
@@ -399,7 +431,7 @@ def build_thesis_contract(
         _pf = derive_product_form(
             valuation_mismatch=bool(_pf_sanity.get("mismatch")),
             publishing_status=str(publishing_status or _pub.value),
-            open_question_count=len(_open_questions(st)),
+            open_question_count=len(_oq_merged),
         )
     _is_cn = "cn" in str(market_id or "").lower()
     _pf_reason = (
@@ -445,7 +477,7 @@ def build_thesis_contract(
         disconfirming_triggers=disconfirm or [PLACEHOLDER],
         kill_criteria=_kill_criteria(kill_criteria),
         must_monitor=must_monitor,
-        open_questions=_open_questions(st),
+        open_questions=_oq_merged,
         valuation_assumptions=_valuation_assumptions(scenarios),
         product_form=str(_pf.get("form") or "investment_thesis"),
         product_form_reason=_pf_reason,

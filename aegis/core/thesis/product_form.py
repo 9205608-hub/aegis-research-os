@@ -59,10 +59,15 @@ def derive_product_form(
         reasons_zh.append("DCF 估值失配（超出可信带，应视为模型口径问题）")
         reasons_en.append("the DCF failed its magnitude sanity check (model artifact)")
     if n_gaps > 0:
+        # R6 措辞修正：R5 比亚迪判词讥"证据缺口不是 1 处点缀"——计数现指
+        # 核心叙事引用未闭合研究问题的处数（引擎 B3 同源重叠检查），
+        # 表述为系统性缺口而非点状瑕疵。
         reasons_zh.append(
-            f"证据缺口 {n_gaps} 处（论点把自承未知的 open_questions 当已证实事实引用）")
+            f"证据缺口（核心叙事有 {n_gaps} 处引用仍未闭合的研究问题，"
+            "论点把自承未知当已证实事实使用）")
         reasons_en.append(
-            f"{n_gaps} evidence gap(s): the edge cites its own open questions as fact")
+            f"evidence gap ({n_gaps} core claim(s) cite still-open research "
+            "questions as established fact)")
     if status in _REVIEW_STATUSES:
         reasons_zh.append(f"发布状态 {status}（未通过发布门 / 待人工复核）")
         reasons_en.append(f"publishing status is {status}")
