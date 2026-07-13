@@ -318,7 +318,7 @@ class ScenarioArchitect:
         # BUG-Y26 (2026-05-06): coerce list-typed fields at the boundary so
         # a JSON-encoded-string `scenarios` field doesn't get char-iterated
         # into bogus single-letter Scenario objects.
-        from aegis.core._coerce import coerce_list
+        from aegis.core._coerce import coerce_dict, coerce_list
         cases = []
         for s in coerce_list(raw.get("scenarios", [])):
             if not isinstance(s, dict):
@@ -351,12 +351,13 @@ class ScenarioArchitect:
                 growth_delta = [0.0] * 10
                 margin_delta = [0.0] * 10
 
-            # Extract optional driver-specific deltas
-            raw_driver_deltas = s.get("driver_deltas", {})
+            # Extract optional driver-specific deltas.
+            # BUG-Y25 dict 版：LLM 偶发把 driver_deltas 序列化成 JSON 字符串，
+            # 原 isinstance 守卫只能静默丢弃；coerce_dict 可整体救回。
+            raw_driver_deltas = coerce_dict(s.get("driver_deltas", {}))
             driver_deltas: dict[str, list[float]] = {}
-            if isinstance(raw_driver_deltas, dict):
-                for drv_name, drv_delta in raw_driver_deltas.items():
-                    driver_deltas[drv_name] = _coerce_delta_path(drv_delta)
+            for drv_name, drv_delta in raw_driver_deltas.items():
+                driver_deltas[drv_name] = _coerce_delta_path(drv_delta)
 
             cases.append(ScenarioCase(
                 name=name,

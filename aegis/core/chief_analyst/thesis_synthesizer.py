@@ -939,7 +939,9 @@ class ThesisSynthesizer:
             ),
         )
         if valuation_warnings:
-            existing = list(raw.get("unresolved_tensions", []) or [])
+            # BUG-Y25 家族（2026-07-13）：unresolved_tensions 若是 JSON 字符串，
+            # 原 list(...) 会把它逐字符拆开混进 tensions；先 coerce 再 extend。
+            existing = _coerce_list(raw.get("unresolved_tensions"))
             existing.extend(valuation_warnings)
             raw["unresolved_tensions"] = existing
 

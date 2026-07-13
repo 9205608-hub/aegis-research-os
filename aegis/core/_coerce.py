@@ -61,6 +61,38 @@ def coerce_list(val: Any) -> list:
     return [val]
 
 
+def coerce_dict(val: Any) -> dict:
+    """Robustly coerce LLM output to a Python dict.
+
+    BUG-Y25 的 dict 版（2026-07-13，R7 宁德实锤）：Director 的
+    ``agent_depth`` / ``agent_emphasis`` 是 dict 字段，LLM 偶发把它序列化成
+    JSON 字符串（'{"business_analyst": "deep", ...}'）。dataclass 不验类型，
+    字符串一路传到 orchestrator ``agent_depth.get(n)`` 才炸——
+    "'str' object has no attribute 'get'"，整条 run 报废。列表字段当年
+    同款事故由 coerce_list 收口，dict 字段此前无人设防。
+
+    Coerces:
+      - None / missing → {}
+      - already-dict → unchanged
+      - JSON-string of an object → parsed dict
+      - anything else → {}
+
+    Never raises.
+    """
+    if isinstance(val, dict):
+        return val
+    if isinstance(val, str):
+        s = val.strip()
+        if s.startswith("{") and s.endswith("}"):
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+    return {}
+
+
 def normalize_low_med_high(val: Any) -> str:
     """Normalize an LLM-emitted bucket value to low/medium/high.
 
