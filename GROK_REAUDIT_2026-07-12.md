@@ -196,7 +196,7 @@
 
 两个并行 session 的 L4/R6 实现分叉（A=continuation-01688f"决策后确定性
 执行"，B=research-report-confidence-f1dac6"生成前形态化+双轨尺"）。Grok
-仲裁全文见 `logs/branch_arbitration_verdict.md`，核心裁定：
+仲裁全文见 `BRANCH_ARBITRATION_2026-07-13.md（入库副本）`，核心裁定：
 
 - **底权给 A**（测量诚实 + 确定性执法 + merge 双源）；"不可比的高分比
   偏低的真分更危险"

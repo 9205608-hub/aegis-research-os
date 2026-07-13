@@ -1,10 +1,10 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-13 下午 (**两支 L4/R6 分叉已按 Grok 仲裁合流**（本分支为底）：F1-F5 形态化生成（B）+ 确定性 gap 执法（A）+ 双轨审计尺（框架尺只做副仪表，**禁止与主轨迹接龙**）。测试 1653 绿。仲裁全文 logs/branch_arbitration_verdict.md。⚠ quirky-mendel worktree 的 f1dac6 支应停止独立开发。待跑：合流冒烟 + 主 KPI 轮 R7)
+> 最新更新: 2026-07-13 下午 (**两支 L4/R6 分叉已按 Grok 仲裁合流**（本分支为底）：F1-F5 形态化生成（B）+ 确定性 gap 执法（A）+ 双轨审计尺（框架尺只做副仪表，**禁止与主轨迹接龙**）。测试 1653 绿。仲裁全文 BRANCH_ARBITRATION_2026-07-13.md（入库副本）。⚠ quirky-mendel worktree 的 f1dac6 支应停止独立开发。待跑：合流冒烟 + 主 KPI 轮 R7)
 
 ## 🔀 2026-07-13 下午 分支合流（Grok 仲裁裁定 A 支为底 + port B 支四件套）
 
-两个并行 session 分别实现了 L4/R6（A=本分支"决策后确定性执行"，R6 冻结 thesis 尺 3.50；B=f1dac6"生成前形态化+双轨尺"，框架尺 3.87）。Grok 仲裁（`logs/branch_arbitration_verdict.md`）：**底权给 A**（"不可比的高分比偏低的真分更危险"），**生成定义 port B 的 F1-F5**（"F1-F5 主生成 + A 确定性兜底，缺一不可"），**主 KPI 锁死冻结 thesis 尺，框架尺 3.87 禁止接进主轨迹（Goodhart 红线）**。合流实施细节与验证清单见 [GROK_REAUDIT_2026-07-12.md](GROK_REAUDIT_2026-07-12.md) 分支合流节。测试 1653 绿。
+两个并行 session 分别实现了 L4/R6（A=本分支"决策后确定性执行"，R6 冻结 thesis 尺 3.50；B=f1dac6"生成前形态化+双轨尺"，框架尺 3.87）。Grok 仲裁（`BRANCH_ARBITRATION_2026-07-13.md（入库副本）`）：**底权给 A**（"不可比的高分比偏低的真分更危险"），**生成定义 port B 的 F1-F5**（"F1-F5 主生成 + A 确定性兜底，缺一不可"），**主 KPI 锁死冻结 thesis 尺，框架尺 3.87 禁止接进主轨迹（Goodhart 红线）**。合流实施细节与验证清单见 [GROK_REAUDIT_2026-07-12.md](GROK_REAUDIT_2026-07-12.md) 分支合流节。测试 1653 绿。
 
 ## 📊 2026-07-13 R6 评测轮（R6-1/2/3 生效后）
 
