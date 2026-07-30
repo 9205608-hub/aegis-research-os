@@ -500,6 +500,7 @@
       "market": "US"
     },
     "pricedIn": null,
+    "productForm": null,
     "quick": [
       {
         "lbl": "Market Cap",

@@ -460,6 +460,7 @@
       "market": "CN"
     },
     "pricedIn": null,
+    "productForm": null,
     "quick": [
       {
         "lbl": "市值",

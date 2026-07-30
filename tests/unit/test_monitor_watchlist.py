@@ -46,11 +46,15 @@ def test_default_switches_values() -> None:
 
 # ── 真实配置文件 ─────────────────────────────────────────────────────
 def test_real_config_parses() -> None:
-    """真实 configs/watchlist.yaml 能被解析，含三支目标票。"""
+    """真实 configs/watchlist.yaml 能被解析且结构合法。
+
+    2026-07-31：不再断言具体票代码——watchlist.yaml 是用户可编辑的
+    生产配置（2026-07-11 起主库已换成真实持仓票池，与仓库 demo 票池
+    不同），测试耦合具体票会在生产机上永久红。只验结构。"""
     assert REAL_CONFIG.exists(), f"缺配置文件：{REAL_CONFIG}"
     wl = load_watchlist(REAL_CONFIG)
     tickers = {e.ticker for e in wl.entries}
-    assert {"002669", "600519", "301358"} <= tickers
+    assert len(tickers) >= 1 and all(t.strip() for t in tickers)
     assert wl.version >= 1
     assert wl.daily_llm_budget_usd > 0
     assert wl.announcement_lookback_days > 0
