@@ -578,6 +578,7 @@ class LLMAgentBase(AgentBase):
         # would be a single-char string, which then fails Observation's
         # `text: min_length=1` and aborts the whole agent).
         from aegis.core._coerce import (
+            coerce_dict,
             coerce_list,
             normalize_low_med_high as _normalize_low_med_high,
             normalize_strength as _normalize_strength,
@@ -720,18 +721,12 @@ class LLMAgentBase(AgentBase):
         # BUG-Y27: same `medium_high` failure mode applies to all 4 bias
         # risk fields. Normalize at boundary so a single LLM-side compound
         # value doesn't collapse the whole agent.
-        bias_data = raw.get("cognitive_bias_self_check", {})
         # AUDIT-B5 (2026-07-09): LLMs occasionally serialize the whole bias
         # object as a JSON STRING — calling .get() on it raised
-        # AttributeError. Try json.loads once to rescue it; anything still
-        # non-dict falls back to {} (all fields land on safe defaults).
-        if isinstance(bias_data, str):
-            try:
-                bias_data = json.loads(bias_data)
-            except (json.JSONDecodeError, ValueError):
-                bias_data = {}
-        if not isinstance(bias_data, dict):
-            bias_data = {}
+        # AttributeError. BUG-Y25 dict 版（2026-07-13）：原内联 json.loads
+        # 救援换成共享 coerce_dict（行为不变：救得回就 parse，救不回落 {}，
+        # 所有字段回安全默认值）。
+        bias_data = coerce_dict(raw.get("cognitive_bias_self_check", {}))
         bias_check = CognitiveBiasSelfCheck(
             anchoring_risk=_normalize_low_med_high(bias_data.get("anchoring_risk", "medium")),
             confirmation_bias_risk=_normalize_low_med_high(bias_data.get("confirmation_bias_risk", "medium")),

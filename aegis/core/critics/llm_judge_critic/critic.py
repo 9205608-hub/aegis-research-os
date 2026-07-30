@@ -236,6 +236,17 @@ def _build_agent_text(judgments: list[JudgmentContract]) -> str:
     return "\n".join(parts)
 
 
+def _coerce_issues(result: dict) -> list[dict]:
+    """Harden the `issues` parse boundary (BUG-Y25/Y26 家族, 2026-07-13).
+
+    LLM 偶发把 issues 整体序列化成 JSON 字符串（原 isinstance 守卫会把全部
+    发现静默丢弃），或在列表里混入字符串元素（analyze() 里 `raw.get(...)`
+    会直接 AttributeError 炸掉整个 critic）。coerce_list 救回字符串形态的
+    列表，再过滤掉非 dict 元素。"""
+    from aegis.core._coerce import coerce_list
+    return [i for i in coerce_list(result.get("issues", [])) if isinstance(i, dict)]
+
+
 # ── Critic class ─────────────────────────────────────────────────────
 
 # Issue types that always get block severity (override LLM's judgment)
@@ -415,8 +426,7 @@ class LLMJudgeCritic(CriticBase):
                     tool_name="report_issues",
                     role="critic",
                 )
-                issues = result.get("issues", [])
-                return issues if isinstance(issues, list) else []
+                return _coerce_issues(result)
             except Exception:
                 # Fall through to backend auto-pick if shared client fails
                 # (e.g. content-filter rejection that's specific to this
@@ -463,7 +473,4 @@ class LLMJudgeCritic(CriticBase):
             role="critic",
         )
 
-        issues = result.get("issues", [])
-        if not isinstance(issues, list):
-            return []
-        return issues
+        return _coerce_issues(result)

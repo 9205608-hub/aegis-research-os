@@ -269,6 +269,9 @@ class ResearchDirector:
         # producing `[, ", a, ", ,, ", b, ", ]` in logs. Use the same
         # `_coerce_list` helper as thesis_synthesizer for all list-typed
         # fields to harden the parse boundary.
+        # BUG-Y25 dict 版（2026-07-13，R7 宁德实锤）：agent_depth /
+        # agent_emphasis 同样会被序列化成 JSON 字符串，orchestrator 侧
+        # `agent_depth.get(n)` / `.items()` 直接炸掉整条 run。
         from aegis.core._coerce import coerce_dict
         from aegis.core.chief_analyst.thesis_synthesizer import _coerce_list
         return ResearchDirective(
@@ -278,10 +281,6 @@ class ResearchDirector:
             key_variables=_coerce_list(raw.get("key_variables", [])),
             key_controversy=raw.get("key_controversy", ""),
             what_consensus_likely_believes=raw.get("what_consensus_likely_believes", ""),
-            # BUG-Y25 dict 版（2026-07-13 R7 宁德实锤）：LLM 偶发把 dict 字段
-            # 序列化成 JSON 字符串，orchestrator agent_depth.get(n) 直接炸
-            # （'str' object has no attribute 'get'）。列表字段当年同款事故
-            # 由 _coerce_list 收口，这两个 dict 字段此前无人设防。
             agent_emphasis=coerce_dict(raw.get("agent_emphasis", {})),
             agent_depth=coerce_dict(raw.get("agent_depth", {})),
             research_priority_order=_coerce_list(raw.get("research_priority_order", [])),

@@ -11,13 +11,11 @@
 
 ## 🔀 2026-07-13 下午 分支合流（Grok 仲裁裁定 A 支为底 + port B 支四件套）
 
-## 🔀 2026-07-13 下午 分支合流（Grok 仲裁裁定 A 支为底 + port B 支四件套）
 
 两个并行 session 分别实现了 L4/R6（A=本分支"决策后确定性执行"，R6 冻结 thesis 尺 3.50；B=f1dac6"生成前形态化+双轨尺"，框架尺 3.87）。Grok 仲裁（`BRANCH_ARBITRATION_2026-07-13.md（入库副本）`）：**底权给 A**（"不可比的高分比偏低的真分更危险"），**生成定义 port B 的 F1-F5**（"F1-F5 主生成 + A 确定性兜底，缺一不可"），**主 KPI 锁死冻结 thesis 尺，框架尺 3.87 禁止接进主轨迹（Goodhart 红线）**。合流实施细节与验证清单见 [GROK_REAUDIT_2026-07-12.md](GROK_REAUDIT_2026-07-12.md) 分支合流节。测试 1653 绿。
 
 ## 📊 2026-07-13 R6 评测轮（R6-1/2/3 生效后）
 
-## 📊 2026-07-13 R6 评测轮（R6-1/2/3 生效后）
 
 **修复（commit f5228b6）**：R6-1 合成期 evidence gap 检查（引擎 B3 同源提前跑，gap 票进 strict 清洗 + variant_magnitude 确定性降级）；R6-2 merged_open_questions 双源合并（合约字段/形态判定/reason 计数三处同源）；R6-3 observation_framing_block（待解问题堆积票生成时条件化注入）+ 修 re-synth 漏传 open_questions 预存在缺口。测试 1648 绿（+10）。
 
@@ -112,6 +110,38 @@
 - net_debt 债项映射复查（A5，低优先）
 - `test_golden_master[002669]` 预存在失败（本 worktree pkl 与基线不同源，非本轮引入）——留 main 的 pkl 重录
 - **分支未 commit**：全部改动在 worktree 工作区，等用户定夺提交/开 PR
+
+## 🔧 2026-07-13 BUG-Y25 dict 版 · 全 call_structured 解析边界扫查（任务芯片分支 funny-noyce-78e190，2026-07-31 已并入本支）
+
+**背景**：R7 评测轮实锤 LLM 会把结构化输出的 dict 字段序列化成 JSON 字符串——Director 的
+`agent_depth` 变字符串后一路传到 orchestrator `agent_depth.get(n)` / `.items()` 才炸
+（'str' object has no attribute 'get'），整条 run 报废。列表字段当年同款事故已由
+coerce_list 在 ~17 个调用点收口，dict 字段此前无人设防。relaxed-tesla worktree 已修
+Director 两处；本轮系统性扫遍**全部 11 个 call_structured 解析边界**（chief_analyst 六件、
+llm_agent_base 五处调用、llm_judge_critic 两处），逐字段核对 tool schema 的 object 类型属性。
+
+### 新增 [aegis/core/_coerce.py](aegis/core/_coerce.py) `coerce_dict`（与 relaxed-tesla 实现逐字一致，合并不冲突）
+- dict 原样透传 / JSON-object 字符串 parse 救回 / 其余（None、垃圾串、list 串、标量）→ {}，never raises
+
+### dict 字段接入 coerce_dict（4 处）
+- ✅ [research_director.py](aegis/core/chief_analyst/research_director.py) `agent_depth` / `agent_emphasis`（R7 原始事故点；orchestrator 3196 `.items()`、3245/3506 `.get()`、llm_agent_base 926 `.get()` 三个下游炸点全部由此边界修复覆盖）
+- ✅ [report_editor.py](aegis/core/chief_analyst/report_editor.py) `section_emphasis`（dict[str,str] 存入 dataclass，此前裸取）
+- ✅ [scenario_architect.py](aegis/core/chief_analyst/scenario_architect.py) `driver_deltas`（原 isinstance 守卫只能静默丢弃 JSON 字符串形态，现整体救回再走 `_coerce_delta_path`）
+- ✅ [llm_agent_base.py](aegis/core/agents/llm_agent_base.py) `cognitive_bias_self_check`（AUDIT-B5 的内联 json.loads 救援换成共享 coerce_dict，行为不变，TestBiasCheckCoercion 原测试即回归）
+
+### 扫查中顺带发现并修复的 2 处 list 边界漏网（BUG-Y25/Y26 同族）
+- ✅ [llm_judge_critic/critic.py](aegis/core/critics/llm_judge_critic/critic.py) `issues`：字符串元素曾会在 analyze() 的 `raw.get(...)` 上 AttributeError 炸掉整个 critic；JSON-string 整体形态曾被 isinstance 守卫静默丢弃全部发现。新增模块级 `_coerce_issues`（coerce_list + dict 元素过滤），两个调用点统一收口
+- ✅ [thesis_synthesizer.py](aegis/core/chief_analyst/thesis_synthesizer.py) `unresolved_tensions`：`list(raw.get(...))` 在 JSON 字符串 + scrubber 有警告时会逐字符拆开混进 tensions，改 `_coerce_list`
+
+### 确认无需改动的边界（扫查结论，防止重复排查）
+- thesis_synthesizer / earnings_call_analyzer / news_sentiment_analyzer 主输出：全是字符串+列表字段，无 dict 字段
+- llm_agent_base 两步模式（step1/step2）：observations 走既有 coerce_list 路径；merged=dict(step2) 安全
+- 列表内 dict 元素（observations/inferences/front_page_numbers/key_exhibits/scenario cases）：既有 isinstance 过滤防炸（元素级字符串化极罕见，暂不做元素级救援）
+- critics 其余 `.get(x, {})`：消费的是 ctx/meta_facts 等内部 Python dict，非 LLM 解析边界
+
+### 验证
+> [tests/unit/test_coerce.py](tests/unit/test_coerce.py) 新增 TestCoerceDict（4 用例，与 relaxed-tesla 一致含 Director 接线回归）+ TestDictParseBoundaries（5 用例：Editor/Architect/judge-critic×2/Synthesizer 接线回归）。全量 **1566 passed / 15 skipped**。
+
 
 ## 🔎 2026-07-11 Grok（grok-4.5）前三期评审 + Claude triage
 
@@ -1761,7 +1791,6 @@ TODO-2~8（流程改进）
 
 ## ⏱ 2026-04-24 会话4 时间复盘 + 下一轮 debug TODO
 
-## ⏱ 2026-04-24 会话4 时间复盘 + 下一轮 debug TODO
 
 ### 一、本次实际耗时账本
 

@@ -317,7 +317,8 @@ class ReportEditor:
         # BUG-Y26: harden list parse boundaries — same JSON-string-as-list
         # gotcha as Director (BUG-Y25). Editor's section_order being string
         # would be especially broken since it controls report layout.
-        from aegis.core._coerce import coerce_list
+        # BUG-Y25 dict 版：section_emphasis 是 dict 字段，同样收口。
+        from aegis.core._coerce import coerce_dict, coerce_list
         return EditedReport(
             headline=raw.get("headline", ""),
             executive_summary=raw.get("executive_summary", ""),
@@ -327,7 +328,7 @@ class ReportEditor:
                 if isinstance(n, dict)
             ],
             section_order=coerce_list(raw.get("section_order", [])),
-            section_emphasis=raw.get("section_emphasis", {}),
+            section_emphasis=coerce_dict(raw.get("section_emphasis", {})),
             key_exhibits=[
                 {"type": e.get("type", ""), "title": e.get("title", ""), "why_important": e.get("why_important", "")}
                 for e in coerce_list(raw.get("key_exhibits", []))
