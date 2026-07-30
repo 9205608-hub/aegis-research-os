@@ -1,6 +1,22 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-13 傍晚 (**R7 合流验证轮出分：主轨 3.45（合流零回归，4/5 票极差 0——历史最稳测量）+ 副轨基线 3.65 建立**。诚实折价实测成立：观察框架在 thesis 尺的天花板 ≈3.5，表达层三轮 3.25→3.50→3.45 正式宣告榨干。**L1 年报附注摄取 = 唯一主路**，副轨的监控合约工程修复（阈值三源/主指标挂监控）可并行。另：R7 首跑撞出 BUG-Y25 dict 版（Director agent_depth 变字符串炸 run），coerce_dict 已修 d3ef1a3)
+> 最新更新: 2026-07-31 (**大合并 + L1 Wave 1 落地**：①7 月 13 日全部置信度工作（R5-R7/L4/L3/仲裁合流/coerce_dict 扫查）已合入 main 并推送，生产环吃到全部修复，golden 基线按 main 源 pkl 重录 4 快照零 diff；②**L1 分部收入摄取上线**——东财主营构成三轴多期进 segment_detail + agent/synthesizer prompt + 清洗白名单，5/5 评测票实测全覆盖，七轮审计"分部未闭合"通杀扣分的数据解。③⚠ **Grok 全面停用**（用户 2026-07-31 明示）：冻结审计 KPI 环暂停，换评审官须用户拍板换尺重建基线。Wave 2 = 前五大客户集中度（巨潮年报 PDF，东财无此数据）)
+
+## 📦 2026-07-31 大合并 + L1 Wave 1（分部收入摄取）
+
+**合并**：continuation-01688f（R5-R7 全部工作 9 commit）+ funny-noyce-78e190（coerce_dict 全边界扫查，任务芯片产物）→ main 并推送（0b891cb→030ca01）。调和点：两支 TestCoerceDict 重复类去重、HANDOFF 双头合并；watchlist 测试解耦用户可编辑配置（生产机票池与 demo 票池不同导致的永久红）；golden 4 基线按 main 源 pkl 重录零 diff（002669 全量快照自 07-12 起首次回绿）。**quirky-mendel 的 f1dac6 支正式废弃。**
+
+**L1 Wave 1（[segment_zygc.py](aegis/core/acquisition/connectors/segment_zygc.py)）**：
+- 数据源 akshare `stock_zygc_em`（东财 PC_HSF10 zygcfx），三轴（产品/地区/行业）× 多期（年报+中报），收入/成本/利润/毛利率/占比；`_no_proxy` 复用；失败不阻断
+- 接线：orchestrator A 股路径填 `segment_detail`（此前恒空 dict，BUG-46 去重/Editor 管道点亮）+ `__segment_composition` 盖章（合规红线 8：连接器自身不触共享事实字典，盖章在白名单内的 orchestrator）→ agent 基类与 synthesizer 各注入 SEGMENT COMPOSITION 块（明示"真实披露数据，不要再列为未知缺口"）→ 占比/毛利率 % 进清洗白名单 ×2（红线 9）
+- **实测 5/5 评测票全覆盖**：宁德含 2026 中报期（动力电池 74.7%/毛利 23.8%）；比亚迪真实分部（汽车 80.7%/毛利 20.5% vs 手机部件 19.3%/6.3%）直接回应 R7"驱动分解与主业不匹配"P0；北方华创"分部毛利结构"（装备 93.3%/39.2%）= 七轮追问最多单点；茅台（茅台酒 86.8%/毛利 93.5%）；新易盛（光互联 99.7%/47.8%）
+- 测试 1673 passed（+11 回归 [test_segment_zygc.py](tests/unit/test_segment_zygc.py)）
+
+**遗留/下一步**：
+1. **全量 LLM 验证 run 待触发**（惯例留用户）：`./run_research.sh 300750` 应看到日志 `Segment composition (L1): 3 轴`、agents 不再把分部列进 open_questions、观察框架票的判别检验落在具体分部指标上
+2. **Wave 2 = 前五大客户集中度**：东财无此数据（PC_HSF10/datacenter 均探查无果），须走巨潮年报 PDF 解析（cninfo 公告下载 → pdf 文本抽取 → "前五名客户合计销售金额占比"正则）——独立 session 工程量
+3. ⚠ **Grok 停用（2026-07-31 用户明示）**：审计 KPI 环（grok_audit_stock.sh/eval_pipeline.sh）暂停；L1 效果的代理指标 = open_questions 数量下降 + 分部相关追问消失（不依赖外部审计可测）
+
 
 ## 📊 2026-07-13 傍晚 R7 合流验证轮（双轨首次同轮测量）
 
