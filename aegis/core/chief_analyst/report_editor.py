@@ -287,6 +287,9 @@ class ReportEditor:
             # Phase 1 同则：相对估值锚的 PE/PB/分位数字同步注册。
             # AUDIT 2026-07-12: 估值失配时 editor 字段同样进入 strict 清洗
             # ——headline/摘要正是"残影%"到达读者的最后一跳。
+            from aegis.core.acquisition.connectors.segment_zygc import (
+                segment_sanctioned_pcts,
+            )
             _sanity = _valuation_sanity_verdict(scenarios, market_data)
             scrubbed, warns = _scrub_fair_value_claims(
                 raw, scenarios, market_data, fields=editor_fields,
@@ -296,6 +299,10 @@ class ReportEditor:
                     )
                     + relative_valuation_sanctioned_pcts(
                         (meta_facts or {}).get("__relative_valuation")
+                    )
+                    # L1 Wave 1：分部占比/毛利率 %（真实披露数据，红线 9）
+                    + segment_sanctioned_pcts(
+                        (meta_facts or {}).get("__segment_composition")
                     )
                 ),
                 strict=bool(_sanity and _sanity.get("mismatch")),

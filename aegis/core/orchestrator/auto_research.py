@@ -1287,6 +1287,28 @@ class AutoResearchOrchestrator:
         for _iss in _dq_issues:
             _log(f"  DQ[{_iss['severity']}] {_iss['code']}: {_iss['message']}")
 
+        # ── L1 Wave 1 (2026-07-31): A 股分部收入摄取（东财主营构成） ──
+        # 七轮 Grok 审计"分部收入/分部毛利未闭合"通杀扣分的数据解。A 股
+        # 路径的 segment_detail 此前恒为空 dict（cninfo_connector:185），
+        # 填上后 BUG-46 去重、Segment 展示、Editor 既有管道全部点亮；
+        # lines_zh 进 agent/synthesizer prompt；占比/毛利率 % 进清洗白名单
+        # （设计红线 9）。失败不阻断主流程。
+        if is_a_share and not segment_detail:
+            try:
+                from aegis.core.acquisition.connectors.segment_zygc import (
+                    fetch_segment_composition,
+                )
+                _seg_comp = fetch_segment_composition(stock_code)
+                if _seg_comp:
+                    segment_detail = _seg_comp["detail"]
+                    meta_facts["__segment_composition"] = _seg_comp
+                    _log(f"Segment composition (L1): {len(segment_detail)} 轴"
+                         f"（{_seg_comp['source_note']}）")
+                else:
+                    _log("Segment composition (L1): 东财主营构成不可得")
+            except Exception as _seg_err:
+                _log(f"  ⚠ Segment composition failed (non-blocking): {_seg_err}")
+
         # BUG-46: clean segment_detail so every category has non-overlapping
         # members that sum to company revenue. Fixes:
         #  - Products Breakdown double-counting parent+child roll-ups

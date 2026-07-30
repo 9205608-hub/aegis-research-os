@@ -1126,6 +1126,22 @@ This is an A-share (China) entity. Write ALL natural-language output in Simplifi
                     parts.append(f"  YoY growth: {g_str}")
                 parts.append("")
 
+            # === SEGMENT COMPOSITION（L1 Wave 1, 2026-07-31）===
+            # 七轮 Grok 审计通杀扣分"分部收入/分部毛利未闭合"的数据解：
+            # A 股分部构成（东财 zygc，分产品/分地区/分行业，年报+最新期）
+            # 直接进 agent 上下文——agents 此前只能把分部写进 open_questions。
+            _seg_comp = inp.facts.get("__segment_composition") if inp.facts else None
+            if isinstance(_seg_comp, dict) and _seg_comp.get("lines_zh"):
+                parts.append("=== SEGMENT COMPOSITION (分部收入构成，真实披露数据) ===")
+                parts.append(f"  来源: {_seg_comp.get('source_note', '东财主营构成')}")
+                for _ln in _seg_comp["lines_zh"]:
+                    parts.append(f"  {_ln}")
+                parts.append(
+                    "  → 分部占比/毛利率是真实披露数据，可直接引用；"
+                    "不要再把「分部收入结构」列为未知数据缺口。"
+                )
+                parts.append("")
+
             # === DATA QUALITY ALERTS ===
             # Surface fact_bridge sanity-check issues so agents can caveat
             # their conclusions when source data is suspect (D&A missing,

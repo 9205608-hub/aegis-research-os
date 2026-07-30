@@ -1294,6 +1294,11 @@ class ThesisSynthesizer:
             ((meta_facts or {}).get("__model_free_implied") or {})
             .get("sanctioned_pcts") or []
         )
+        # L1 Wave 1：分部占比/毛利率 % 进白名单（红线 9 同则）——真实披露
+        # 数据的引用不许被 strict 清洗误杀。
+        from aegis.core.acquisition.connectors.segment_zygc import (
+            segment_sanctioned_pcts,
+        )
         raw, valuation_warnings = _scrub_fair_value_claims(
             raw, scenarios, market_data,
             extra_sanctioned_pcts=(
@@ -1304,6 +1309,9 @@ class ThesisSynthesizer:
                     (meta_facts or {}).get("__relative_valuation")
                 )
                 + _mfi_pcts  # R4-1：无模型锚数字进白名单（红线 9 同则）
+                + segment_sanctioned_pcts(
+                    (meta_facts or {}).get("__segment_composition")
+                )
             ),
             strict=_mismatch or _gap_observation,
         )
@@ -1468,6 +1476,20 @@ class ThesisSynthesizer:
                 for _ln in _frontier_lines:
                     parts.append(f"  - {_ln}")
                 parts.append("")
+
+        # ── L1 Wave 1（2026-07-31）：分部收入构成进合成器上下文 ──
+        # 七轮审计"分部未闭合"通杀扣分的数据解——synthesizer 有真实分部
+        # 数据后，判别性检验（F2）可以落在具体分部指标上，而不是把分部
+        # 结构写进 open_questions。
+        _seg_syn = (meta_facts or {}).get("__segment_composition")
+        if isinstance(_seg_syn, dict) and _seg_syn.get("lines_zh"):
+            parts.append("=== SEGMENT COMPOSITION (分部收入构成，真实披露数据) ===")
+            parts.append(f"({_seg_syn.get('source_note', '东财主营构成')}——"
+                         "占比/毛利率为真实披露数据可直接引用，"
+                         "不要再把分部结构列为未知缺口)")
+            for _ln in _seg_syn["lines_zh"]:
+                parts.append(f"  - {_ln}")
+            parts.append("")
 
         _regime = (meta_facts or {}).get("__pricing_regime")
         if isinstance(_regime, dict) and _regime.get("weights"):
