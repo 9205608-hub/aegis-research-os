@@ -1142,6 +1142,22 @@ This is an A-share (China) entity. Write ALL natural-language output in Simplifi
                 )
                 parts.append("")
 
+            # === CUSTOMER CONCENTRATION（L1 Wave 2, 2026-07-31）===
+            # 七轮审计反复扣分的第二个数据缺口：前五大客户集中度
+            # （巨潮年报 PDF 标准披露）直接进 agent 上下文——agents
+            # 此前只能把大客户依赖写进 open_questions。
+            _cust_conc = inp.facts.get("__customer_concentration") if inp.facts else None
+            if isinstance(_cust_conc, dict) and _cust_conc.get("lines_zh"):
+                parts.append("=== CUSTOMER CONCENTRATION (客户集中度，真实披露数据) ===")
+                parts.append(f"  来源: {_cust_conc.get('source_note', '巨潮年报 PDF')}")
+                for _ln in _cust_conc["lines_zh"]:
+                    parts.append(f"  {_ln}")
+                parts.append(
+                    "  → 客户/供应商集中度是年报真实披露数据，可直接引用；"
+                    "不要再把「客户集中度/大客户依赖」列为未知数据缺口。"
+                )
+                parts.append("")
+
             # === DATA QUALITY ALERTS ===
             # Surface fact_bridge sanity-check issues so agents can caveat
             # their conclusions when source data is suspect (D&A missing,

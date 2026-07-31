@@ -1299,6 +1299,10 @@ class ThesisSynthesizer:
         from aegis.core.acquisition.connectors.segment_zygc import (
             segment_sanctioned_pcts,
         )
+        # L1 Wave 2：客户/供应商集中度 % 同则进白名单
+        from aegis.core.acquisition.connectors.customer_concentration import (
+            customer_sanctioned_pcts,
+        )
         raw, valuation_warnings = _scrub_fair_value_claims(
             raw, scenarios, market_data,
             extra_sanctioned_pcts=(
@@ -1311,6 +1315,9 @@ class ThesisSynthesizer:
                 + _mfi_pcts  # R4-1：无模型锚数字进白名单（红线 9 同则）
                 + segment_sanctioned_pcts(
                     (meta_facts or {}).get("__segment_composition")
+                )
+                + customer_sanctioned_pcts(
+                    (meta_facts or {}).get("__customer_concentration")
                 )
             ),
             strict=_mismatch or _gap_observation,
@@ -1488,6 +1495,20 @@ class ThesisSynthesizer:
                          "占比/毛利率为真实披露数据可直接引用，"
                          "不要再把分部结构列为未知缺口)")
             for _ln in _seg_syn["lines_zh"]:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        # ── L1 Wave 2（2026-07-31）：客户集中度进合成器上下文 ──
+        # 七轮审计第二个数据缺口的数据解——synthesizer 有真实客户/供应商
+        # 集中度后，大客户依赖可以作为已证实事实进论点与风险评估，
+        # 而不是写进 open_questions。
+        _cust_syn = (meta_facts or {}).get("__customer_concentration")
+        if isinstance(_cust_syn, dict) and _cust_syn.get("lines_zh"):
+            parts.append("=== CUSTOMER CONCENTRATION (客户集中度，真实披露数据) ===")
+            parts.append(f"({_cust_syn.get('source_note', '巨潮年报 PDF')}——"
+                         "客户/供应商集中度为年报真实披露数据可直接引用，"
+                         "不要再把客户集中度列为未知缺口)")
+            for _ln in _cust_syn["lines_zh"]:
                 parts.append(f"  - {_ln}")
             parts.append("")
 

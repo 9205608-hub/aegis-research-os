@@ -30,7 +30,8 @@ _CN_BYPASS_HOSTS = (
     "82.push2.eastmoney.com,push2delay.eastmoney.com,"
     "emweb.securities.eastmoney.com,datacenter-web.eastmoney.com,"
     "sina.com.cn,*.sina.com.cn,finance.sina.com.cn,"
-    "vip.stock.finance.sina.com.cn,money.finance.sina.com.cn"
+    "vip.stock.finance.sina.com.cn,money.finance.sina.com.cn,"
+    "cninfo.com.cn,*.cninfo.com.cn,www.cninfo.com.cn,static.cninfo.com.cn"
 )
 
 

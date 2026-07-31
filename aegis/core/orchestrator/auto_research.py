@@ -1309,6 +1309,26 @@ class AutoResearchOrchestrator:
             except Exception as _seg_err:
                 _log(f"  ⚠ Segment composition failed (non-blocking): {_seg_err}")
 
+        # ── L1 Wave 2 (2026-07-31): A 股客户集中度摄取（巨潮年报 PDF） ──
+        # 七轮审计反复扣分的第二个数据缺口。东财无此数据，唯一来源是
+        # 年报 PDF「主要销售客户」标准披露（巨潮下载 + 正则解析，含
+        # 前五名供应商采购占比）。失败不阻断主流程。
+        if is_a_share:
+            try:
+                from aegis.core.acquisition.connectors.customer_concentration import (
+                    fetch_customer_concentration,
+                )
+                _cust = fetch_customer_concentration(stock_code)
+                if _cust:
+                    meta_facts["__customer_concentration"] = _cust
+                    _log(f"Customer concentration (L1): top5 "
+                         f"{_cust['top5_customer_share']:.2f}%"
+                         f"（{_cust['source_note']}）")
+                else:
+                    _log("Customer concentration (L1): 年报 PDF 不可得或解析失败")
+            except Exception as _cc_err:
+                _log(f"  ⚠ Customer concentration failed (non-blocking): {_cc_err}")
+
         # BUG-46: clean segment_detail so every category has non-overlapping
         # members that sum to company revenue. Fixes:
         #  - Products Breakdown double-counting parent+child roll-ups

@@ -1,6 +1,30 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-07-31 (**大合并 + L1 Wave 1 落地**：①7 月 13 日全部置信度工作（R5-R7/L4/L3/仲裁合流/coerce_dict 扫查）已合入 main 并推送，生产环吃到全部修复，golden 基线按 main 源 pkl 重录 4 快照零 diff；②**L1 分部收入摄取上线**——东财主营构成三轴多期进 segment_detail + agent/synthesizer prompt + 清洗白名单，5/5 评测票实测全覆盖，七轮审计"分部未闭合"通杀扣分的数据解。③⚠ **Grok 全面停用**（用户 2026-07-31 明示）：冻结审计 KPI 环暂停，换评审官须用户拍板换尺重建基线。Wave 2 = 前五大客户集中度（巨潮年报 PDF，东财无此数据）)
+> 最新更新: 2026-07-31 晚 (**L1 Wave 2 落地**：前五大客户集中度摄取——巨潮年报 PDF 下载解析全链路，5/5 评测票实测覆盖，深交所表格/上交所句子双模板；同日早间为大合并 + Wave 1，见下两节)
+
+## 📦 2026-07-31 L1 Wave 2（客户集中度摄取，巨潮年报 PDF）
+
+**背景**：七轮审计反复扣分的第二个数据缺口（第一个"分部收入"已由 Wave 1 解决）。东财确认无此数据（PC_HSF10 BusinessAnalysis 只有 zyfw/zygcfx/jyps；datacenter-web RPT_* 猜名全空），唯一来源是年报 PDF 标准披露"前五名客户合计销售金额占年度销售总额的比例"。
+
+**新连接器 [customer_concentration.py](aegis/core/acquisition/connectors/customer_concentration.py)**（Wave 1 同构，永不 raise）：
+- 定位：akshare `stock_zh_a_disclosure_report_cninfo`（巨潮公告检索，`_no_proxy` 复用，`_CN_BYPASS_HOSTS` 已补巨潮域名）→ 标题过滤（摘要/英文/已取消）按时间倒序 →
+  `static.cninfo.com.cn/finalpage/{date}/{id}.PDF` 直链下载
+- 缓存：`.cache/annual_reports/{code}_{year}_{announcementId}.pdf`（~1-8MB/份，二次运行零下载；网络失败回退最近本地缓存）
+- 抽取：PyMuPDF（fitz）优先、pypdf 兜底；逐页扫描，首个含"前五名客户"且解析成功的页胜出（=经营讨论节主披露表，财务附注次生提法排后）；跨页断表 pending 拼接重试
+- 解析双模板：**深交所表格**（top5 合计 + 逐客户 top1/shares + 同表供应商采购占比；"合计销售金额占"锚点天然排除关联方行）；**上交所句子**（"前五名客户销售额 X 万元，占年度销售总额 Y%"，无逐客户明细 top1 干净降 None）。逐行占比过降序/加总≈合计自洽校验，不自洽宁缺毋滥
+- 契约：`top5_customer_share` / `top1_customer_share` / `customer_shares` / `single_customer_over_50pct`（top1>50 或 top5≤50 推断，否则 None）/ `top5_supplier_share`（同表白送）/ `fiscal_period` / `lines_zh` / `sanctioned_pcts` / `source_note`
+
+**接线（Wave 1 四点同构）**：orchestrator A 股路径盖章 `__customer_concentration`（红线 8：盖章只在白名单内的 orchestrator，连接器自身不触共享事实字典）→ agent 基类与 synthesizer 各注入 CUSTOMER CONCENTRATION 中文块（明示"真实披露数据，不要再把客户集中度列为未知缺口"）→ 集中度 % 进清洗白名单 ×2（synthesizer + report_editor，紧挨 segment_sanctioned_pcts，红线 9；清洗容差 ±0.5pp，注册两位小数披露值；"超50%"措辞改"占比过半"避开非披露数字字面量）
+
+**实测 5/5 评测票全覆盖（2025 年报，均 2026 年 3-4 月披露）**：
+- 宁德 38.96%（top1 13.73%）｜比亚迪 18.12%（top1 12.53%，2-5 名断崖 ~2%——单一大客户结构实锤）｜北方华创 39.03%（top1 12.72%）｜茅台 10.10%（上交所句子版，top1 无明细）｜**新易盛 72.34%（top1 22.97%，供应商集中度 41.88%）**——七轮审计追问最凶的"高客户集中度"票，正是数据最硬的一张
+- 效果代理指标（Grok 停用后）：客户集中度类 open_questions 应消失；新易盛的集中度风险从"自承未知"变为可引用的已证实事实
+
+**测试**：+18 回归 [test_customer_concentration.py](tests/unit/test_customer_concentration.py)（双模板解析/关联方干扰/自洽校验/跨页拼接/契约装配/白名单提取/缓存回退/永不 raise，fixture 全部取自真实 PDF 抽取形态，网络无关）；棘轮测试保持绿。
+
+**遗留/下一步**：
+1. 全量 LLM 验证 run 待触发（惯例留用户）：`./run_research.sh 300502` 应看到日志 `Customer concentration (L1): top5 72.34%`，agents 直接引用集中度而非追问
+2. 解析覆盖仅验证 2025 年报模板；更早年份/金融业年报（无此披露）会干净降级 None，不阻断：①7 月 13 日全部置信度工作（R5-R7/L4/L3/仲裁合流/coerce_dict 扫查）已合入 main 并推送，生产环吃到全部修复，golden 基线按 main 源 pkl 重录 4 快照零 diff；②**L1 分部收入摄取上线**——东财主营构成三轴多期进 segment_detail + agent/synthesizer prompt + 清洗白名单，5/5 评测票实测全覆盖，七轮审计"分部未闭合"通杀扣分的数据解。③⚠ **Grok 全面停用**（用户 2026-07-31 明示）：冻结审计 KPI 环暂停，换评审官须用户拍板换尺重建基线。Wave 2 = 前五大客户集中度（巨潮年报 PDF，东财无此数据）)
 
 ## 📦 2026-07-31 大合并 + L1 Wave 1（分部收入摄取）
 
