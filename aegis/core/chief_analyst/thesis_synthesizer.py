@@ -1467,6 +1467,13 @@ class ThesisSynthesizer:
         from aegis.core.acquisition.connectors.equity_pledge import (
             pledge_sanctioned_pcts,
         )
+        # L1 Wave 4：户数变化 / 两融占比与变化 % 同则进白名单
+        from aegis.core.acquisition.connectors.holder_count import (
+            holder_count_sanctioned_pcts,
+        )
+        from aegis.core.acquisition.connectors.margin_trading import (
+            margin_sanctioned_pcts,
+        )
         raw, valuation_warnings = _scrub_fair_value_claims(
             raw, scenarios, market_data,
             extra_sanctioned_pcts=(
@@ -1488,6 +1495,12 @@ class ThesisSynthesizer:
                 )
                 + pledge_sanctioned_pcts(
                     (meta_facts or {}).get("__equity_pledge")
+                )
+                + holder_count_sanctioned_pcts(
+                    (meta_facts or {}).get("__holder_count")
+                )
+                + margin_sanctioned_pcts(
+                    (meta_facts or {}).get("__margin_trading")
                 )
             ),
             strict=_mismatch or _gap_observation,
@@ -1713,6 +1726,46 @@ class ThesisSynthesizer:
                          "质押比例为真实披露数据可直接引用，"
                          "不要再把大股东质押列为未知缺口)")
             for _ln in _ep_syn["lines_zh"]:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        # ── L1 Wave 4（2026-08-01）：股东户数进合成器上下文 ──
+        # 户数连续下降=筹码向少数账户集中（A 股经典信号）——有真实
+        # 序列后，筹码结构进论点与资金面评估，而不是写进 open_questions。
+        _hc_syn = (meta_facts or {}).get("__holder_count")
+        if isinstance(_hc_syn, dict) and _hc_syn.get("lines_zh"):
+            parts.append("=== HOLDER COUNT (股东户数/筹码结构，真实披露数据) ===")
+            parts.append(f"({_hc_syn.get('source_note', '东财股东户数明细')}——"
+                         "户数序列为真实披露数据可直接引用，户数连续下降"
+                         "通常意味着筹码向少数账户集中，"
+                         "不要再把筹码结构列为未知缺口)")
+            for _ln in _hc_syn["lines_zh"]:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        # ── L1 Wave 4（2026-08-01）：两融余额进合成器上下文 ──
+        # 融资余额及其占流通市值比是杠杆资金情绪的已证实事实源；
+        # 非两融标的（杠杆资金无法场内参与）同样是有价值的负面证据。
+        _mt_syn = (meta_facts or {}).get("__margin_trading")
+        if isinstance(_mt_syn, dict) and _mt_syn.get("lines_zh"):
+            parts.append("=== MARGIN TRADING (融资融券余额，真实披露数据) ===")
+            parts.append(f"({_mt_syn.get('source_note', '东财融资融券个股明细')}——"
+                         "两融余额/占流通市值比为真实披露数据可直接引用，"
+                         "不要再把杠杆资金规模列为未知缺口)")
+            for _ln in _mt_syn["lines_zh"]:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        # ── L1 Wave 4（2026-08-01）：龙虎榜进合成器上下文 ──
+        # 近三个月有上榜记录才盖章注入；席位合计净买卖与机构席位次数
+        # 是短期资金面的真实事实（未上榜的多数票此块整体缺席）。
+        _lhb_syn = (meta_facts or {}).get("__lhb_activity")
+        if isinstance(_lhb_syn, dict) and _lhb_syn.get("lines_zh"):
+            parts.append("=== LHB ACTIVITY (龙虎榜席位异动，真实披露数据) ===")
+            parts.append(f"({_lhb_syn.get('source_note', '东财龙虎榜个股上榜统计')}——"
+                         "上榜次数/净买卖额为真实披露数据可直接引用，"
+                         "不要再把游资/机构席位动向列为未知缺口)")
+            for _ln in _lhb_syn["lines_zh"]:
                 parts.append(f"  - {_ln}")
             parts.append("")
 
