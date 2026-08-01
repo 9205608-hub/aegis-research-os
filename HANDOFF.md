@@ -1,6 +1,40 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-08-01 (**L1 Wave 2 验证闭环**：300502 全量 LLM run 实证——定量集中度 open_questions 6+→0，报告正文引用 72.34%/22.97% 并衍生计算"前三家合计 55.24%"；main@d4125b1 已推送。Wave 2 落地与大合并 + Wave 1 见下三节)
+> 最新更新: 2026-08-01 晚 (**六路并行优化批**：置信度封顶链四层修复（含 definition_gate 恒真 skip 的 P0 级发现——7/12 起 high 档结构性不可达）+ L1 Wave 3 解禁/质押摄取 + Editor 首页数字清洗 + replay 五门复活；1731 passed / golden 零 diff；见下节)
+
+## 📦 2026-08-01 晚 六路并行优化批（置信度链 + Wave 3，分支 claude/project-progress-commercialization-ae872e）
+
+**背景**：用户问"报告自评置信度为什么低、如何合法提高"。链路侦查结论：置信度分数层（engine.py `_determine_confidence` 70 起步）发布 run 几乎必过 80（名义 high），真正压档的是三道封顶帽（blocked→low / downgraded→medium / gate skip→medium）。六个隔离 worktree agent 并行修复 + 主 session 两发补充，全部合并回本分支。
+
+### 🔴 P0 级发现：definition_gate 恒真 skip → high 档 7/12 起结构性不可达（已修）
+主流程 Step 12 从不传 `registered_metric_ids`（registry 明明在 orchestrator:1666 建好了），`_definition_gate` 的 no-registry 分支每 run 必返 `passed+warn+"skipped"`，恰好命中 B4 收割谓词（auto_research.py:4086，按 "skipped" 子串匹配）→ `gate_skipped_count>0` 恒成立 → **所有 fresh run 置信度被永久封顶 medium**。修复：gate.py no-registry 措辞改 "not armed"（措辞是契约，注释已明示 load-bearing），orchestrator 与 replay 两处收割同时解除；回归测试锁定。**武装 definition_gate（真传 registry）属行为变更**：agent 自报 `used_metric_ids` 未注册会直接 block，须实测对齐率后另行落地（见待办）。replay 修复 agent 发现此问题（守边界未越权），主 session 落地。
+
+### 置信度链其余三层修复
+- **红旗两档判定**（auto_research.py `_extract_key_finding`）：强信号词（造假/粉饰/虚增/存疑/异常/急剧恶化/…）单发举旗；弱信号词（风险/压力/下行/下滑/…）须 ≥2 条不同观察命中、或与 agent 低置信同现；strong counterargument 保留。旧逻辑"风险"一词必中 → risk_analyst 履职即举旗 → "5 agent 红旗"历轮常态，经 llm_agent_base:1569 的 "⚠ RED FLAG" 标记污染下游 agent prompt。+167 行回归（test_red_flag_tiering.py）。已知边角：公司名含"红旗"（002697）会误举旗（预存在，未扩修）。
+- **伪警告剥离**（新模块 critics/degraded_input.py）：LLM 兜底产物（`is_llm_fallback` 结构化标记 + FB 文本标记双层识别，经 `offending_judgment_ids` 归类——CriticIssue 是 frozen StrictModel 不可加字段，消费端分类对新旧缓存行为一致）的 warn/block 不再计入 warn 累计门（阈值 20）与置信度扣分，单列"输入退化"计数；degraded>0 封顶 medium（与 skip 封顶同语义）。真实 warn 行为逐字节不变（专测锁定）。注意：重度兜底 run 置信度会从 low/very_low **上移**至 medium（伪 block 不再扣分），下轮实盘观察。顺带 TODO-Y6 闭环：logic_critic 绝对额正则扩中文（¥X亿/X万元/裸X亿紧邻关键词）+ 净利润/毛利 claim 类型 + 营业利润率/毛利率百分比路径，EN 路径逐字不变。
+- **replay 五门复活 + 敏感性缺参**（scripts/replay_from_cache.py）：① `two_way_table` 少传 var1_range/var2_range 必然 TypeError、被裸 except 吞掉 → 重算 DCF 永远配过期缓存表；已修（网格与主流程 Step 7 逐行对齐）+ 失败不再静默。② gate ctx 只传 1 键 → dcf_integrity/terminal_value/valuation_sanity/capex_attribution/data_quality 五门在 replay 从未真跑过；改 `_build_gate_context` 与主流程 11 键对齐。③ decision ctx 补 `gate_skipped_names`（B4 在 replay 从不生效=假高置信）。④ segment 缩放保留 None 单元（旧代码 TypeError 炸整块）+ per_share 同步调整后股本口径。
+
+### 其余战果
+- **Editor front_page_numbers 接清洗**（report_editor.py）：首页大字数字此前是唯一不设防通道。复用 synthesizer 同一清洗器（label/value/context U+2063 拼段送洗拆回），value/label 被改写→整条剔除不留空壳，仅 context 违规→原位替换；白名单 `_extra_pcts` 一次装配、5 字段与首页共用（合并时已将 Wave 3 解禁/质押 % 纳入，首页同享）。html_report_v2 现无 front_page_numbers 渲染区块（未来接线即时受保护）。+23 用例。
+- **peer_fundamentals 假死真伤**：死代码清理 agent 验尸证实链路是活的（HANDOFF 旧待办陈旧：orchestrator:1941 生产、:3218 注入、llm_agent_base:1249 消费），但消费端 dict-only 过滤 + 字段名漂移（pe_trailing vs trailing_pe）把 dataclass 全部静默丢弃——**美股 run 的 PEER FUNDAMENTALS prompt 段一直是空表头**。主 session 修复（is_dataclass→asdict + pe 键回退链），+5 用例。
+- **待办销项 ×2（陈旧条目）**：`peer_fundamentals dataclass 死代码`（实为活链+上述真 bug）；`sina spot 兜底死代码`（fb1c59b 即 AUDIT_2026-07 批量修复时已删，现存 sina 代码全部可达）。另清 2 处过时注释（subprocess_client TODO-Y1 已实现、us_adapter 虚构的 "Entity Master" 引用）。
+- **hypothesis_validated 布尔矫顽**：`_coerce.py` 新增 `coerce_bool`，synthesizer:1377 接线（LLM 吐字符串 "false" 恒真值 → CONFIRMED/REFUTED 判定失真）。
+- **L1 Wave 3：解禁日历 + 股权质押全链路**（Wave 1/2 四点同构）：
+  - [restricted_release.py](aegis/core/acquisition/connectors/restricted_release.py)：akshare `stock_restricted_release_queue_em`。⚠ 占比列是**小数**（0.0974=9.74%），连接器换算并防御源头改口径（>1.0 视为已是百分数）。
+  - [equity_pledge.py](aegis/core/acquisition/connectors/equity_pledge.py)：中登周五快照（`stock_gpzy_pledge_ratio_em`，质押比例是**百分数**、股数单位万股、个股缺席=无质押登记，负面证据也注入）+ 东财逐笔明细双路对账；明细超中登 1pp → `detail_stale=True` 降级（实测 300502：中登 0 笔 vs 东财挂 2018/2021"未解押"13 笔——陈旧占比不进白名单，宁缺毋滥）。阈值常量：高质押 30%（2018 质押新规 50% 红线六折预警位）、满仓质押张力 80%。
+  - 接线：盖章 auto_research.py（紧接 `__customer_concentration`）→ llm_agent_base / synthesizer 中文注入块 → 白名单 synthesizer + report_editor 两处（红线 8/9 全守）。接口经 2026-08-01 真实网络调用实测（akshare 1.18.55，`_no_proxy` 直连东财成功）。+32 用例。
+
+### 验证
+> **合并后全量 1731 passed / 15 skipped；golden 28 passed / 8 skipped 零 diff**（8 skip 预存在条件跳过）。六支 agent 分支各自全量绿后合并，report_editor.py 一处冲突（白名单装配重构 vs Wave 3 追加）手工调和为共享 `_extra_pcts` 纳入 Wave 3。
+> ⚠ **宏观 fallback 假数字**（auto_research.py:2878-2894，VIX 18.5/PMI 52.3/DXY 104.5 等）由用户点开的任务芯片 session 在独立 worktree 处理中——本批刻意避开该区域，勿重复修。
+
+### 遗留/下一步
+1. **本分支合并回 main 待用户定夺**（惯例）；宏观芯片 session 的成果需另行合并。
+2. **Wave 3 真实 run 验证**（照 Wave 2 300502 闭环）：`./run_research.sh <A股ticker>` 应见解禁/质押盖章日志、agents 不再把解禁/质押列 open_questions。中登快照拉全市场 ~3s/run，嫌重可换 datacenter API 按码过滤。
+3. **武装 definition_gate**：Step 12 传 `registered_metric_ids=metric_registry` 派生 ids，先在 2-3 个真实 run 上统计 agent 自报 `used_metric_ids` 的注册率——未注册会直接 block，对齐率不足需先扩 seed 或降 warn。
+4. **degraded 封顶语义实盘观察**：重度兜底 run 置信度将从 low 上移 medium，下轮 run 核对展示合理性。
+5. 清洗器既有盲区（Editor agent 如实报告，未在本批修）：BPS/DPS 类真实 per-share 值可能被误杀（不在任何白名单）；无方向裸 %（如"市占率 55%"）strict 票不设防；中文"净利率/归母净利率"百分比未入 logic_critic claim 类型；EN 绝对额仍单一 operating income 类型。
+6. 红旗判定的"红旗"字面量与公司名冲突（002697）；英文弱词裸 `in` 子串匹配（"risk" 命中 "asterisk"）——均预存在低危。
 
 ## 📦 2026-07-31 L1 Wave 2（客户集中度摄取，巨潮年报 PDF）
 
