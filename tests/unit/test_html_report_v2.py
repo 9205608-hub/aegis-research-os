@@ -326,6 +326,81 @@ class TestChineseHeadlineFallback:
 
 
 # ─────────────────────────────────────────────────────────────────
+# Editor front_page_numbers 渲染接线（2026-08-01）
+# ─────────────────────────────────────────────────────────────────
+
+def _fpn_entries(n):
+    return [
+        {"label": f"指标{i}", "value": f"{i * 10}%", "context": f"背景说明{i}"}
+        for i in range(1, n + 1)
+    ]
+
+
+class TestFrontPageNumbers:
+    """Editor front_page_numbers → REPORT.frontPageNumbers 映射。
+
+    数据侧清洗（report_editor._scrub_front_page_numbers）已有独立回归
+    （test_front_page_scrub.py）；这里只测渲染装配：有数据渲染 / 空列表
+    零占位 / 超限截断 / 半空条目过滤 / dict 与 dataclass 双形态 / 中文
+    label 原样透传。
+    """
+
+    def test_entries_pass_through_with_chinese_labels(self):
+        rep = _build_cn(edited_report=SimpleNamespace(
+            headline="编辑器标题", front_page_numbers=_fpn_entries(4)))
+        fpn = rep["frontPageNumbers"]
+        assert len(fpn) == 4
+        assert fpn[0] == {"label": "指标1", "value": "10%",
+                          "context": "背景说明1"}
+
+    def test_no_editor_yields_empty_list(self):
+        # 空列表 = 模板零占位（report.jsx FrontPageNumbers 返回 null）
+        rep = _build_cn(edited_report=None)
+        assert rep["frontPageNumbers"] == []
+
+    def test_empty_field_yields_empty_list(self):
+        rep = _build_cn(edited_report=SimpleNamespace(front_page_numbers=[]))
+        assert rep["frontPageNumbers"] == []
+
+    def test_editor_without_field_yields_empty_list(self):
+        # 旧缓存的 EditedReport 可能压根没有该字段
+        rep = _build_cn(edited_report=SimpleNamespace(headline="标题"))
+        assert rep["frontPageNumbers"] == []
+
+    def test_truncated_to_five(self):
+        # Editor schema maxItems=6；渲染端兜底截到 5
+        rep = _build_cn(edited_report=SimpleNamespace(
+            front_page_numbers=_fpn_entries(6)))
+        assert len(rep["frontPageNumbers"]) == 5
+        assert rep["frontPageNumbers"][-1]["label"] == "指标5"
+
+    def test_half_empty_entries_filtered_before_cap(self):
+        # label/value 缺一即跳过，且坏条目不挤占 5 条名额
+        entries = [
+            {"label": "", "value": "12%", "context": ""},
+            {"label": "只有标签", "value": "", "context": ""},
+        ] + _fpn_entries(5)
+        rep = _build_cn(edited_report=SimpleNamespace(
+            front_page_numbers=entries))
+        fpn = rep["frontPageNumbers"]
+        assert len(fpn) == 5
+        assert fpn[0]["label"] == "指标1"
+
+    def test_dict_shaped_edited_report_from_replay_cache(self):
+        # replay 缓存里 edited_report 是 dict 而非 dataclass（_g 双形态）
+        rep = _build_cn(edited_report={"front_page_numbers": _fpn_entries(2)})
+        assert len(rep["frontPageNumbers"]) == 2
+
+    def test_generated_html_carries_entries(self):
+        html = _generate(edited_report=SimpleNamespace(
+            headline="编辑器标题", opening_paragraph="开篇",
+            front_page_numbers=_fpn_entries(3)))
+        rep = json.loads(_extract_report_json(html))
+        assert len(rep["frontPageNumbers"]) == 3
+        assert rep["frontPageNumbers"][0]["label"] == "指标1"
+
+
+# ─────────────────────────────────────────────────────────────────
 # US long-form unit suffix ("usd bs" regression)
 # ─────────────────────────────────────────────────────────────────
 
