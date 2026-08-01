@@ -4986,30 +4986,47 @@ class AutoResearchOrchestrator:
             key_text = best.text
             confidence = best.confidence
 
-        # Detect red flags: any observation with certain keywords or high-severity signals
+        # Detect red flags: tiered keywords + high-severity signals.
         # BUG-Y45 (2026-05-06): EN-only keyword set missed every Chinese
-        # narrative red flag. CN agents would still surface strong
-        # counterarguments (line 3372-3373 below catches those) but the
-        # keyword path was silent for A-share. Now both alphabets match,
-        # so inter-agent "red_flag from X" cumulative findings are
-        # populated even when the LLM speaks Chinese.
+        # narrative red flag. Both alphabets match (kept below), so
+        # inter-agent "red_flag from X" cumulative findings are populated
+        # even when the LLM speaks Chinese.
+        # 2026-08-01（红旗分档降误伤）：旧的单层关键词表把"风险/压力/下滑"
+        # 这类泛化词也当红旗——风险分析师正常履职必然命中，每轮 run 固定出现
+        # "5 agent 红旗"，污染 cumulative_findings 的 red_flag 字段并让下游
+        # synthesizer 过度防御。语义重定义：红旗 = "超预期/结构性异常"，
+        # 不是"提到了风险这个词"。分档规则：
+        #   - 强信号词（造假/虚增/fabricated/red flag 等）：单条观察命中即举旗
+        #   - 弱信号词（风险/下滑/risk/declining 等）：须 ≥2 条不同观察各自
+        #     命中，或弱词命中与该 agent 自身 confidence=="low" 同时出现才举旗
+        #   - 任一 counterargument.strength=="strong" 仍直接举旗（规则不变）
         red_flag = False
-        red_flag_en = {"concern", "risk", "unusual", "aggressive", "deteriorat",
-                       "warning", "questionable", "declining", "negative", "red flag",
-                       "fabricated", "implausible", "overstated"}
-        red_flag_zh = {
-            "风险", "异常", "激进", "恶化", "警示", "存疑", "下滑",
-            "下行", "压力", "红旗", "脆弱", "可疑", "造假", "粉饰",
-            "虚增", "高估", "过度", "不可持续", "不合理",
+        strong_flag_en = {"fabricated", "implausible", "overstated",
+                          "red flag", "questionable"}
+        strong_flag_zh = {
+            "造假", "粉饰", "虚增", "存疑", "可疑", "异常",
+            "急剧恶化", "不可持续", "警示", "红旗",
         }
+        weak_flag_en = {"concern", "risk", "unusual", "aggressive", "deteriorat",
+                        "warning", "declining", "negative"}
+        weak_flag_zh = {
+            "风险", "激进", "恶化", "下滑", "下行", "压力",
+            "脆弱", "高估", "过度", "不合理",
+        }
+        weak_hit_observations = 0
         for obs in judgment.observations:
-            txt_lc = obs.text.lower()
-            if any(kw in txt_lc for kw in red_flag_en):
+            txt = obs.text
+            txt_lc = txt.lower()
+            if any(kw in txt_lc for kw in strong_flag_en) or any(
+                    kw in txt for kw in strong_flag_zh):
                 red_flag = True
                 break
-            if any(kw in obs.text for kw in red_flag_zh):
-                red_flag = True
-                break
+            if any(kw in txt_lc for kw in weak_flag_en) or any(
+                    kw in txt for kw in weak_flag_zh):
+                weak_hit_observations += 1
+        if not red_flag:
+            weak_threshold = 1 if confidence == "low" else 2
+            red_flag = weak_hit_observations >= weak_threshold
         # Also flag if any counterargument is "strong"
         if any(c.strength == "strong" for c in judgment.counterarguments):
             red_flag = True

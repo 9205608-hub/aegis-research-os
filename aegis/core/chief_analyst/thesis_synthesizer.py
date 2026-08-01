@@ -100,6 +100,7 @@ _CN_UNIT_SUFFIX_RE = re.compile(
 # so chief_analyst components, agents, and any future LLM-touching parser
 # can share a single hardened implementation. Kept the name here as a thin
 # re-export for back-compat — existing imports keep working.
+from aegis.core._coerce import coerce_bool as _coerce_bool
 from aegis.core._coerce import coerce_list as _coerce_list  # noqa: F401
 
 
@@ -1374,7 +1375,12 @@ class ThesisSynthesizer:
             management_quality_summary=raw.get("management_quality_summary", ""),
             capital_allocation_assessment=raw.get("capital_allocation_assessment", ""),
             conviction_narrative=raw.get("conviction_narrative", ""),
-            hypothesis_validated=raw.get("hypothesis_validated", True),
+            # hypothesis_validated 字符串真值 bug（2026-08-01）：schema 虽声明
+            # boolean，LLM 仍可能吐字符串 "false"——非空字符串恒为真值，
+            # 会让 orchestrator 的 CONFIRMED/REFUTED 判定失真。经 coerce_bool
+            # 矫顽，缺失/无法识别时保持原默认 True。
+            hypothesis_validated=_coerce_bool(
+                raw.get("hypothesis_validated"), default=True),
             hypothesis_evolution=raw.get("hypothesis_evolution", ""),
             biggest_surprise=raw.get("biggest_surprise", ""),
             agents_that_challenged=_coerce_list(raw.get("agents_that_challenged")),

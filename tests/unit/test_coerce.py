@@ -15,9 +15,17 @@ Covers:
     unknown default (promoted from llm_agent_base.run() closure)
   - normalize_strength: AUDIT-B4 weak|moderate|strong normalization
     (LLMs mix it up with the low|medium|high confidence enum)
+  - coerce_bool: hypothesis_validated 字符串真值 bug（2026-08-01）——schema
+    声明 boolean 但 LLM 偶发吐字符串 "false"，非空字符串恒为真值，
+    orchestrator 的 CONFIRMED/REFUTED 判定因此失真 + synthesizer 接线回归
 """
 
-from aegis.core._coerce import coerce_list, normalize_low_med_high, normalize_strength
+from aegis.core._coerce import (
+    coerce_bool,
+    coerce_list,
+    normalize_low_med_high,
+    normalize_strength,
+)
 
 
 class TestCoerceList:
@@ -219,6 +227,95 @@ class TestDictParseBoundaries:
             implied_growth=0.1, sensitivity_rankings=[], meta_facts={},
         )
         assert thesis.unresolved_tensions == ["张力一", "张力二", "CONSISTENCY: w1"]
+
+
+class TestCoerceBool:
+    """coerce_bool — hypothesis_validated 字符串真值 bug（2026-08-01）。
+
+    非空字符串 "false" 在 Python 真值规则下恒为 True，若不矫顽，
+    auto_research.py 的 CONFIRMED/REFUTED 判定永远看不到被推翻的假设。
+    """
+
+    def test_bool_passes_through(self):
+        assert coerce_bool(True) is True
+        assert coerce_bool(False) is False
+        # default 不干扰真 bool 透传
+        assert coerce_bool(False, default=True) is False
+        assert coerce_bool(True, default=False) is True
+
+    def test_true_strings(self):
+        for s in ("true", "True", "TRUE", " true ", "yes", "Yes", "1"):
+            assert coerce_bool(s, default=False) is True, s
+
+    def test_false_strings(self):
+        # 生产事故形态：LLM 吐字符串 "false"
+        for s in ("false", "False", "FALSE", "  false  ", "no", "No", "0"):
+            assert coerce_bool(s, default=True) is False, s
+
+    def test_unrecognized_string_returns_default(self):
+        assert coerce_bool("maybe", default=True) is True
+        assert coerce_bool("maybe", default=False) is False
+        assert coerce_bool("", default=True) is True
+        assert coerce_bool("   ", default=False) is False
+        assert coerce_bool("确认", default=True) is True
+
+    def test_none_returns_default(self):
+        assert coerce_bool(None, default=True) is True
+        assert coerce_bool(None, default=False) is False
+
+    def test_default_param_default_is_false(self):
+        assert coerce_bool(None) is False
+        assert coerce_bool("garbage") is False
+
+    def test_other_types_return_default_never_raise(self):
+        # 规格：bool 透传、字符串按表识别，其余类型一律 default
+        for v in (1, 0, 1.5, [], ["true"], {}, {"v": True}, object()):
+            assert coerce_bool(v, default=True) is True, repr(v)
+            assert coerce_bool(v, default=False) is False, repr(v)
+
+
+class TestHypothesisValidatedWiring:
+    """接线回归：thesis_synthesizer._parse 侧 hypothesis_validated 经
+    coerce_bool 矫顽——字符串 "false" 不再被非空真值规则吞掉。"""
+
+    @staticmethod
+    def _synthesize_with(raw_fields, monkeypatch):
+        from unittest.mock import MagicMock
+
+        import aegis.core.chief_analyst.thesis_synthesizer as ts
+        monkeypatch.setattr(
+            ts, "_scrub_fair_value_claims",
+            lambda raw, *a, **k: (raw, []),
+        )
+        s = ts.ThesisSynthesizer()
+        s._llm = MagicMock()
+        s._llm.call_structured.return_value = {"core_thesis": "t", **raw_fields}
+        return s.synthesize(
+            entity_id="300750", entity_name="宁德时代",
+            directive=None, judgments=[],
+            computed_metrics={}, market_data={}, scenarios={},
+            implied_growth=0.1, sensitivity_rankings=[], meta_facts={},
+        )
+
+    def test_string_false_refutes(self, monkeypatch):
+        thesis = self._synthesize_with(
+            {"hypothesis_validated": "false"}, monkeypatch)
+        assert thesis.hypothesis_validated is False
+
+    def test_string_true_confirms(self, monkeypatch):
+        thesis = self._synthesize_with(
+            {"hypothesis_validated": "true"}, monkeypatch)
+        assert thesis.hypothesis_validated is True
+
+    def test_real_bool_false_passes_through(self, monkeypatch):
+        thesis = self._synthesize_with(
+            {"hypothesis_validated": False}, monkeypatch)
+        assert thesis.hypothesis_validated is False
+
+    def test_missing_defaults_to_true(self, monkeypatch):
+        # 与旧行为一致：字段缺失 → 默认 True（假设成立）
+        thesis = self._synthesize_with({}, monkeypatch)
+        assert thesis.hypothesis_validated is True
 
 
 class TestNormalizeLowMedHigh:

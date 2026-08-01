@@ -93,6 +93,34 @@ def coerce_dict(val: Any) -> dict:
     return {}
 
 
+def coerce_bool(val: Any, default: bool = False) -> bool:
+    """Robustly coerce an LLM-emitted boolean field to a Python bool.
+
+    hypothesis_validated 字符串真值 bug（2026-08-01）：SYNTHESIS_TOOL_SCHEMA
+    已把 ``hypothesis_validated`` 声明为 ``"type": "boolean"``，但 LLM 不守
+    schema 是本仓库的既定事实——偶发吐出字符串 ``"false"`` / ``"true"``。
+    Python 真值规则下非空字符串恒为 True，``"false"`` 也不例外，于是
+    orchestrator Step 12 的 CONFIRMED/REFUTED 判定永远看不到被推翻的假设。
+
+    Coerces:
+      - bool → unchanged (passes through)
+      - string "true"/"yes"/"1" (case-insensitive, whitespace-stripped) → True
+      - string "false"/"no"/"0" (case-insensitive, whitespace-stripped) → False
+      - any other type, None, or unrecognized string → ``default``
+
+    Never raises.
+    """
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        s = val.strip().lower()
+        if s in ("true", "yes", "1"):
+            return True
+        if s in ("false", "no", "0"):
+            return False
+    return default
+
+
 def normalize_low_med_high(val: Any) -> str:
     """Normalize an LLM-emitted bucket value to low/medium/high.
 
