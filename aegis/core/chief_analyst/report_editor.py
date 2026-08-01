@@ -293,6 +293,12 @@ class ReportEditor:
             from aegis.core.acquisition.connectors.customer_concentration import (
                 customer_sanctioned_pcts,
             )
+            from aegis.core.acquisition.connectors.restricted_release import (
+                restricted_sanctioned_pcts,
+            )
+            from aegis.core.acquisition.connectors.equity_pledge import (
+                pledge_sanctioned_pcts,
+            )
             _sanity = _valuation_sanity_verdict(scenarios, market_data)
             scrubbed, warns = _scrub_fair_value_claims(
                 raw, scenarios, market_data, fields=editor_fields,
@@ -310,6 +316,13 @@ class ReportEditor:
                     # L1 Wave 2：客户/供应商集中度 %（真实披露数据，红线 9）
                     + customer_sanctioned_pcts(
                         (meta_facts or {}).get("__customer_concentration")
+                    )
+                    # L1 Wave 3：解禁占比/质押比例 %（真实披露数据，红线 9）
+                    + restricted_sanctioned_pcts(
+                        (meta_facts or {}).get("__restricted_release")
+                    )
+                    + pledge_sanctioned_pcts(
+                        (meta_facts or {}).get("__equity_pledge")
                     )
                 ),
                 strict=bool(_sanity and _sanity.get("mismatch")),

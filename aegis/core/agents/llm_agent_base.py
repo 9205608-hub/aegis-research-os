@@ -1158,6 +1158,37 @@ This is an A-share (China) entity. Write ALL natural-language output in Simplifi
                 )
                 parts.append("")
 
+            # === RESTRICTED RELEASE（L1 Wave 3, 2026-08-01）===
+            # A 股限售解禁日历（东财解禁批次）直接进 agent 上下文——
+            # agents 此前只能把"解禁减持抛压时点"写进 open_questions。
+            _rr_blk = inp.facts.get("__restricted_release") if inp.facts else None
+            if isinstance(_rr_blk, dict) and _rr_blk.get("lines_zh"):
+                parts.append("=== RESTRICTED RELEASE (限售解禁日历，真实披露数据) ===")
+                parts.append(f"  来源: {_rr_blk.get('source_note', '东财限售解禁批次')}")
+                for _ln in _rr_blk["lines_zh"]:
+                    parts.append(f"  {_ln}")
+                parts.append(
+                    "  → 解禁日历是真实披露数据，可直接引用；"
+                    "不要再把「限售解禁/减持抛压时点」列为未知数据缺口。"
+                )
+                parts.append("")
+
+            # === EQUITY PLEDGE（L1 Wave 3, 2026-08-01）===
+            # A 股股权质押（中登周频质押比例 + 东财重要股东质押明细）
+            # 直接进 agent 上下文——agents 此前只能把"大股东质押比例"
+            # 写进 open_questions。
+            _ep_blk = inp.facts.get("__equity_pledge") if inp.facts else None
+            if isinstance(_ep_blk, dict) and _ep_blk.get("lines_zh"):
+                parts.append("=== EQUITY PLEDGE (股权质押，真实披露数据) ===")
+                parts.append(f"  来源: {_ep_blk.get('source_note', '东财股权质押专题')}")
+                for _ln in _ep_blk["lines_zh"]:
+                    parts.append(f"  {_ln}")
+                parts.append(
+                    "  → 质押比例是真实披露数据，可直接引用；"
+                    "不要再把「大股东股权质押/平仓风险」列为未知数据缺口。"
+                )
+                parts.append("")
+
             # === DATA QUALITY ALERTS ===
             # Surface fact_bridge sanity-check issues so agents can caveat
             # their conclusions when source data is suspect (D&A missing,
