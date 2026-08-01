@@ -377,6 +377,12 @@ class ReportEditor:
             from aegis.core.acquisition.connectors.equity_pledge import (
                 pledge_sanctioned_pcts,
             )
+            from aegis.core.acquisition.connectors.holder_count import (
+                holder_count_sanctioned_pcts,
+            )
+            from aegis.core.acquisition.connectors.margin_trading import (
+                margin_sanctioned_pcts,
+            )
             _sanity = _valuation_sanity_verdict(scenarios, market_data)
             _strict_scrub = bool(_sanity and _sanity.get("mismatch"))
             # 设计红线 9：白名单一次装配，正文 5 字段与 front_page_numbers
@@ -402,6 +408,13 @@ class ReportEditor:
                 )
                 + pledge_sanctioned_pcts(
                     (meta_facts or {}).get("__equity_pledge")
+                )
+                # L1 Wave 4：户数变化/两融占比与变化 %（真实披露数据，红线 9）
+                + holder_count_sanctioned_pcts(
+                    (meta_facts or {}).get("__holder_count")
+                )
+                + margin_sanctioned_pcts(
+                    (meta_facts or {}).get("__margin_trading")
                 )
             )
             scrubbed, warns = _scrub_fair_value_claims(

@@ -1190,6 +1190,54 @@ This is an A-share (China) entity. Write ALL natural-language output in Simplifi
                 )
                 parts.append("")
 
+            # === HOLDER COUNT（L1 Wave 4, 2026-08-01）===
+            # A 股股东户数序列（东财股东户数明细）直接进 agent 上下文
+            # ——户数连续下降通常意味着筹码向少数账户集中（A 股经典
+            # 信号），agents 此前只能把"筹码结构"写进 open_questions。
+            _hc_blk = inp.facts.get("__holder_count") if inp.facts else None
+            if isinstance(_hc_blk, dict) and _hc_blk.get("lines_zh"):
+                parts.append("=== HOLDER COUNT (股东户数/筹码结构，真实披露数据) ===")
+                parts.append(f"  来源: {_hc_blk.get('source_note', '东财股东户数明细')}")
+                for _ln in _hc_blk["lines_zh"]:
+                    parts.append(f"  {_ln}")
+                parts.append(
+                    "  → 股东户数是真实披露数据，可直接引用；户数连续下降"
+                    "通常意味着筹码向少数账户集中，连续上升意味着筹码分散；"
+                    "不要再把「股东户数/筹码结构」列为未知数据缺口。"
+                )
+                parts.append("")
+
+            # === MARGIN TRADING（L1 Wave 4, 2026-08-01）===
+            # A 股融资融券余额（东财个股两融明细）直接进 agent 上下文
+            # ——agents 此前只能把"杠杆资金/融资盘规模"写进
+            # open_questions。非两融标的同样是有价值的事实。
+            _mt_blk = inp.facts.get("__margin_trading") if inp.facts else None
+            if isinstance(_mt_blk, dict) and _mt_blk.get("lines_zh"):
+                parts.append("=== MARGIN TRADING (融资融券余额，真实披露数据) ===")
+                parts.append(f"  来源: {_mt_blk.get('source_note', '东财融资融券个股明细')}")
+                for _ln in _mt_blk["lines_zh"]:
+                    parts.append(f"  {_ln}")
+                parts.append(
+                    "  → 两融余额/占流通市值比是真实披露数据，可直接引用；"
+                    "不要再把「杠杆资金规模/两融情绪」列为未知数据缺口。"
+                )
+                parts.append("")
+
+            # === LHB ACTIVITY（L1 Wave 4, 2026-08-01）===
+            # A 股龙虎榜近三个月上榜统计（东财）——未上榜则不盖章不注入
+            # （多数票的常态），有记录时席位异动是短期资金面的真实事实。
+            _lhb_blk = inp.facts.get("__lhb_activity") if inp.facts else None
+            if isinstance(_lhb_blk, dict) and _lhb_blk.get("lines_zh"):
+                parts.append("=== LHB ACTIVITY (龙虎榜席位异动，真实披露数据) ===")
+                parts.append(f"  来源: {_lhb_blk.get('source_note', '东财龙虎榜个股上榜统计')}")
+                for _ln in _lhb_blk["lines_zh"]:
+                    parts.append(f"  {_ln}")
+                parts.append(
+                    "  → 龙虎榜上榜次数/净买卖额是真实披露数据，可直接引用；"
+                    "不要再把「游资/机构席位动向」列为未知数据缺口。"
+                )
+                parts.append("")
+
             # === DATA QUALITY ALERTS ===
             # Surface fact_bridge sanity-check issues so agents can caveat
             # their conclusions when source data is suspect (D&A missing,

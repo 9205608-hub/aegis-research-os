@@ -1366,6 +1366,60 @@ class AutoResearchOrchestrator:
             except Exception as _ep_err:
                 _log(f"  ⚠ Equity pledge failed (non-blocking): {_ep_err}")
 
+        # ── L1 Wave 4 (2026-08-01): A 股股东户数/两融余额/龙虎榜摄取 ──
+        # L1 数据摄取延续（Wave 3 解禁/质押同构）：筹码结构（户数连续
+        # 下降=筹码集中的 A 股经典信号）、杠杆资金（融资余额及其占流通
+        # 市值比）与龙虎榜席位异动此前只能列为未知缺口。失败不阻断主流程。
+        if is_a_share:
+            try:
+                from aegis.core.acquisition.connectors.holder_count import (
+                    fetch_holder_count,
+                )
+                _hc = fetch_holder_count(stock_code)
+                if _hc:
+                    meta_facts["__holder_count"] = _hc
+                    _log(f"Holder count (L1): 最新 "
+                         f"{_hc.get('latest_holder_count'):,} 户，趋势 "
+                         f"{_hc.get('holder_count_trend') or 'n/a'}"
+                         f"（{_hc['source_note']}）")
+                else:
+                    _log("Holder count (L1): 东财股东户数不可得")
+            except Exception as _hc_err:
+                _log(f"  ⚠ Holder count failed (non-blocking): {_hc_err}")
+            try:
+                from aegis.core.acquisition.connectors.margin_trading import (
+                    fetch_margin_trading,
+                )
+                _mt = fetch_margin_trading(stock_code)
+                if _mt:
+                    meta_facts["__margin_trading"] = _mt
+                    if _mt.get("is_margin_eligible"):
+                        _mt_pct = _mt.get("margin_balance_pct_of_float")
+                        _log(f"Margin trading (L1): 融资余额占流通市值 "
+                             f"{f'{_mt_pct:.2f}%' if _mt_pct is not None else 'n/a'}"
+                             f"（{_mt['source_note']}）")
+                    else:
+                        _log(f"Margin trading (L1): 非两融标的"
+                             f"（{_mt['source_note']}）")
+                else:
+                    _log("Margin trading (L1): 东财两融数据不可得")
+            except Exception as _mt_err:
+                _log(f"  ⚠ Margin trading failed (non-blocking): {_mt_err}")
+            try:
+                from aegis.core.acquisition.connectors.lhb_activity import (
+                    fetch_lhb_activity,
+                )
+                _lhb = fetch_lhb_activity(stock_code)
+                if _lhb:
+                    meta_facts["__lhb_activity"] = _lhb
+                    _log(f"LHB activity (L1): 近三个月上榜 "
+                         f"{_lhb.get('times_on_list')} 次"
+                         f"（{_lhb['source_note']}）")
+                else:
+                    _log("LHB activity (L1): 近三个月未上榜或数据不可得")
+            except Exception as _lhb_err:
+                _log(f"  ⚠ LHB activity failed (non-blocking): {_lhb_err}")
+
         # BUG-46: clean segment_detail so every category has non-overlapping
         # members that sum to company revenue. Fixes:
         #  - Products Breakdown double-counting parent+child roll-ups
