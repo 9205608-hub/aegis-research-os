@@ -364,18 +364,25 @@ class LogicCritic(CriticBase):
             if is_cny else ("operating income", "operating profit")
         )
         # TODO-Y6 closure: zh absolute net-profit / gross-profit claims get
-        # their own claim types with matching consolidated ceilings. The EN
-        # absolute path stays operating-income-only — unchanged behavior.
+        # their own claim types with matching consolidated ceilings.
+        # 盲区修复（2026-08-01）：EN 绝对额路径从 operating-income-only 扩到
+        # net profit / gross profit（"$X B" 表述），镜像 zh 的 claim 结构，
+        # 两语言对称。EN 关键词须小写——比对窗口是 full_lower 切片。
         netprofit_keywords = (
-            ("净利润", "归母净利", "归属于母公司") if is_cny else ()
+            ("净利润", "归母净利", "归属于母公司") if is_cny
+            else ("net profit", "net income", "net earnings")
         )
-        grossprofit_keywords = ("毛利",) if is_cny else ()  # 毛利 / 毛利润
+        grossprofit_keywords = (
+            ("毛利",) if is_cny else ("gross profit",)  # 毛利 / 毛利润
+        )
 
-        def _abs_claim_type_zh(window: str, num_pos: int) -> str | None:
-            """Classify a zh absolute currency claim by the profit keyword
+        def _abs_claim_type(window: str, num_pos: int) -> str | None:
+            """Classify an absolute currency claim by the profit keyword
             NEAREST the number (营业利润率 and 净利润 both in window → the
             adjacent one wins), capped at 40 chars so cross-clause keywords
-            don't misattribute."""
+            don't misattribute. 盲区修复（2026-08-01）：原 zh 专用
+            （_abs_claim_type_zh），现两语言共用——keyword 元组已按语言
+            装配，EN 同样按最近关键词归类 oi/ni/gp。"""
             best: tuple[int, str] | None = None
             for ctype, kws in (
                 ("abs_oi", opinc_keywords),
@@ -395,7 +402,7 @@ class LogicCritic(CriticBase):
 
         claimed_pairs: list[tuple[str, float, float, str, str]] = []
         # (seg_name, pct_or_raw, implied_oi, jid, claim_type)
-        # claim_type ∈ {"opm", "gm", "abs_oi", "abs_ni", "abs_gp"}
+        # claim_type ∈ {"opm", "gm", "nm", "abs_oi", "abs_ni", "abs_gp"}
 
         for j in judgments:
             texts: list[str] = []
@@ -438,7 +445,19 @@ class LogicCritic(CriticBase):
                     or "gross margins" in window
                     or "毛利率" in window
                 )
-                if not is_opm and not is_gm:
+                # 盲区修复（2026-08-01）：净利率/归母净利率 % claim 此前
+                # 无 claim 类型，"分部净利率45%" 完全绕过 ceiling 检查。
+                # "净利率" 子串覆盖 归母净利率/销售净利率；"净利润率" 单列
+                # （净利率 不是它的连续子串）。
+                is_nm = (
+                    "net margin" in window
+                    or "net margins" in window
+                    or "net profit margin" in window
+                    or "net income margin" in window
+                    or "净利率" in window
+                    or "净利润率" in window
+                )
+                if not is_opm and not is_gm and not is_nm:
                     continue
                 # Find the longest matching segment name in the window
                 matched_seg = None
@@ -450,7 +469,7 @@ class LogicCritic(CriticBase):
                         break
                 if matched_seg is None or matched_rev is None:
                     continue
-                claim_type = "opm" if is_opm else "gm"
+                claim_type = "opm" if is_opm else ("gm" if is_gm else "nm")
                 key = (matched_seg, claim_type, pct)
                 if key in seen_in_this_j:
                     continue
@@ -503,13 +522,10 @@ class LogicCritic(CriticBase):
                 window_start = max(0, start - 80)
                 window_end = min(len(full_text), end + 40)
                 window = full_lower[window_start:window_end]
-                if is_cny:
-                    claim_type = _abs_claim_type_zh(window, start - window_start)
-                else:
-                    claim_type = (
-                        "abs_oi"
-                        if any(kw in window for kw in opinc_keywords) else None
-                    )
+                # 盲区修复（2026-08-01）：EN 与 zh 统一走最近关键词归类
+                # （abs_oi / abs_ni / abs_gp）。EN 原先只识别 operating
+                # income，"Cloud net profit of $50B" 完全绕过 ceiling 检查。
+                claim_type = _abs_claim_type(window, start - window_start)
                 if claim_type is None:
                     continue
                 matched_seg = None
@@ -576,6 +592,29 @@ class LogicCritic(CriticBase):
                         ),
                         judgment_ids=[jid],
                         action="Remove the specific gross margin percentage.",
+                    ))
+            elif ctype == "nm":
+                # 盲区修复（2026-08-01）：净利率/归母净利率 % claim vs 归母
+                # 净利 ceiling（fact_bridge Step 2b 已把归母口径提升为
+                # net_income）。净利润不受营业利润上界约束（非经常性损益），
+                # meta_facts 缺 net_income → 保守跳过不误报（与 abs_ni 同则）。
+                if (
+                    total_net_income and total_net_income > 0
+                    and implied > total_net_income * 1.05
+                ):
+                    issues.append(self._make_issue(
+                        code="LOGIC_SEGMENT_NET_MARGIN_IMPOSSIBLE",
+                        severity="block",
+                        message=(
+                            f"Segment '{seg_name}' claimed net margin "
+                            f"{raw_val:.0f}% implies net profit "
+                            f"{_fmt_big(implied)}, which exceeds consolidated "
+                            f"net income {_fmt_big(total_net_income)}. "
+                            f"Mathematically impossible — segment net profit "
+                            f"was not disclosed and the value was fabricated."
+                        ),
+                        judgment_ids=[jid],
+                        action="Remove the specific net margin percentage.",
                     ))
             elif ctype == "abs_oi":
                 if implied > total_opinc * 1.05:
