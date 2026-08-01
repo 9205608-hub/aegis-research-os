@@ -268,6 +268,10 @@ class LogicCritic(CriticBase):
         segment_detail = context.get("segment_detail") or {}
         total_opinc = meta_facts.get("operating_income")
         total_gross_profit = meta_facts.get("gross_profit")
+        # TODO-Y6 closure (2026-08-01): 归母净利 ceiling for zh absolute
+        # net-profit claims. fact_bridge already switches this to 归母口径
+        # when both are present.
+        total_net_income = meta_facts.get("net_income")
         if not total_opinc or total_opinc <= 0 or not segment_detail:
             return issues
 
@@ -312,11 +316,16 @@ class LogicCritic(CriticBase):
 
         import re
 
-        # TODO-Y6 (2026-05-06): pick the currency unit for absolute-OI claims
-        # off `meta_facts.__display`. CNY uses ¥X亿 (亿 = 1e8); USD uses $XB
-        # (B = 1e9). Without this branch, A-share LLM output that fabricates
-        # `¥3亿净利润` totally bypasses the segment ceiling check, exactly the
-        # mirror of BUG-A25 in synthesizer's `_scrub_fair_value_claims`.
+        # TODO-Y6 (2026-05-06, CLOSED 2026-08-01): pick the currency unit for
+        # absolute claims off `meta_facts.__display`. CNY uses ¥X亿 (亿 =
+        # 1e8); USD uses $XB (B = 1e9). The original CNY pattern required a
+        # literal ¥ and only knew the 亿 unit, and the keyword window only
+        # knew 营业利润/经营利润 — so A-share LLM output fabricating
+        # `¥3亿净利润` / `净利润25亿元` / `毛利50000万元` totally bypassed
+        # the segment ceiling check (mirror of BUG-A25 in synthesizer's
+        # `_scrub_fair_value_claims`). Now covered: 净利润/归母净利/毛利/
+        # 营业利润 keywords + ¥X亿 / X亿元 / X万元 / X万亿元 / 紧邻关键词的
+        # bare X亿 number forms, with per-claim-type consolidated ceilings.
         _display = meta_facts.get("__display") or {}
         _currency = (_display.get("currency") or meta_facts.get("__currency") or "USD").upper()
         is_cny = _currency in ("CNY", "RMB", "¥") or _display.get("symbol") == "¥"
@@ -330,11 +339,15 @@ class LogicCritic(CriticBase):
             r"\$\s*(\d{1,4}(?:\.\d+)?)\s*(?:B\b|billion\b)",
             re.IGNORECASE,
         )
-        # ¥ opinc / 亿 patterns: `¥3.5亿` or `3.5亿` near "operating income".
-        # We require the explicit ¥ to avoid catching share-count "X亿股".
+        # ¥ / 亿 / 万元 patterns (TODO-Y6 closure): optional ¥, units
+        # 万亿/亿/万, optional trailing 元. To exclude bare counts
+        # (8亿股 / 3万人), a match must carry ¥ or 元 — OR sit immediately
+        # after a profit keyword (净利润25亿) with a non-count next char;
+        # see the in-loop guard.
         abs_yuan_pattern = re.compile(
-            r"¥\s*(\d{1,4}(?:\.\d+)?)\s*亿",
+            r"(¥)?\s*(\d{1,6}(?:\.\d+)?)\s*(万亿|亿|万)(元)?",
         )
+        _CNY_UNIT_SCALE = {"万亿": 1e12, "亿": 1e8, "万": 1e4}
         abs_pattern = abs_yuan_pattern if is_cny else abs_dollar_pattern
         abs_unit_scale = 1e8 if is_cny else 1e9
         sigil = "¥" if is_cny else "$"
@@ -350,11 +363,39 @@ class LogicCritic(CriticBase):
             ("operating income", "operating profit", "经营利润", "营业利润")
             if is_cny else ("operating income", "operating profit")
         )
+        # TODO-Y6 closure: zh absolute net-profit / gross-profit claims get
+        # their own claim types with matching consolidated ceilings. The EN
+        # absolute path stays operating-income-only — unchanged behavior.
+        netprofit_keywords = (
+            ("净利润", "归母净利", "归属于母公司") if is_cny else ()
+        )
+        grossprofit_keywords = ("毛利",) if is_cny else ()  # 毛利 / 毛利润
+
+        def _abs_claim_type_zh(window: str, num_pos: int) -> str | None:
+            """Classify a zh absolute currency claim by the profit keyword
+            NEAREST the number (营业利润率 and 净利润 both in window → the
+            adjacent one wins), capped at 40 chars so cross-clause keywords
+            don't misattribute."""
+            best: tuple[int, str] | None = None
+            for ctype, kws in (
+                ("abs_oi", opinc_keywords),
+                ("abs_ni", netprofit_keywords),
+                ("abs_gp", grossprofit_keywords),
+            ):
+                for kw in kws:
+                    idx = window.find(kw)
+                    while idx != -1:
+                        dist = abs(idx - num_pos)
+                        if dist <= 40 and (best is None or dist < best[0]):
+                            best = (dist, ctype)
+                        idx = window.find(kw, idx + 1)
+            return best[1] if best else None
+
         seg_names_sorted = sorted(seg_rev_lookup.keys(), key=len, reverse=True)
 
         claimed_pairs: list[tuple[str, float, float, str, str]] = []
         # (seg_name, pct_or_raw, implied_oi, jid, claim_type)
-        # claim_type ∈ {"opm", "gm", "abs_oi"}
+        # claim_type ∈ {"opm", "gm", "abs_oi", "abs_ni", "abs_gp"}
 
         for j in judgments:
             texts: list[str] = []
@@ -379,16 +420,23 @@ class LogicCritic(CriticBase):
                 window_start = max(0, start - 80)
                 window_end = min(len(full_text), end + 40)
                 window = full_lower[window_start:window_end]
-                # Distinguish operating margin vs gross margin vs other
+                # Distinguish operating margin vs gross margin vs other.
+                # TODO-Y6 closure: zh margin-rate keywords (营业利润率 /
+                # 经营利润率 / 毛利率) so A-share pct claims hit the same
+                # ceilings. CJK survives .lower() unchanged, so matching
+                # against `window` (lowercased original) is safe.
                 is_opm = (
                     "operating margin" in window
                     or "operating margins" in window
                     or " om " in window
                     or " om:" in window
+                    or "营业利润率" in window
+                    or "经营利润率" in window
                 )
                 is_gm = (
                     "gross margin" in window
                     or "gross margins" in window
+                    or "毛利率" in window
                 )
                 if not is_opm and not is_gm:
                     continue
@@ -412,21 +460,57 @@ class LogicCritic(CriticBase):
                     (matched_seg, pct, implied, j.judgment_id, claim_type)
                 )
 
-            # === Pattern B: absolute operating income claims ===
-            # TODO-Y6: scale + scan window depend on currency. CNY: ¥X亿
-            # (1e8); USD: $XB (1e9).
+            # === Pattern B: absolute profit claims ===
+            # TODO-Y6 closure: scale + scan window depend on currency.
+            # CNY: ¥X亿 / X亿元 / X万元 / X万亿元 / 净利润X亿; USD: $XB.
+            # EN keeps the original operating-income-only window check;
+            # zh classifies by nearest profit keyword (oi / ni / gp).
             for m in abs_pattern.finditer(full_text):
-                try:
-                    amount_b = float(m.group(1))
-                except ValueError:
-                    continue
-                if amount_b < 0.1 or amount_b > 20000:
-                    continue
                 start, end = m.span()
+                if is_cny:
+                    if not m.group(1) and not m.group(4):
+                        # 无 ¥ 无 元：只接受紧邻利润关键词的形态
+                        # （净利润25亿），排除计数单位（8亿股 / 3万人）。
+                        nxt = full_text[end:end + 1]
+                        prev = full_text[max(0, start - 8):start]
+                        if nxt in "股份人名家次台笔单":
+                            continue
+                        if not any(kw in prev for kw in (
+                            "净利润", "归母净利", "毛利", "营业利润", "经营利润",
+                        )):
+                            continue
+                    try:
+                        implied = float(m.group(2)) * _CNY_UNIT_SCALE[m.group(3)]
+                    except ValueError:
+                        continue
+                    # Same effective band as before: 0.1亿 .. 2万亿
+                    if implied < 1e7 or implied > 2e12:
+                        continue
+                    # AUDIT (logic:338) follow-up: a currency amount right
+                    # next to 营收/收入 is a revenue figure (营业收入¥60亿)
+                    # — never a profit claim; skip before classification.
+                    tight = full_text[max(0, start - 10):end + 4]
+                    if "营收" in tight or "收入" in tight:
+                        continue
+                else:
+                    try:
+                        amount_b = float(m.group(1))
+                    except ValueError:
+                        continue
+                    if amount_b < 0.1 or amount_b > 20000:
+                        continue
+                    implied = amount_b * abs_unit_scale
                 window_start = max(0, start - 80)
                 window_end = min(len(full_text), end + 40)
                 window = full_lower[window_start:window_end]
-                if not any(kw in window for kw in opinc_keywords):
+                if is_cny:
+                    claim_type = _abs_claim_type_zh(window, start - window_start)
+                else:
+                    claim_type = (
+                        "abs_oi"
+                        if any(kw in window for kw in opinc_keywords) else None
+                    )
+                if claim_type is None:
                     continue
                 matched_seg = None
                 for seg_name in seg_names_sorted:
@@ -435,13 +519,15 @@ class LogicCritic(CriticBase):
                         break
                 if matched_seg is None:
                     continue
-                implied = amount_b * abs_unit_scale
-                key = (matched_seg, "abs_oi", amount_b)
+                # Display value in the big display unit (亿 for CNY, B for
+                # USD) so 万元-denominated claims render consistently.
+                amount_disp = implied / abs_unit_scale
+                key = (matched_seg, claim_type, amount_disp)
                 if key in seen_in_this_j:
                     continue
                 seen_in_this_j.add(key)
                 claimed_pairs.append(
-                    (matched_seg, amount_b, implied, j.judgment_id, "abs_oi")
+                    (matched_seg, amount_disp, implied, j.judgment_id, claim_type)
                 )
 
         if not claimed_pairs:
@@ -500,6 +586,48 @@ class LogicCritic(CriticBase):
                             f"Segment '{seg_name}' claimed operating income "
                             f"{sigil}{raw_val:.1f}{big_unit} exceeds consolidated total "
                             f"{_fmt_big(total_opinc)}. Mathematically impossible."
+                        ),
+                        judgment_ids=[jid],
+                        action=f"Remove the specific {sigil}-denominated figure.",
+                    ))
+            elif ctype == "abs_ni":
+                # TODO-Y6 closure: zh net-profit claim vs 归母净利 ceiling.
+                # Only checked when consolidated net income is available —
+                # net income is NOT bounded by operating income (non-
+                # operating items), so no opinc fallback ceiling.
+                if (
+                    total_net_income and total_net_income > 0
+                    and implied > total_net_income * 1.05
+                ):
+                    issues.append(self._make_issue(
+                        code="LOGIC_SEGMENT_ABS_NI_IMPOSSIBLE",
+                        severity="block",
+                        message=(
+                            f"Segment '{seg_name}' claimed net profit "
+                            f"{sigil}{raw_val:.1f}{big_unit} exceeds consolidated "
+                            f"net income {_fmt_big(total_net_income)}. "
+                            f"Mathematically impossible — segment net profit "
+                            f"was not disclosed and the value was fabricated."
+                        ),
+                        judgment_ids=[jid],
+                        action=f"Remove the specific {sigil}-denominated figure.",
+                    ))
+            elif ctype == "abs_gp":
+                # TODO-Y6 closure: zh gross-profit claim vs consolidated
+                # gross profit ceiling.
+                if (
+                    total_gross_profit and total_gross_profit > 0
+                    and implied > total_gross_profit * 1.05
+                ):
+                    issues.append(self._make_issue(
+                        code="LOGIC_SEGMENT_ABS_GP_IMPOSSIBLE",
+                        severity="block",
+                        message=(
+                            f"Segment '{seg_name}' claimed gross profit "
+                            f"{sigil}{raw_val:.1f}{big_unit} exceeds consolidated "
+                            f"total gross profit {_fmt_big(total_gross_profit)}. "
+                            f"Mathematically impossible — segment gross profit "
+                            f"was not disclosed and the value was fabricated."
                         ),
                         judgment_ids=[jid],
                         action=f"Remove the specific {sigil}-denominated figure.",

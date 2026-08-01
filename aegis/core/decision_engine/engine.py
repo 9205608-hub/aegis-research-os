@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from aegis.core.critics.degraded_input import split_issue_counts
 from aegis.data_contracts.critic_result_schema import CriticResult
 from aegis.data_contracts.edge_assessment_schema import EdgeAssessment
 from aegis.data_contracts.judgment_schema import JudgmentContract
@@ -774,15 +775,18 @@ class DecisionEngine:
         "downgraded" or "blocked" run cannot emit `high` confidence because
         the combination "I am highly confident in a thesis the system
         decided not to publish" is internally contradictory.
+
+        2026-08-01: degraded-input warns/blocks — critic issues whose
+        offending judgments are all LLM-fallback (mock) templates — are
+        systemic false positives describing INPUT degradation, not
+        analytical failures. They no longer deduct from the score; instead,
+        any degraded input caps the bucket at "medium" below (输入不完整
+        不该 high — same semantics as the gate_skipped_count cap). Real
+        analytical warns/blocks deduct exactly as before.
         """
-        total_warns = sum(
-            sum(1 for i in cr.issues if i.severity == "warn")
-            for cr in critic_results
-        )
-        total_blocks = sum(
-            sum(1 for i in cr.issues if i.severity == "block")
-            for cr in critic_results
-        )
+        split = split_issue_counts(critic_results, judgments)
+        total_warns = split.real_warns
+        total_blocks = split.real_blocks
 
         # Evidence and narrative strength
         total_evidence = sum(len(j.used_evidence_ids) for j in judgments)
@@ -790,12 +794,14 @@ class DecisionEngine:
         has_narratives = sum(1 for j in judgments if getattr(j, 'narrative_supplement', None))
 
         # Scoring: start at 70, adjust based on quality signals.
-        # Block penalty is moderate (2pts) because many blocks come from
-        # mock fallback observations lacking source_ids — these are systemic
-        # false positives, not analytical failures.
+        # Block penalty is moderate (2pts). Degraded-input (mock-fallback)
+        # issues are excluded from these counts entirely — they used to be
+        # the "systemic false positives" this penalty was softened for;
+        # they now surface via the medium cap below instead of point
+        # deductions.
         score = 70
-        score -= total_blocks * 2        # Each block costs 2 points
-        score -= total_warns * 0.5       # Each warn costs 0.5 points
+        score -= total_blocks * 2        # Each real block costs 2 points
+        score -= total_warns * 0.5       # Each real warn costs 0.5 points
         score += min(total_evidence, 20) * 1   # Evidence adds up to 20 points
         score += min(total_observations, 60) * 0.3  # Observations add up to 18
         score += has_narratives * 5      # Each narrative adds 5 points (high quality signal)
@@ -829,6 +835,14 @@ class DecisionEngine:
         # sensitivity tables were absent is exactly the 新易盛/沈飞 failure
         # Grok called 发布门槛失守 — missing data caps confidence at medium.
         if gate_skipped_count > 0:
+            bucket = cap(bucket, "medium")
+
+        # 2026-08-01: degraded input (any LLM-fallback judgment present)
+        # caps confidence at medium — the fake warns no longer drag the
+        # score down, but a run whose specialist inputs partially collapsed
+        # to rule templates must not claim "high" either. Same semantics as
+        # the gate_skipped cap above: missing/degraded inputs ≠ passes.
+        if split.degraded_judgment_count > 0:
             bucket = cap(bucket, "medium")
 
         return bucket
