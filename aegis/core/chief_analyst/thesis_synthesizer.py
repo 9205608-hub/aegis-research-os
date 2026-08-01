@@ -1304,6 +1304,13 @@ class ThesisSynthesizer:
         from aegis.core.acquisition.connectors.customer_concentration import (
             customer_sanctioned_pcts,
         )
+        # L1 Wave 3：解禁占比 / 质押比例 % 同则进白名单
+        from aegis.core.acquisition.connectors.restricted_release import (
+            restricted_sanctioned_pcts,
+        )
+        from aegis.core.acquisition.connectors.equity_pledge import (
+            pledge_sanctioned_pcts,
+        )
         raw, valuation_warnings = _scrub_fair_value_claims(
             raw, scenarios, market_data,
             extra_sanctioned_pcts=(
@@ -1319,6 +1326,12 @@ class ThesisSynthesizer:
                 )
                 + customer_sanctioned_pcts(
                     (meta_facts or {}).get("__customer_concentration")
+                )
+                + restricted_sanctioned_pcts(
+                    (meta_facts or {}).get("__restricted_release")
+                )
+                + pledge_sanctioned_pcts(
+                    (meta_facts or {}).get("__equity_pledge")
                 )
             ),
             strict=_mismatch or _gap_observation,
@@ -1515,6 +1528,32 @@ class ThesisSynthesizer:
                          "客户/供应商集中度为年报真实披露数据可直接引用，"
                          "不要再把客户集中度列为未知缺口)")
             for _ln in _cust_syn["lines_zh"]:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        # ── L1 Wave 3（2026-08-01）：解禁日历进合成器上下文 ──
+        # A 股限售解禁供给侧抛压有了真实日历后，催化剂/风险时点可以
+        # 落在具体日期与占比上，而不是写进 open_questions。
+        _rr_syn = (meta_facts or {}).get("__restricted_release")
+        if isinstance(_rr_syn, dict) and _rr_syn.get("lines_zh"):
+            parts.append("=== RESTRICTED RELEASE (限售解禁日历，真实披露数据) ===")
+            parts.append(f"({_rr_syn.get('source_note', '东财限售解禁批次')}——"
+                         "解禁日期/占比为真实披露数据可直接引用，"
+                         "不要再把限售解禁列为未知缺口)")
+            for _ln in _rr_syn["lines_zh"]:
+                parts.append(f"  - {_ln}")
+            parts.append("")
+
+        # ── L1 Wave 3（2026-08-01）：股权质押进合成器上下文 ──
+        # 大股东质押是治理/平仓风险的已证实事实源——有真实比例后，
+        # 质押风险进论点与风险评估，而不是写进 open_questions。
+        _ep_syn = (meta_facts or {}).get("__equity_pledge")
+        if isinstance(_ep_syn, dict) and _ep_syn.get("lines_zh"):
+            parts.append("=== EQUITY PLEDGE (股权质押，真实披露数据) ===")
+            parts.append(f"({_ep_syn.get('source_note', '东财股权质押专题')}——"
+                         "质押比例为真实披露数据可直接引用，"
+                         "不要再把大股东质押列为未知缺口)")
+            for _ln in _ep_syn["lines_zh"]:
                 parts.append(f"  - {_ln}")
             parts.append("")
 

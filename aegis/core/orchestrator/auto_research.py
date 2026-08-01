@@ -1329,6 +1329,43 @@ class AutoResearchOrchestrator:
             except Exception as _cc_err:
                 _log(f"  ⚠ Customer concentration failed (non-blocking): {_cc_err}")
 
+        # ── L1 Wave 3 (2026-08-01): A 股解禁日历与股权质押摄取（东财） ──
+        # L1 数据摄取延续（Wave 1 分部收入 / Wave 2 客户集中度同构）：
+        # 限售解禁供给侧抛压与大股东质押平仓风险是 A 股特有事实，agents
+        # 此前只能列为未知缺口。失败不阻断主流程。
+        if is_a_share:
+            try:
+                from aegis.core.acquisition.connectors.restricted_release import (
+                    fetch_restricted_release,
+                )
+                _rr = fetch_restricted_release(stock_code)
+                if _rr:
+                    meta_facts["__restricted_release"] = _rr
+                    _log(f"Restricted release (L1): 下一批 "
+                         f"{_rr.get('next_release_date') or '无'}，"
+                         f"未来12月待解禁占总市值 "
+                         f"{_rr.get('upcoming_12m_pct', 0.0):.2f}%"
+                         f"（{_rr['source_note']}）")
+                else:
+                    _log("Restricted release (L1): 东财解禁数据不可得")
+            except Exception as _rr_err:
+                _log(f"  ⚠ Restricted release failed (non-blocking): {_rr_err}")
+            try:
+                from aegis.core.acquisition.connectors.equity_pledge import (
+                    fetch_equity_pledge,
+                )
+                _ep = fetch_equity_pledge(stock_code)
+                if _ep:
+                    meta_facts["__equity_pledge"] = _ep
+                    _ep_ratio = _ep.get("pledge_ratio_total")
+                    _log(f"Equity pledge (L1): 全股质押比例 "
+                         f"{f'{_ep_ratio:.2f}%' if _ep_ratio is not None else 'n/a'}"
+                         f"（{_ep['source_note']}）")
+                else:
+                    _log("Equity pledge (L1): 东财质押数据不可得")
+            except Exception as _ep_err:
+                _log(f"  ⚠ Equity pledge failed (non-blocking): {_ep_err}")
+
         # BUG-46: clean segment_detail so every category has non-overlapping
         # members that sum to company revenue. Fixes:
         #  - Products Breakdown double-counting parent+child roll-ups
