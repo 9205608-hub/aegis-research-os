@@ -152,6 +152,92 @@ class TestNeutralAndCounterargument:
         assert f["red_flag"] is False
 
 
+class TestHongqiCompanyNameCorner:
+    """2026-08-01 边角修复①：强词裸"红旗"与公司名冲突。
+
+    语料核查结论：中文风险语料中"红旗"仅以"红旗线"（CFO/归母红旗线，
+    truth/verification.py / truth/pricing_regime.py）与"红旗触发"
+    （monitor_delta）复合词出现，自然叙述用"警示/异常/存疑"；裸"红旗"
+    的现实命中面只剩公司/品牌名（红旗连锁 002697、一汽红旗牌）。故强词
+    表由裸"红旗"收窄为两个复合词。
+    """
+
+    def test_company_name_hongqi_chained_does_not_flag(self):
+        # 红旗连锁（002697）：观察里提公司名不得举旗
+        f = _extract(observations=["红旗连锁在四川省内的便利店网络持续加密"])
+        assert f["red_flag"] is False
+
+    def test_brand_name_hongqi_car_does_not_flag(self):
+        f = _extract(observations=["一汽红旗牌高端车型销量同比增长"])
+        assert f["red_flag"] is False
+
+    def test_hongqi_line_compound_still_flags(self):
+        # agent 转述 verification 的"红旗线"话术是真实风险语义，须保留
+        f = _extract(observations=[
+            "经营现金流/归母净利润 = 0.31，低于 0.5 红旗线，"
+            "账面利润未获现金流支撑"
+        ])
+        assert f["red_flag"] is True
+
+    def test_hongqi_trigger_compound_still_flags(self):
+        f = _extract(observations=["监控项：经营现金流/归母净利润 红旗触发"])
+        assert f["red_flag"] is True
+
+    def test_en_red_flag_phrase_unaffected(self):
+        f = _extract(
+            observations=["Channel stuffing pattern is a classic red flag"])
+        assert f["red_flag"] is True
+
+
+class TestEnglishWordBoundaryCorner:
+    """2026-08-01 边角修复②：英文弱词改 \\b 词边界 + \\w* 词干延展。
+
+    旧版裸子串匹配："risk" 命中 "asterisk"、"negative" 命中长词内嵌。
+    修复后左侧必须落在词边界；右侧保留词干延展（concerns / risks /
+    deteriorating / warnings / negatively 照旧命中）。
+    """
+
+    def test_asterisk_no_longer_counts_as_risk(self):
+        # 两条观察都含 asterisk：旧版计 2 次弱命中 → 误举旗；新版不举旗
+        f = _extract(observations=[
+            "Items marked with an asterisk are restated figures",
+            "The asterisk footnote covers lease accounting",
+        ])
+        assert f["red_flag"] is False
+
+    def test_embedded_negative_no_longer_counts(self):
+        # "negative" 内嵌在长词中（无左词边界）不再命中
+        f = _extract(observations=[
+            "Covenants require nonnegative working capital",
+            "The nonnegative floor was maintained all year",
+        ])
+        assert f["red_flag"] is False
+
+    def test_deteriorating_stem_still_hits(self):
+        # "deteriorat" 是有意的词干前缀——\bdeteriorat\w* 保留延展匹配
+        f = _extract(observations=[
+            "Gross margins are deteriorating quarter over quarter",
+            "Working capital deterioration accelerated in H2",
+        ])
+        assert f["red_flag"] is True
+
+    def test_plural_and_derived_forms_still_hit(self):
+        # 词干延展语义保留：risks / concerns 照旧各计 1 次弱命中
+        f = _extract(observations=[
+            "Customer concentration risks remain elevated",
+            "Auditors raised concerns about revenue timing",
+        ])
+        assert f["red_flag"] is True
+
+    def test_word_start_forms_still_hit_with_low_confidence(self):
+        # 单条弱命中 + confidence=low 的既有举旗路径不受词边界改动影响
+        f = _extract(
+            observations=["Negative operating leverage emerged in FY2025"],
+            confidence="low",
+        )
+        assert f["red_flag"] is True
+
+
 class TestFindingShapeContract:
     """消费方契约：llm_agent_base._build_message 与 orchestrator 日志
     依赖的字段形态不变。"""

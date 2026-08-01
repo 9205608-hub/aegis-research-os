@@ -5040,12 +5040,32 @@ class AutoResearchOrchestrator:
         red_flag = False
         strong_flag_en = {"fabricated", "implausible", "overstated",
                           "red flag", "questionable"}
+        # 2026-08-01（强词"红旗"与公司名冲突）：裸"红旗"会命中红旗连锁
+        # （002697）、一汽红旗牌等公司/品牌名——观察里提公司名即误举旗。
+        # 语料核查（mock_client 模板 + tests fixture + aegis 全量 grep）：
+        # 中文风险语料使用"红旗"仅以复合词出现——"红旗线"（CFO/归母
+        # 红旗线，truth/verification.py + truth/pricing_regime.py，agent 会
+        # 原样转述"低于 0.5 红旗线"）与"红旗触发"（monitor_delta 触发词）；
+        # 自然叙述表达该语义用的是"警示/异常/存疑"（均已在表内）。故裸
+        # "红旗"收窄为这两个复合词：真实风险用法全保留，公司名不再命中
+        # （"红旗连锁/红旗牌"不含"红旗线/红旗触发"子串）。英文 "red flag"
+        # 无此冲突，保留不动。
         strong_flag_zh = {
             "造假", "粉饰", "虚增", "存疑", "可疑", "异常",
-            "急剧恶化", "不可持续", "警示", "红旗",
+            "急剧恶化", "不可持续", "警示", "红旗线", "红旗触发",
         }
-        weak_flag_en = {"concern", "risk", "unusual", "aggressive", "deteriorat",
-                        "warning", "declining", "negative"}
+        # 2026-08-01（英文弱词词边界）：旧版裸子串匹配让 "risk" 命中
+        # "asterisk"、"negative" 命中长词内嵌。改 \b 左词边界 + \w* 右侧
+        # 词干延展：既修子串误伤，又保留原有的前缀词干覆盖（concern→
+        # concerns/concerning、risk→risks/risky、warning→warnings、
+        # negative→negatively 等）。逐词核对：deteriorat 是有意的裸词干
+        # （deteriorate/-ing/-ion）；declining 是完整词（\w* 无实际扩展）；
+        # 其余均按词干延展语义使用。中文无词边界概念，保持子串匹配不动。
+        weak_flag_en_patterns = tuple(
+            _re.compile(r"\b" + stem + r"\w*")
+            for stem in ("concern", "risk", "unusual", "aggressive",
+                         "deteriorat", "warning", "declining", "negative")
+        )
         weak_flag_zh = {
             "风险", "激进", "恶化", "下滑", "下行", "压力",
             "脆弱", "高估", "过度", "不合理",
@@ -5058,7 +5078,7 @@ class AutoResearchOrchestrator:
                     kw in txt for kw in strong_flag_zh):
                 red_flag = True
                 break
-            if any(kw in txt_lc for kw in weak_flag_en) or any(
+            if any(p.search(txt_lc) for p in weak_flag_en_patterns) or any(
                     kw in txt for kw in weak_flag_zh):
                 weak_hit_observations += 1
         if not red_flag:

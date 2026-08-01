@@ -1374,6 +1374,32 @@ def build_report_dict(
     if not lede:
         lede = _g(synthesized_thesis, "core_thesis", "") if synthesized_thesis else ""
 
+    # ── 首页关键数字（Editor front_page_numbers）──
+    # 2026-08-01 渲染接线：Editor 产出的 front_page_numbers 已在
+    # report_editor._scrub_front_page_numbers 接入 strict 清洗白名单
+    # （编造数字整条剔除），但渲染层此前没有任何消费点——数据安全了
+    # 却没人看得见。这里映射成 report.jsx 的 <FrontPageNumbers/> 关键
+    # 数字卡片区（复用 .stat-strip 版式，插在执行摘要 headline 之后、
+    # lede 正文之前）。约定：
+    #   - 空列表 / 字段缺失 / 条目全无效 → 输出 []，模板零占位；
+    #   - label 或 value 缺失的半空条目跳过（卡片没大字或没小字都无意义）；
+    #   - 渲染端兜底截断到 5 条（Editor schema maxItems=6，一行卡片为限；
+    #     先过滤半空条目再计数，避免坏条目挤掉尾部好条目）。
+    # A 股 label/context 由 Editor 直接产出中文；模板辅助文案（区块眉题）
+    # 在 report.jsx 里走既有 L(zh, en) i18n 机制。
+    front_page_numbers = []
+    for entry in (_g(edited_report, "front_page_numbers") or []):
+        fpn_label = str(_g(entry, "label", "") or "").strip()
+        fpn_value = str(_g(entry, "value", "") or "").strip()
+        fpn_context = str(_g(entry, "context", "") or "").strip()
+        if not (fpn_label and fpn_value):
+            continue
+        front_page_numbers.append(
+            {"label": fpn_label, "value": fpn_value, "context": fpn_context}
+        )
+        if len(front_page_numbers) >= 5:
+            break
+
     # Executive paragraphs: prefer synthesized_thesis
     exec_paragraphs = []
     if synthesized_thesis:
@@ -2306,6 +2332,8 @@ def build_report_dict(
 
         "headline": headline,
         "lede": lede,
+        # Editor 首页关键数字卡片（[] = 模板零占位，见上方装配注释）。
+        "frontPageNumbers": front_page_numbers,
         "executiveParagraphs": exec_paragraphs,
         "coreCalloutHtml": core_callout,
 

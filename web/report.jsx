@@ -586,10 +586,37 @@ function SectionHead({ idx, title, subtitle }) {
   );
 }
 
+// 2026-08-01：Editor front_page_numbers 渲染接线。数据侧已过 strict 清洗
+// 白名单（report_editor._scrub_front_page_numbers，编造数字整条剔除），
+// 此处纯展示：value 大字 + label 小字，context 走原生 title 悬浮提示
+// （不引入 JS tooltip）。复用 hero 的 .stat-strip / .stat 卡片体系保持
+// 版式一致；空列表 / 字段缺失 → 返回 null 零占位；条数在数据侧已截断
+// 到 5，slice 只是渲染端兜底。
+function FrontPageNumbers() {
+  const nums = (REPORT.frontPageNumbers || []).slice(0, 5);
+  if (!nums.length) return null;
+  return (
+    <div style={{marginBottom: 28}}>
+      <div className="eyebrow" style={{marginBottom: 4}}>
+        {L("首页关键数字 · 编辑精选", "Front-page numbers · Editor's picks")}
+      </div>
+      <div className="stat-strip" style={{marginTop: 10}}>
+        {nums.map((n, i) => (
+          <div className="stat" key={i} title={n.context || undefined}>
+            <div className="lbl">{n.label}</div>
+            <div className="val">{n.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ExecutiveSummary() {
   return (
     <section id="sec-summary">
       <SectionHead idx={L("01 · 执行摘要", "01 · Executive summary")} title={REPORT.headline} subtitle={L("首席分析师编辑层 · 合成器 → 编辑器", "Chief analyst · Synthesizer → Editor")} />
+      <FrontPageNumbers/>
       <div className="reading wide">
         <p className="lede" style={{marginBottom: 28}}>{REPORT.lede}</p>
 
