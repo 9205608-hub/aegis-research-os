@@ -208,6 +208,7 @@ def _scrub_front_page_numbers(
     market_data: dict[str, Any] | None,
     extra_sanctioned_pcts: Sequence[float] | None = None,
     strict: bool = False,
+    extra_sanctioned_per_share: Sequence[float] | None = None,
 ) -> tuple[list[dict], list[str]]:
     """front_page_numbers 的 value/context 子字段清洗。
 
@@ -247,6 +248,9 @@ def _scrub_front_page_numbers(
             fields=("front_page_entry",),
             extra_sanctioned_pcts=extra_sanctioned_pcts,
             strict=strict,
+            # 盲区 1（2026-08-01）：真实 per-share 值（BPS/EPS/DPS）
+            # 白名单透传——"每股净资产 ¥12.50" 类首页条目不被误杀。
+            extra_sanctioned_per_share=extra_sanctioned_per_share,
         )
         out_text = scrubbed.get("front_page_entry", combined)
         if out_text == combined:
@@ -355,6 +359,7 @@ class ReportEditor:
                 _scrub_fair_value_claims,
                 _valuation_sanity_verdict,
                 frontier_sanctioned_growth_pcts,
+                per_share_sanctioned_values,
                 relative_valuation_sanctioned_pcts,
             )
             editor_fields = (
@@ -404,10 +409,15 @@ class ReportEditor:
                     (meta_facts or {}).get("__equity_pledge")
                 )
             )
+            # 盲区 1（2026-08-01）：真实 per-share 值（BPS/EPS/DPS）白名单，
+            # 与 _extra_pcts 一样一次装配、正文 5 字段与 front_page_numbers
+            # 共用；meta_facts 派生不出即为空（宁缺毋滥）。
+            _extra_per_share = per_share_sanctioned_values(meta_facts)
             scrubbed, warns = _scrub_fair_value_claims(
                 raw, scenarios, market_data, fields=editor_fields,
                 extra_sanctioned_pcts=_extra_pcts,
                 strict=_strict_scrub,
+                extra_sanctioned_per_share=_extra_per_share,
             )
             if warns:
                 for k in editor_fields:
@@ -421,6 +431,7 @@ class ReportEditor:
                 raw.get("front_page_numbers"), scenarios, market_data,
                 extra_sanctioned_pcts=_extra_pcts,
                 strict=_strict_scrub,
+                extra_sanctioned_per_share=_extra_per_share,
             )
             warns = list(warns) + list(_fpn_warns)
             if warns:

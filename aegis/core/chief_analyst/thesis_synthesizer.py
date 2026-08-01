@@ -613,6 +613,101 @@ def _magnitude_mismatch_disclosure(sanity: dict[str, Any], zh: bool) -> str:
     )
 
 
+# ── 清洗器盲区修复（2026-08-01）─────────────────────────────────────
+#
+# 盲区 1：真实 per-share 基本面值（BPS/EPS/DPS）白名单。
+# "每股净资产 ¥12.50" / "EPS ¥2.35" 的上下文自带"每股/估值"——命中
+# _FAIR_VALUE_CONTEXT 关键词，金额又不匹配任何 DCF 情景值 → 被当成
+# 编造目标价剔除。这些值可以从 meta_facts 确定性派生（披露数据的简单
+# 算术，无模型不确定性），派生得出就进白名单，算不出就传空（宁缺毋滥）。
+#
+# 容差 ±10%，比情景值的 ±15% 更紧。依据：
+# (a) 派生口径与 LLM 引用口径的真实差异有限——EPS 用期末股本近似加权
+#     平均股本（通常 <5%）、基本 vs 稀释股本（通常 <5%）、BPS 期初/期末
+#     口径差异同量级；basic/diluted 两个派生值都进白名单进一步压缩了
+#     所需带宽；
+# (b) 白名单在 strict 票下依然生效（真实披露数据不受估值失配连坐，
+#     红线 9 同则），带宽越宽，编造目标价恰好落在 BPS 附近漏网的风险
+#     越大——±15% 会把 BPS ¥12.50 附近 ¥10.6-14.4 全部放行，±10%
+#     收窄到 ¥11.3-13.8。
+_PER_SHARE_SANCTION_TOL = 0.10
+
+
+def per_share_sanctioned_values(
+    meta_facts: dict[str, Any] | None,
+) -> list[float]:
+    """从 meta_facts 派生真实 per-share 值（BPS/EPS/DPS）白名单。
+
+    盲区 1（2026-08-01）：供 ``_scrub_fair_value_claims`` 的
+    ``extra_sanctioned_per_share`` 参数使用。全部取绝对值——亏损票的
+    "每股亏损 ¥0.66" 在正文里以正数 token 出现。派生不出的项直接跳过，
+    绝不猜测（宁缺毋滥）。
+
+    字段名依据 fact_bridge / market_adapter 实测：
+    - shares_outstanding / basic_shares / diluted_shares（fact_bridge Step 5）
+    - total_equity（DERIVABLE_FIELDS 派生 + shareholders_equity 别名）
+    - net_income（A 股经 fact_bridge Step 2b 已切归母口径）
+    - eps_basic / eps_diluted（cn_adapter 基本/稀释每股收益、us_adapter
+      us-gaap:EarningsPerShareBasic/Diluted 直通）
+    - dividends_paid（fact_bridge Step 5b 股东回报现金；现金流口径可能
+      为负号，取绝对值）
+    """
+    mf = meta_facts or {}
+
+    def _num(key: str) -> float | None:
+        v = mf.get(key)
+        if isinstance(v, (int, float)) and v == v and v != 0 \
+                and abs(v) != float("inf"):
+            return float(v)
+        return None
+
+    out: list[float] = []
+
+    def _add(v: float | None) -> None:
+        if v is not None and abs(v) > 1e-9:
+            out.append(abs(v))
+
+    # 披露的 EPS 直通值优先（口径最准，来自 filing 本身）
+    _add(_num("eps_basic"))
+    _add(_num("eps_diluted"))
+
+    shares = _num("shares_outstanding") or _num("basic_shares")
+    diluted = _num("diluted_shares")
+    if shares and shares > 0:
+        equity = _num("total_equity")
+        if equity is not None:
+            _add(equity / shares)              # BPS
+        ni = _num("net_income")
+        if ni is not None:
+            _add(ni / shares)                  # EPS（期末股本近似）
+            if diluted and diluted > 0:
+                _add(ni / diluted)             # 稀释 EPS
+        div = _num("dividends_paid")
+        if div is not None:
+            _add(div / shares)                 # DPS
+    return out
+
+
+# 盲区 2（2026-08-01）：strict 票的无方向裸 %。"修复空间 30%" 带方向词
+# 会被 % 一致性检查清洗，但"隐含 30% 的重估"这类规避措辞无已注册方向
+# 关键词（"重估"单独不在 _UPSIDE_KEYWORDS，只有"重估空间/估值重估"在），
+# 直接绕过 _has_dir 闸门。strict（估值失配/证据缺口）票下没有任何回报
+# 框架有锚，这类 % 同样必须清洗。保守设防（防误杀优先）：
+# - 仅 strict 票启用，常态（非 strict）票行为零改变；
+# - 40 字符窗口内须命中估值语境词，且不得命中运营语境词或
+#   _GROWTH_CONTEXT_KEYWORDS（运营/增长指标引用一律保留）；
+# - 白名单（extra_sanctioned_pcts，红线 9）照常豁免。
+_STRICT_BARE_PCT_VALUATION_CONTEXT = (
+    # 中文估值语境
+    "低估", "高估", "空间", "重估", "目标", "修复",
+    # 英文估值语境（比对窗口已 lower()；"re-rat" 覆盖 re-rate/re-rating）
+    "upside", "downside", "re-rat",
+)
+_STRICT_BARE_PCT_OPERATING_CONTEXT = (
+    "市占率", "份额", "毛利率", "增速", "占比", "产能利用率",
+)
+
+
 def _scrub_fair_value_claims(
     raw: dict[str, Any],
     scenarios: dict[str, float],
@@ -620,6 +715,7 @@ def _scrub_fair_value_claims(
     fields: tuple[str, ...] | None = None,
     extra_sanctioned_pcts: Sequence[float] | None = None,
     strict: bool = False,
+    extra_sanctioned_per_share: Sequence[float] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Detect and rewrite per-share fair-value claims that contradict scenarios.
 
@@ -672,6 +768,14 @@ def _scrub_fair_value_claims(
         if isinstance(mp, (int, float)) and mp > 0:
             market_price = float(mp)
 
+    # 盲区 1（2026-08-01）：真实 per-share 基本面值白名单（BPS/EPS/DPS，
+    # 见 per_share_sanctioned_values）。strict 不清空——这些值是披露数据
+    # 的确定性算术，不受估值失配连坐（红线 9 同则：真实数据不误杀）。
+    _per_share_ok = [
+        float(v) for v in (extra_sanctioned_per_share or ())
+        if isinstance(v, (int, float)) and v > 0
+    ]
+
     def _matches_scenario(v: float) -> bool:
         # Within ±15% of any sanctioned scenario value
         for s in sanctioned:
@@ -681,6 +785,11 @@ def _scrub_fair_value_claims(
         # market price for reference, that's not a fair-value invention).
         if market_price and abs(v - market_price) / market_price <= 0.05:
             return True
+        # 盲区 1：±10%（_PER_SHARE_SANCTION_TOL）命中任一真实 per-share
+        # 派生值（BPS/EPS/DPS）→ 不是编造目标价。
+        for ps in _per_share_ok:
+            if abs(v - ps) / ps <= _PER_SHARE_SANCTION_TOL:
+                return True
         return False
 
     warnings: list[str] = []
@@ -903,6 +1012,53 @@ def _scrub_fair_value_claims(
                             continue
                         if not any(abs(v - r) <= 10 for r in sanctioned_returns):
                             bad_pct.append((m.start(), m.end(), m.group(0)))
+                # 盲区 2（2026-08-01，strict only）：无方向裸 % 设防。
+                # "隐含 30% 的重估"这类措辞无已注册方向关键词，绕过上面
+                # 的 _has_dir 闸门。strict 票下 40 字符窗口内命中估值语境
+                # 词（_STRICT_BARE_PCT_VALUATION_CONTEXT）且不含运营/增长
+                # 语境词、不在任何白名单 → 清洗；否则保留（防误杀优先）。
+                if strict and _has_pct:
+                    _flagged_spans = {(_s, _e) for _s, _e, _ in bad_pct}
+                    for m in _PCT_RANGE_RE.finditer(text):
+                        if (m.start(), m.end()) in _flagged_spans:
+                            continue  # 方向性检查已处理
+                        _win_pct = text[
+                            max(0, m.start() - 40):m.end() + 40
+                        ].lower()
+                        if not any(
+                            k in _win_pct
+                            for k in _STRICT_BARE_PCT_VALUATION_CONTEXT
+                        ):
+                            continue
+                        if any(
+                            k in _win_pct
+                            for k in _STRICT_BARE_PCT_OPERATING_CONTEXT
+                        ):
+                            continue
+                        # 增长语境同样保留（与方向性检查的 Y21 豁免对齐，
+                        # 双保险防误杀）。
+                        if any(g in _win_pct for g in _GROWTH_CONTEXT_KEYWORDS):
+                            continue
+                        if m.group(1) and m.group(2):
+                            try:
+                                v1, v2 = float(m.group(1)), float(m.group(2))
+                            except ValueError:
+                                continue
+                            # 红线 9：两端都命中白名单 → 真实披露数据
+                            if _is_extra_sanctioned(v1) and _is_extra_sanctioned(v2):
+                                continue
+                        elif m.group(3):
+                            try:
+                                _tok = m.group(3).replace(" ", "").replace("−", "-")
+                                v = float(_tok)
+                            except ValueError:
+                                continue
+                            if _is_extra_sanctioned(v):
+                                continue
+                        else:
+                            continue
+                        bad_pct.append((m.start(), m.end(), m.group(0)))
+                    bad_pct.sort()
                 # R2-4 (strict only): multiple-based valuation language
                 # ("30× PE 重估空间", "PE 从22倍到30倍", "安全边际 22.6×")
                 # evaded both the money scrub (倍/× suffix = aggregate
@@ -1335,6 +1491,9 @@ class ThesisSynthesizer:
                 )
             ),
             strict=_mismatch or _gap_observation,
+            # 盲区 1（2026-08-01）：真实 per-share 值（BPS/EPS/DPS）白名单，
+            # 从 meta_facts 确定性派生，算不出即为空（宁缺毋滥）。
+            extra_sanctioned_per_share=per_share_sanctioned_values(meta_facts),
         )
         if _mismatch:
             raw["variant_magnitude"] = _magnitude_mismatch_disclosure(
