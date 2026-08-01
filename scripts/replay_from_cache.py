@@ -30,6 +30,139 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
+# ---------------------------------------------------------------------------
+# Sensitivity recompute helpers (HANDOFF 待办: replay 敏感性表缺参)
+#
+# These mirror orchestrator Step 7 (auto_research.py) so a replayed report
+# carries the same sensitivity artifacts a fresh run would. Kept at module
+# level so unit tests can exercise them without a full state pickle.
+# ---------------------------------------------------------------------------
+
+def _centered_range(center: float, step: float, width: int,
+                    floor: float | None = None,
+                    ceiling: float | None = None) -> list[float]:
+    """Symmetric value grid around `center` — identical to auto_research.py."""
+    values = []
+    for i in range(-width, width + 1):
+        v = center + i * step
+        if floor is not None:
+            v = max(v, floor)
+        if ceiling is not None:
+            v = min(v, ceiling)
+        values.append(round(v, 4))
+    return list(dict.fromkeys(values))
+
+
+def _recompute_sensitivity_flat(dcf_input_flat) -> tuple[list[dict], dict | None]:
+    """Recompute sensitivity rankings + WACC × TGR two-way table (flat DCF).
+
+    BUG (HANDOFF: replay 敏感性表缺参): the old inline code called
+    `sa.two_way_table(dcf_input_flat, "wacc", "terminal_growth_rate")` —
+    missing both required range arguments (real signature:
+    two_way_table(base_inputs, var1_name, var1_range, var2_name, var2_range)).
+    The resulting TypeError was swallowed by a bare `except: pass`, so the
+    STALE cached table survived every replay while dcf_output was recomputed
+    → dcf_integrity_gate mismatch/skip → confidence loss. It also assigned
+    the raw SensitivityTable dataclass on success paths elsewhere, which
+    html_report_v2 (isinstance dict check) silently drops.
+
+    Returns (rankings, table_dict). `table_dict` is None when the two-way
+    table could not be computed — caller should keep the cached one.
+    """
+    from aegis.core.truth.scenario_engine.sensitivity_analyzer import SensitivityAnalyzer
+
+    sa = SensitivityAnalyzer()
+    rankings = [
+        {"assumption": r.assumption, "impact_pct": r.impact_pct,
+         "signed_impact_pct": getattr(r, "signed_impact_pct", r.impact_pct),
+         "base_per_share": r.base_per_share,
+         "shocked_per_share": r.shocked_per_share}
+        for r in sa.rank_assumptions(dcf_input_flat)
+    ]
+    table: dict | None = None
+    try:
+        # Same grids as orchestrator Step 7: WACC ±3×0.5pp (floor 3%),
+        # terminal growth ±2×0.5pp (floor 0, ceiling wacc − 0.5pp).
+        wacc_range = _centered_range(dcf_input_flat.wacc, 0.005, 3, floor=0.03)
+        terminal_growth_range = _centered_range(
+            dcf_input_flat.terminal_growth_rate, 0.005, 2,
+            floor=0.0, ceiling=max(dcf_input_flat.wacc - 0.005, 0.0),
+        )
+        two_way = sa.two_way_table(
+            dcf_input_flat,
+            "wacc", wacc_range,
+            "terminal_growth_rate", terminal_growth_range,
+        )
+        # Dict shape mirrors auto_research.py — required by html_report_v2,
+        # the publish gate's dcf_integrity_gate, and the decision contract.
+        table = {
+            "variable_1": two_way.variable_1,
+            "variable_2": two_way.variable_2,
+            "var1_values": two_way.var1_values,
+            "var2_values": two_way.var2_values,
+            "matrix": two_way.matrix,
+        }
+    except Exception as exc:
+        print(f"  [recompute] ⚠ two-way sensitivity table failed: {exc}")
+    return rankings, table
+
+
+def _scale_sensitivity_for_segment(rankings, table, share_ratio: float,
+                                   ) -> tuple[list[dict], dict | None]:
+    """Scale cached sensitivity artifacts to a new per-share base (segment DCF).
+
+    Segment-DCF tickers keep their cached table (the flat input has different
+    growth assumptions) and only rescale dollar values. None cells in the
+    matrix (infeasible WACC/g combos, AUDIT 2026-07) must be preserved — the
+    old in-place code did `cell * share_ratio` unconditionally and crashed
+    the whole recompute block with a TypeError on the first None cell.
+    """
+    scaled_rankings = [
+        {**r,
+         "base_per_share": (r.get("base_per_share") or 0) * share_ratio,
+         "shocked_per_share": (r.get("shocked_per_share") or 0) * share_ratio}
+        for r in (rankings or [])
+    ]
+    scaled_table = table
+    if isinstance(table, dict) and table.get("matrix"):
+        scaled_table = {
+            **table,
+            "matrix": [
+                [None if cell is None else round(cell * share_ratio, 2)
+                 for cell in row]
+                for row in table["matrix"]
+            ],
+        }
+    return scaled_rankings, scaled_table
+
+
+def _build_gate_context(state: dict) -> dict:
+    """Build the PublishGate context exactly like orchestrator Step 12.
+
+    The old replay passed only {"run_manifest_id"} — every integrity gate
+    (dcf_integrity / terminal_value / valuation_sanity / capex_attribution)
+    then "skipped: missing inputs". Skipped gates feed gate_skipped_names →
+    DecisionEngine._determine_confidence caps the bucket at medium (AUDIT
+    2026-07-12 B4), so replayed reports diverged from fresh runs: the gates
+    never actually ran, and any faithful skip accounting would have cost
+    confidence for a purely replay-side omission.
+    """
+    meta_facts = state.get("meta_facts") or {}
+    return {
+        "run_manifest_id": state.get("run_id"),
+        "__data_quality_issues": meta_facts.get("__data_quality_issues", []),
+        "meta_facts": meta_facts,
+        "computed_metrics": state.get("computed_metrics"),
+        "market_data": state.get("market_data"),
+        "segment_detail": state.get("segment_detail"),
+        "segment_projections": state.get("segment_projections_data"),
+        "scenarios": state.get("scenarios"),
+        "dcf_input": state.get("dcf_input_flat"),
+        "dcf_output": state.get("dcf_output"),
+        "sensitivity_table": state.get("sensitivity_table"),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Replay pipeline from cache")
     parser.add_argument("ticker", help="Stock ticker (must have cached state)")
@@ -366,7 +499,6 @@ def main() -> int:
     # the cached dcf_input_flat to get correct per-share values.
     try:
         from aegis.core.truth.scenario_engine.dcf_engine import DCFEngine, DCFInput, ConsolidatedDCFOutput
-        from aegis.core.truth.scenario_engine.sensitivity_analyzer import SensitivityAnalyzer
 
         dcf_input_flat = state["dcf_input_flat"]
         # Backfill D&A into DCF input if it was added to meta_facts
@@ -439,9 +571,14 @@ def main() -> int:
                     "net_debt": dcf_input_flat.net_debt,
                     "equity_value": new_output.equity_value,
                     "future_shares": new_output.future_shares,
-                    "per_share_value": new_output.per_share_value,
+                    # new_ps, not new_output.per_share_value: on the segment
+                    # path new_output is the ORIGINAL cached output whose
+                    # per-share predates the share-count adjustment — bridge
+                    # and base_value must agree.
+                    "per_share_value": new_ps,
                 }
                 # Update scenario values — handle both nested and flat formats
+                ratio = 1.0  # guard: referenced below even when base_value is 0/None
                 if "base" in scenarios:
                     scenarios["base"]["per_share_value"] = new_ps
                 if "base_value" in scenarios:
@@ -484,38 +621,45 @@ def main() -> int:
                         stale_map[old_pw] = pw
                 state["_stale_value_map"] = stale_map
 
-            # Recompute sensitivity rankings (only for flat DCF —
-            # segment DCF's flat input has different growth assumptions)
+            # Recompute sensitivity rankings + WACC×TGR table (only for flat
+            # DCF — segment DCF's flat input has different growth assumptions).
+            # HANDOFF 缺参修复: the old inline call passed no ranges to
+            # two_way_table (TypeError swallowed by `except: pass`), so the
+            # stale cached table shipped with a freshly recomputed dcf_output.
             if not is_segment_dcf:
-                sa = SensitivityAnalyzer()
-                new_rankings = sa.rank_assumptions(dcf_input_flat)
-                state["sensitivity_rankings"] = [
-                    {"assumption": r.assumption, "impact_pct": r.impact_pct,
-                     "signed_impact_pct": getattr(r, "signed_impact_pct", r.impact_pct),
-                     "base_per_share": r.base_per_share,
-                     "shocked_per_share": r.shocked_per_share}
-                    for r in new_rankings
-                ]
-                # Recompute sensitivity table (WACC vs TGR matrix)
-                try:
-                    new_table = sa.two_way_table(
-                        dcf_input_flat, "wacc", "terminal_growth_rate",
-                    )
+                new_rankings, new_table = _recompute_sensitivity_flat(dcf_input_flat)
+                if new_rankings:
+                    state["sensitivity_rankings"] = new_rankings
+                else:
+                    print("  [recompute] ⚠ sensitivity rankings empty — keeping cached rankings")
+                if new_table is not None:
                     state["sensitivity_table"] = new_table
-                except Exception:
-                    pass  # Keep old table if 2-way fails
+                else:
+                    print("  [recompute] ⚠ keeping cached sensitivity table "
+                          "(2-way recompute failed)")
             if is_segment_dcf:
-                # Scale sensitivity table/rankings proportionally
-                share_ratio = new_ps / old_ps if old_ps else 1
-                for r in state.get("sensitivity_rankings", []):
-                    r["base_per_share"] = r.get("base_per_share", 0) * share_ratio
-                    r["shocked_per_share"] = r.get("shocked_per_share", 0) * share_ratio
-                old_table = state.get("sensitivity_table")
-                if isinstance(old_table, dict) and "matrix" in old_table:
-                    old_table["matrix"] = [
-                        [cell * share_ratio for cell in row]
-                        for row in old_table["matrix"]
-                    ]
+                # Scale sensitivity table/rankings proportionally (None cells
+                # = infeasible WACC/g combos must be preserved, not multiplied)
+                share_ratio = new_ps / old_ps if old_ps else 1.0
+                state["sensitivity_rankings"], state["sensitivity_table"] = (
+                    _scale_sensitivity_for_segment(
+                        state.get("sensitivity_rankings"),
+                        state.get("sensitivity_table"),
+                        share_ratio,
+                    )
+                )
+                # Keep dcf_output coherent with the share-adjusted per-share:
+                # dcf_integrity_gate compares dcf_output.per_share_value with
+                # the (now rescaled) matrix base cell — leaving the stale
+                # per-share here would turn the newly-fed gate into a false
+                # block. Frozen dataclass → dataclasses.replace.
+                try:
+                    import dataclasses as _dc
+                    state["dcf_output"] = _dc.replace(
+                        state["dcf_output"], per_share_value=new_ps,
+                    )
+                except Exception as _rep_err:
+                    print(f"  [recompute] ⚠ segment dcf_output per_share update failed: {_rep_err}")
             what = "projections, bridge, sensitivity" if not is_segment_dcf else "scenarios, bridge, sensitivity (segment DCF preserved)"
             print(f"  [recompute] Updated: {what}")
         else:
@@ -561,13 +705,17 @@ def main() -> int:
               f"{sum(sum(1 for i in cr.issues if i.severity == 'warn') for cr in state['critic_results'])} warns)")
 
     # ── Step 1: Re-run Publish Gate with fresh code ──
+    # 缺参修复（同类问题）: the gate used to receive only run_manifest_id,
+    # so every integrity gate skipped for "missing inputs" — replay never
+    # actually exercised dcf_integrity/terminal_value/valuation_sanity/
+    # capex_attribution. Feed the full orchestrator Step-12 context.
     t1 = time.time()
     from aegis.core.publish_gate import PublishGate
     gate = PublishGate()
     gate_result = gate.evaluate(
         state["all_judgments"],
         critic_results_to_use,
-        context={"run_manifest_id": state["run_id"]},
+        context=_build_gate_context(state),
     )
     print(f"  [{time.time()-t1:.2f}s] PublishGate: "
           f"{'✅ PASSED' if gate_result.publishable else '❌ BLOCKED'}")
@@ -577,6 +725,14 @@ def main() -> int:
     passed = sum(1 for c in gate_result.checks if c.passed)
     total = len(gate_result.checks)
     print(f"    Gates passed: {passed}/{total}")
+    # AUDIT 2026-07-12 (B4) parity: gates that skipped for missing inputs
+    # cap confidence at medium in the decision engine — same as a fresh run.
+    gate_skipped_names = [
+        c.gate_name for c in gate_result.checks
+        if c.passed and c.severity == "warn" and "skipped" in c.message
+    ]
+    if gate_skipped_names:
+        print(f"    Gate skips (missing inputs): {gate_skipped_names}")
     if args.verbose or not gate_result.publishable:
         for c in gate_result.checks:
             status = "✓" if c.passed else "✗"
@@ -625,6 +781,15 @@ def main() -> int:
             "sensitivity_rankings": state["sensitivity_rankings"],
             "sensitivity_table": state["sensitivity_table"],
             "open_questions": state["open_questions"],
+            # 缺参修复（同类问题）: mirror orchestrator Step 13 context so the
+            # replayed decision matches a fresh run.
+            "macro_dependency": f"US {getattr(state['config'], 'cycle_phase', 'late_expansion')}",
+            "sector_cycle_position": "Auto-detected from sector pack",
+            # AUDIT B4: without this key the confidence cap for skipped gates
+            # never applied in replay (ctx.get defaulted to []). With the full
+            # gate context above, a complete cache yields no skips → no cap;
+            # a genuinely incomplete cache now caps at medium like a fresh run.
+            "gate_skipped_names": gate_skipped_names,
         },
         synthesized_thesis=state["synthesized_thesis"],
     )
