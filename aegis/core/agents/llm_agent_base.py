@@ -13,6 +13,7 @@ Pipeline:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from typing import Any
 from uuid import uuid4
@@ -1255,10 +1256,16 @@ This is an A-share (China) entity. Write ALL natural-language output in Simplifi
             peer_gm_vals: list[float] = []
             peer_om_vals: list[float] = []
             for p in peers:
+                # get_peer_fundamentals returns PeerFundamentals dataclass
+                # instances (and replay pickles preserve them) — a dict-only
+                # filter silently dropped every peer, leaving an empty table.
+                if dataclasses.is_dataclass(p) and not isinstance(p, type):
+                    p = dataclasses.asdict(p)
                 if not isinstance(p, dict):
                     continue
                 ticker = p.get("ticker") or p.get("symbol") or "?"
-                pe = p.get("pe_ratio") or p.get("forward_pe") or p.get("trailing_pe")
+                pe = (p.get("pe_ratio") or p.get("forward_pe") or p.get("trailing_pe")
+                      or p.get("pe_trailing") or p.get("pe_forward"))
                 ev = p.get("ev_to_ebitda") or p.get("ev_ebitda")
                 gm = p.get("gross_margin") or p.get("gross_profit_margin")
                 om = p.get("operating_margin") or p.get("op_margin")
