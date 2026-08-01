@@ -1,5 +1,7 @@
 # Aegis Research OS
 
+[![tests](https://github.com/9205608-hub/aegis-research-os/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/9205608-hub/aegis-research-os/actions/workflows/tests.yml)
+
 Python-based investment research system with:
 
 - automated research orchestration
