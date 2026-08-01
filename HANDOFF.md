@@ -1,6 +1,35 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-08-01 晚 (**六路并行优化批**：置信度封顶链四层修复（含 definition_gate 恒真 skip 的 P0 级发现——7/12 起 high 档结构性不可达）+ L1 Wave 3 解禁/质押摄取 + Editor 首页数字清洗 + replay 五门复活；1731 passed / golden 零 diff；见下节)
+> 最新更新: 2026-08-01 深夜 (**第二波六路并行批**：definition_gate 武装（离线测量 0%→归一化 99.8%）+ mock 端到端验证六项全过 + L1 Wave 4 股东户数/两融/龙虎榜 + 清洗器三盲区 + 首页数字卡片渲染 + GitHub Actions CI；1847 passed；两波合计见下两节)
+
+## 📦 2026-08-01 深夜 第二波六路并行批（第一波收尾后同晚追加）
+
+**背景**：第一波合 main 推送后（9236c78→3708496），用户要求继续加码。六路隔离 worktree agent 并行，全部合并回本分支。合并后全量 **1847 passed / 15 skipped**（本 worktree golden 28 绿 / 8 条件 skip）。
+
+### definition_gate 武装（软着陆）
+离线对齐率测量（主库 .cache 30 个 replay pkl / 210 份 judgment）：**精确比对 0% 对齐**——根因结构性：`auto_research.py` `_compute_metrics` 用 `definition_id.replace("_v1","")` 把版本化 id 剥成裸名作 computed_metrics 键，agent 从该键集自报 `used_metric_ids`。版本归一化（双侧剥 `_v<N>`）后 21/22 distinct id 注册（按出现次数 99.8%），唯一残留 `pe_ratio_ttm` 是运行时注入的实时指标、registry 无条目。实施：Step 12 ctx 传 `registered_metric_ids`（`list_all()` 的 `definition_id`）+ gate 归一化比对 + `DEFAULT_GATE_POLICY["definition_gate_block"]=False` 软着陆（未注册记 warn 不 block，message 截断 10 个 id）。pass/fail 措辞均不含 "skipped"（B4 收割契约保留）。**拧紧路径**：把运行时注入指标补进 seed registry 后翻 True。replay 路径未武装（行为不变有测试锁定）。
+
+### mock 端到端验证（六项全过、零改动、零 LLM 消耗、2m15s）
+跑法：backend=sdk + 伪造 ANTHROPIC_API_KEY（健康检查只查环境变量存在性，每调用 401 秒拒）→ 全 11 个 LLM 角色走兜底 = degraded 识别极限压测。300502 实测：① Wave 1/2/3 盖章全命中（质押 detail_stale 降级实战生效：东财 2018/2021 陈旧"未解押"被中登口径否决）；② `Gate skips` 行整个消失；③ degraded 7/7 识别，"1 条真实警告＋另有 3 条输入退化警告"，published+medium（旧逻辑会被伪警告打穿）；④ 红旗 5→1（唯一举旗是弱词+低置信正确触发）；⑤⑥ 报告 121KB 中文完整、极限退化下 headline 诚实显示"合成失败：缺少核心论点"。观察记录：equity_pledge 步骤实测 23s（冷启动 75.8s）——"换 datacenter 按码过滤"建议升级为应做。完整报告见 [VERIFICATION_2026-08-01.md](VERIFICATION_2026-08-01.md)（含下次真实 LLM run 的 7 条观察清单）。
+
+### L1 Wave 4：股东户数 + 两融 + 龙虎榜（三线全落地，接口全实测）
+- [holder_count.py](aegis/core/acquisition/connectors/holder_count.py)：akshare `stock_zh_a_gdhs_detail_em`。⚠ 新陷阱：增减比例是**百分数**（与 Wave 3 解禁的"小数"正好相反）；行序**升序**（最新在表尾）；含 IPO 前发起人静态行（301358 上市前恒 30 户）会制造假"筹码集中"——按 `_MIN_LISTED_HOLDER_COUNT=200`（《证券法》公开发行界线）过滤并自行重算环比。
+- [margin_trading.py](aegis/core/acquisition/connectors/margin_trading.py)：任务候选 akshare 接口一个不存在、一个 SSL 握手失败，改走东财 datacenter `RPTA_WEB_RZRQ_GGMX`（与质押同主机，Wave 2 直连先例）。`RZYEZB` 已是百分数（交叉验证过）；非标的 `code:9201` 与网络失败区分，`is_margin_eligible=False` 即信息。
+- [lhb_activity.py](aegis/core/acquisition/connectors/lhb_activity.py)：`stock_lhb_stock_statistic_em("近三月")` 全市场过滤；缺席=未上榜干净 None 不盖章；无 % 无需白名单（docstring 注明）。
+- 四点接线同构（盖章 auto_research.py:1373-1424 紧跟 `__equity_pledge`；注入 llm_agent_base:1193-1242 + synthesizer；白名单 synthesizer+editor 两处）。+58 用例。301358/300502 实测：分散/平稳趋势、300502 融资余额 208.94 亿近 20 日降 27.54%、龙虎榜命中 1 次净买 19.28 亿。
+
+### 清洗器三盲区 + 表达层 + CI
+- **清洗器**（+33 用例）：① BPS/EPS/DPS 真实 per-share 白名单（meta_facts 派生 + `eps_basic/eps_diluted` 直通值，容差 ±10% 比情景 ±15% 紧，亏损票取绝对值）；② strict 票裸 % 语境设防（估值语境词清洗/运营语境词保留，词表刻意保守）；③ logic_critic 净利率 claim + EN 绝对额走中英对称归类器（EN 窗口 80→40 字符收紧）。
+- **表达层**（+18 用例）：首页关键数字卡片全链渲染（html_report_v2 `frontPageNumbers` 装配【过滤半空、截断 5 条】+ report.jsx `<FrontPageNumbers/>` 挂执行摘要 SectionHead 后，复用 stat-strip 体系，context 走 title 悬浮，空列表零占位，浏览器 DOM 实测）；红旗"红旗"字面量按语料实证收窄为"红旗线/红旗触发"复合词（红旗连锁 002697 免疫，无需公司名黑名单）；英文弱词 `\b词干\w*` 词边界（"asterisk" 不再命中 risk，"deteriorating" 照常命中）。核查结论：HTML 不渲染 gate 结果，退化计数无混计风险（replay 打印口径 message 截断 100 字符内完整可见）。
+- **CI**（.github/workflows/tests.yml）：push main + PR + 手动触发，Python 3.12 + pip 缓存 + 30min 兜底 + concurrency 取消过期 run。干净 venv 三轮验证挖出 **5 个隐式依赖**（jinja2/pyyaml/requests/openai/yfinance）补进 pyproject——pyproject 现在是唯一依赖真源，干净环境 1731 全绿实证。README 挂 badge。akshare/openbb/fitz 懒导入刻意不声明（运行时可选）。
+
+### 遗留/下一步
+1. **golden 基线重录（主库）**：`frontPageNumbers` 新键属有意变更，合 main 后在有源 pkl 的主库重录。
+2. **真实 LLM run A/B**（Wave 3+4 六类 L1 块同时命中，300502 prompt 长度增量值得观察）：观察清单见 VERIFICATION 文档第 5 节——high 档可达性首验、open_questions 消灭实证、Wave 3/4 % 白名单存活。
+3. definition_gate 拧紧（补 seed 运行时指标→翻 block=True）；replay 路径武装。
+4. equity_pledge 中登快照按码过滤（23-76s 实测，应做）。
+5. 清洗器：每股经营现金流未进白名单；"隐含/对应股价"类规避词未入 strict 语境表（防误杀有意取舍，真实票复盘后增补）。
+6. CI 首跑观察：ubuntu/x64 二进制轮子（duckdb/psycopg/curl_cffi）预期无事；openai `<3` 上界若上游发 v3 需收紧。
 
 ## 📦 2026-08-01 晚 六路并行优化批（置信度链 + Wave 3，分支 claude/project-progress-commercialization-ae872e）
 
