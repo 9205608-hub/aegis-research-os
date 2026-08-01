@@ -174,11 +174,11 @@ class SubprocessLLMClient:
             try:
                 return json.loads(result_text)
             except json.JSONDecodeError:
-                # TODO-Y1: try the shared repair chain (control-char strip,
-                # missing-comma fix, depth-0 search, array-truncation salvage)
-                # before degrading to {"raw_text": ...}. Subprocess CLI
-                # output occasionally carries trailing prose that breaks a
-                # naive json.loads.
+                # Shared repair chain (TODO-Y1, done): control-char strip,
+                # missing-comma fix, depth-0 search, array-truncation
+                # salvage — runs before degrading to {"raw_text": ...}.
+                # Subprocess CLI output occasionally carries trailing prose
+                # that breaks a naive json.loads.
                 try:
                     return _shared_repair_json(result_text)
                 except json.JSONDecodeError:

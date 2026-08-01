@@ -126,9 +126,10 @@ class USMarketAdapter(MarketAdapter):
     def get_fiscal_year_end(self, entity_id: str) -> str:
         """US companies have company-specific fiscal year ends.
 
-        In production, this queries Entity Master. Default is 12-31.
+        Per-company FYE lookup is not implemented — always returns the
+        12-31 default. (Actual period ends come from SEC filing data
+        downstream, so this default is only a labeling fallback.)
         """
-        # TODO: Query entity master for actual FYE
         return "12-31"
 
     def get_default_accounting_standard(self) -> AccountingStandard:
