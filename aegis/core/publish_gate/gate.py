@@ -10,7 +10,8 @@ Gates:
 - cognitive_bias_gate: bias critic passed
 - reproducibility_gate: run_manifest exists with hashes
 - accounting_integrity_gate: no accounting contamination (SBC, cross-standard)
-- warn_accumulation_gate: total warns below threshold
+- warn_accumulation_gate: total analytical warns below threshold
+  (degraded-input / LLM-fallback warns counted separately, not against it)
 - logical_consistency_gate: no compound logic contradictions
 - data_quality_gate: no DQ severity=error issues from fact_bridge
 """
@@ -20,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from aegis.core.critics.degraded_input import split_issue_counts
 from aegis.data_contracts.critic_result_schema import CriticResult
 from aegis.data_contracts.judgment_schema import JudgmentContract
 
@@ -118,7 +120,8 @@ class PublishGate:
         checks.append(self._accounting_integrity_gate(critic_results))
 
         # Gate 8: Warn accumulation gate — too many warnings = block
-        checks.append(self._warn_accumulation_gate(critic_results))
+        # (2026-08-01: degraded-input warns are split out, see method doc)
+        checks.append(self._warn_accumulation_gate(critic_results, judgments))
 
         # Gate 9: Logical consistency gate — compound contradictions
         checks.append(self._logical_consistency_gate(critic_results))
@@ -301,29 +304,46 @@ class PublishGate:
             message="No accounting contamination detected",
         )
 
-    def _warn_accumulation_gate(self, critic_results: list[CriticResult]) -> GateCheck:
-        """Block if total warn-level issues exceed threshold.
+    def _warn_accumulation_gate(
+        self,
+        critic_results: list[CriticResult],
+        judgments: list[JudgmentContract] | None = None,
+    ) -> GateCheck:
+        """Block if total ANALYTICAL warn-level issues exceed threshold.
 
         Too many unresolved warnings indicate the analysis has not been
         sufficiently cleaned up for publication.
+
+        2026-08-01: degraded-input warns — issues whose offending judgments
+        are all LLM-fallback (mock) templates — are systemic false positives
+        describing input degradation, not analytical failures. They no
+        longer count toward the threshold; they are tallied separately and
+        reported in the message ("另有 N 条输入退化警告"). Real analytical
+        warns behave exactly as before. Confidence-side handling lives in
+        DecisionEngine._determine_confidence (cap at medium when degraded
+        input is present).
         """
         threshold = self._policy["warn_accumulation_threshold"]
-        total_warns = sum(
-            sum(1 for i in cr.issues if i.severity == "warn")
-            for cr in critic_results
+        split = split_issue_counts(critic_results, judgments or [])
+        real_warns = split.real_warns
+        degraded_note = (
+            f"；另有 {split.degraded_warns} 条输入退化警告"
+            f"（LLM 兜底产物，不计入阈值）"
+            if split.degraded_warns else ""
         )
 
-        if total_warns >= threshold:
+        if real_warns >= threshold:
             return GateCheck(
                 gate_name="warn_accumulation_gate",
                 passed=False,
-                message=f"Excessive unresolved warnings: {total_warns} warns "
-                        f"(threshold: {threshold})",
+                message=f"Excessive unresolved warnings: {real_warns} warns "
+                        f"(threshold: {threshold}){degraded_note}",
             )
         return GateCheck(
             gate_name="warn_accumulation_gate",
             passed=True,
-            message=f"Warning count acceptable: {total_warns} (threshold: {threshold})",
+            message=f"Warning count acceptable: {real_warns} "
+                    f"(threshold: {threshold}){degraded_note}",
         )
 
     def _logical_consistency_gate(self, critic_results: list[CriticResult]) -> GateCheck:
