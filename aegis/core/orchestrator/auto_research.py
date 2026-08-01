@@ -4095,6 +4095,14 @@ class AutoResearchOrchestrator:
             all_judgments, critic_results,
             context={
                 "run_manifest_id": run_id,
+                # 2026-08-01: 武装 definition_gate——registry 在 Step 5 已
+                # seed（22 个 *_v1 definition_id）。gate 侧做版本归一化比对
+                # （judgment 携带的是去版本裸名，见 _compute_metrics 的
+                # replace("_v1","")），未注册 id 默认记 warn 不 block
+                # （DEFAULT_GATE_POLICY["definition_gate_block"]）。
+                "registered_metric_ids": [
+                    d.definition_id for d in metric_registry.list_all()
+                ],
                 "__data_quality_issues": meta_facts.get("__data_quality_issues", []),
                 "meta_facts": meta_facts,
                 "computed_metrics": computed_metrics,

@@ -74,6 +74,13 @@ DEFAULT_GATE_POLICY: dict[str, Any] = {
     # passed every gate because all prior checks were one-directional or
     # keyed to high-capex/negative-FCF profiles).
     "valuation_sanity_ratio": 3.0,
+    # 2026-08-01 definition_gate 武装（软着陆）。离线对齐率测量（30 个缓存
+    # run / 210 份 judgment）：版本归一化后 21/22 个 distinct id 已注册
+    # （95.5%，按出现次数 99.8%），唯一残留 pe_ratio_ttm 是 orchestrator
+    # 运行时注入的实时 TTM 市盈率、registry 无对应条目——硬 block 会误伤
+    # 正常 run（nvda 实测命中）。默认 False = 未注册 id 记 warn 不 block；
+    # 待 registry 补齐运行时注入指标后再拧成 True。
+    "definition_gate_block": False,
 }
 
 
@@ -168,15 +175,30 @@ class PublishGate:
         )
 
     def _definition_gate(self, judgments: list[JudgmentContract], ctx: dict) -> GateCheck:
-        """All used metrics must be registered in MetricRegistry."""
+        """All used metrics must be registered in MetricRegistry.
+
+        Armed 2026-08-01 (main-flow Step 12 now passes the seeded registry's
+        definition_ids). Comparison is VERSION-NORMALIZED: a trailing
+        ``_v<N>`` is stripped from both sides before matching. Rationale
+        (offline measurement over 30 cached runs / 210 judgments):
+        judgments carry BARE metric names ("roe", "net_debt") because
+        ``_compute_metrics`` keys computed_metrics with
+        ``definition_id.replace("_v1", "")`` and agents self-report
+        used_metric_ids from those keys — raw exact matching is 0% aligned
+        and would block every run, while normalized matching is 95.5% by
+        distinct id / 99.8% occurrence-weighted (sole residual:
+        pe_ratio_ttm, a runtime-injected live-price metric with no registry
+        entry). Unregistered findings therefore default to severity="warn"
+        via the ``definition_gate_block`` policy switch.
+        """
         registry_ids = set(ctx.get("registered_metric_ids", []))
         if not registry_ids:
-            # The orchestrator never wires a registry into this gate, so this
-            # branch fires on EVERY run — a constant, not a per-run
-            # missing-data condition. The B4 skip harvest (orchestrator and
-            # replay both match on the "skipped" substring) must not collect
-            # it, or the medium confidence cap becomes permanent and "high"
-            # is structurally unreachable. Wording here is load-bearing.
+            # Callers that don't wire a registry (e.g. replay_from_cache)
+            # keep the pre-armed behavior. The B4 skip harvest (orchestrator
+            # and replay both match on the "skipped" substring) must not
+            # collect this branch, or the medium confidence cap becomes
+            # permanent and "high" is structurally unreachable. Wording
+            # here is load-bearing.
             return GateCheck(
                 gate_name="definition_gate",
                 passed=True,
@@ -184,21 +206,36 @@ class PublishGate:
                 severity="warn",
             )
 
+        import re as _re
+
+        def _norm(metric_id: str) -> str:
+            return _re.sub(r"_v\d+$", "", str(metric_id))
+
+        normalized_registry = {_norm(r) for r in registry_ids}
+
         all_metric_ids = set()
         for j in judgments:
             all_metric_ids.update(j.used_metric_ids)
 
-        unregistered = all_metric_ids - registry_ids
+        unregistered = sorted(
+            m for m in all_metric_ids if _norm(m) not in normalized_registry
+        )
         if unregistered:
+            shown = ", ".join(unregistered[:10])
+            overflow = (
+                f" (+{len(unregistered) - 10} more)" if len(unregistered) > 10 else ""
+            )
+            block = bool(self._policy.get("definition_gate_block", False))
             return GateCheck(
                 gate_name="definition_gate",
                 passed=False,
-                message=f"Unregistered metrics used: {', '.join(sorted(unregistered))}",
+                severity="block" if block else "warn",
+                message=f"Unregistered metrics used: {shown}{overflow}",
             )
         return GateCheck(
             gate_name="definition_gate",
             passed=True,
-            message="All metrics are registered in MetricRegistry",
+            message="All metrics are registered in MetricRegistry (version-normalized)",
         )
 
     def _evidence_gate(self, judgments: list[JudgmentContract]) -> GateCheck:
