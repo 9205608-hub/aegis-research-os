@@ -171,10 +171,16 @@ class PublishGate:
         """All used metrics must be registered in MetricRegistry."""
         registry_ids = set(ctx.get("registered_metric_ids", []))
         if not registry_ids:
+            # The orchestrator never wires a registry into this gate, so this
+            # branch fires on EVERY run — a constant, not a per-run
+            # missing-data condition. The B4 skip harvest (orchestrator and
+            # replay both match on the "skipped" substring) must not collect
+            # it, or the medium confidence cap becomes permanent and "high"
+            # is structurally unreachable. Wording here is load-bearing.
             return GateCheck(
                 gate_name="definition_gate",
                 passed=True,
-                message="No registry provided — definition gate skipped",
+                message="No registry provided — definition gate not armed",
                 severity="warn",
             )
 

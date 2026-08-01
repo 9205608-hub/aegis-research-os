@@ -133,3 +133,32 @@ def test_terminal_value_dominated_high_risk_dcf_blocks():
 
     assert not result.publishable
     assert "terminal_value_gate" in result.blocked_by
+
+
+# ---------------------------------------------------------------------------
+# definition_gate 恒真 skip 回归（2026-08-01）
+# ---------------------------------------------------------------------------
+# 主流程 Step 12 从不给 ctx 传 registered_metric_ids，definition_gate 的
+# no-registry 分支每次 run 必触发。B4 的 skip 收割谓词（orchestrator 与
+# replay 各一份）按 `passed + severity=="warn" + "skipped" in message` 子串
+# 匹配——若该分支的 message 含 "skipped"，则 gate_skipped_count>0 恒成立，
+# 置信度被永久封顶 medium，"high" 档结构性不可达。以下锁定：未武装 ≠ 缺数据
+# skip，该分支的措辞不得再命中收割谓词。
+
+
+def test_unarmed_definition_gate_not_harvested_as_skip():
+    result = PublishGate().evaluate([], [_bias_pass()], context=_base_context())
+
+    def_checks = [c for c in result.checks if c.gate_name == "definition_gate"]
+    assert len(def_checks) == 1
+    check = def_checks[0]
+    assert check.passed
+    assert check.severity == "warn"
+    # 收割谓词的判据是 "skipped" 子串——措辞是契约的一部分
+    assert "skipped" not in check.message
+
+    harvested = [
+        c.gate_name for c in result.checks
+        if c.passed and c.severity == "warn" and "skipped" in c.message
+    ]
+    assert "definition_gate" not in harvested
