@@ -13,6 +13,7 @@ while still requiring all content to be traceable to evidence.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -193,6 +194,83 @@ EXPECTATIONS-FIRST HEADLINE RULES (Aegis 2.0 methodology, zero tolerance):
   the regime never justifies omitting the valuation gap."""
 
 
+# AUDIT 遗留清偿（2026-08-01，"Editor front_page_numbers 无 scrub"）：
+# 首页大字数字是报告最显眼的位置，此前却是 Editor 输出里唯一不经
+# _scrub_fair_value_claims 的数字通道——LLM 编造的目标价/回报% 可以
+# 直通报告头版。子字段用不可见分隔符拼接送检，清洗后按分隔符拆回。
+_FPN_SEP = "\u2063"  # U+2063 INVISIBLE SEPARATOR：LLM 文本里不会出现；清洗器只做
+                     # 数字 token 的 span 原位替换，分隔符必然存活，可作界标。
+
+
+def _scrub_front_page_numbers(
+    entries: Any,
+    scenarios: dict[str, Any],
+    market_data: dict[str, Any] | None,
+    extra_sanctioned_pcts: Sequence[float] | None = None,
+    strict: bool = False,
+) -> tuple[list[dict], list[str]]:
+    """front_page_numbers 的 value/context 子字段清洗。
+
+    做法：每条 entry 把 label / value / context 拼成一段文本，送入与 5 个
+    正文字段完全相同的清洗器（label 为裸数字 value 提供语义窗口——
+    "目标价"命中 fair-value 关键词、"下行空间"命中方向关键词；context
+    与 value 互为上下文窗口），再按分隔符拆回：
+
+    - label 或 value 段被改写 → 整条剔除。首页出现清洗占位符比缺一格
+      更难看（正文字段的原位替换风格放在大字号数字上就是空壳）。
+    - 仅 context 段被改写 → 保留条目，context 原位替换（与正文字段一致，
+      清洗器自带中文占位符，中文化铁律由其保证）。
+
+    白名单（设计红线 9）：sanctioned 情景值/市价豁免由清洗器内建；前沿
+    隐含增速、相对估值锚、分部占比/毛利率、客户集中度（±0.5pp 容差）
+    经 extra_sanctioned_pcts 原样透传——真实披露数据不被误杀。非
+    strict 常态票同样沿用 sanctioned 值清单校验（scenario ±15% / 市价
+    ±5% / 白名单 %），strict（估值失配）票下连情景值也不可引用。
+    """
+    from aegis.core._coerce import coerce_list
+    from aegis.core.chief_analyst.thesis_synthesizer import (
+        _scrub_fair_value_claims,
+    )
+
+    kept: list[dict] = []
+    warnings: list[str] = []
+    for n in coerce_list(entries):
+        if not isinstance(n, dict):
+            continue
+        # 防御性去除界标字符（LLM 输出理论上不含，但拆回逻辑依赖它唯一）。
+        label = str(n.get("label", "") or "").replace(_FPN_SEP, " ")
+        value = str(n.get("value", "") or "").replace(_FPN_SEP, " ")
+        context = str(n.get("context", "") or "").replace(_FPN_SEP, " ")
+        combined = _FPN_SEP.join((label, value, context))
+        scrubbed, warns = _scrub_fair_value_claims(
+            {"front_page_entry": combined}, scenarios, market_data,
+            fields=("front_page_entry",),
+            extra_sanctioned_pcts=extra_sanctioned_pcts,
+            strict=strict,
+        )
+        out_text = scrubbed.get("front_page_entry", combined)
+        if out_text == combined:
+            kept.append({"label": label, "value": value, "context": context})
+            continue
+        parts = out_text.split(_FPN_SEP)
+        _detail = "; ".join(w[:160] for w in warns[:2])
+        if len(parts) != 3 or parts[0] != label or parts[1] != value:
+            # label 或 value 里有非 sanctioned 数字（label 本身无数字则
+            # 永远不会走到这条剔除分支）→ 整条剔除，不留空壳。
+            warnings.append(
+                f"FRONT PAGE NUMBER DROPPED — entry '{label}: {value}' cites "
+                f"unsanctioned figure(s); removed from front page. {_detail}"
+            )
+            continue
+        # 仅 context 被改写：保留条目，context 原位替换。
+        kept.append({"label": label, "value": value, "context": parts[2]})
+        warnings.append(
+            f"FRONT PAGE CONTEXT REWRITTEN — entry '{label}' context cited "
+            f"unsanctioned figure(s); rewritten in-place. {_detail}"
+        )
+    return kept, warnings
+
+
 class ReportEditor:
     """Shapes the final report based on editorial judgment."""
 
@@ -294,30 +372,45 @@ class ReportEditor:
                 customer_sanctioned_pcts,
             )
             _sanity = _valuation_sanity_verdict(scenarios, market_data)
+            _strict_scrub = bool(_sanity and _sanity.get("mismatch"))
+            # 设计红线 9：白名单一次装配，正文 5 字段与 front_page_numbers
+            # 共用同一份 sanctioned 值清单。
+            _extra_pcts = (
+                frontier_sanctioned_growth_pcts(
+                    (meta_facts or {}).get("__expectations_frontier")
+                )
+                + relative_valuation_sanctioned_pcts(
+                    (meta_facts or {}).get("__relative_valuation")
+                )
+                # L1 Wave 1：分部占比/毛利率 %（真实披露数据，红线 9）
+                + segment_sanctioned_pcts(
+                    (meta_facts or {}).get("__segment_composition")
+                )
+                # L1 Wave 2：客户/供应商集中度 %（真实披露数据，红线 9）
+                + customer_sanctioned_pcts(
+                    (meta_facts or {}).get("__customer_concentration")
+                )
+            )
             scrubbed, warns = _scrub_fair_value_claims(
                 raw, scenarios, market_data, fields=editor_fields,
-                extra_sanctioned_pcts=(
-                    frontier_sanctioned_growth_pcts(
-                        (meta_facts or {}).get("__expectations_frontier")
-                    )
-                    + relative_valuation_sanctioned_pcts(
-                        (meta_facts or {}).get("__relative_valuation")
-                    )
-                    # L1 Wave 1：分部占比/毛利率 %（真实披露数据，红线 9）
-                    + segment_sanctioned_pcts(
-                        (meta_facts or {}).get("__segment_composition")
-                    )
-                    # L1 Wave 2：客户/供应商集中度 %（真实披露数据，红线 9）
-                    + customer_sanctioned_pcts(
-                        (meta_facts or {}).get("__customer_concentration")
-                    )
-                ),
-                strict=bool(_sanity and _sanity.get("mismatch")),
+                extra_sanctioned_pcts=_extra_pcts,
+                strict=_strict_scrub,
             )
             if warns:
                 for k in editor_fields:
                     if k in scrubbed:
                         raw[k] = scrubbed[k]
+            # AUDIT 遗留清偿（2026-08-01）：front_page_numbers 的 value/
+            # context 子字段接入同一清洗器 + 同一白名单——首页大字数字
+            # 此前是唯一不设防的通道。value 被清洗的 entry 整条剔除，
+            # 不留空壳（见 _scrub_front_page_numbers docstring）。
+            raw["front_page_numbers"], _fpn_warns = _scrub_front_page_numbers(
+                raw.get("front_page_numbers"), scenarios, market_data,
+                extra_sanctioned_pcts=_extra_pcts,
+                strict=_strict_scrub,
+            )
+            warns = list(warns) + list(_fpn_warns)
+            if warns:
                 # BUG-A15 (2026-05-04): surface scrubber warnings so the
                 # pipeline log shows when Editor invented alternate-framework
                 # numbers. Was silently dropped before, making it impossible
