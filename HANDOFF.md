@@ -1,6 +1,33 @@
 # HANDOFF — Aegis Research OS 系统问题追踪
 
-> 最新更新: 2026-08-01 深夜 (**第二波六路并行批**：definition_gate 武装（离线测量 0%→归一化 99.8%）+ mock 端到端验证六项全过 + L1 Wave 4 股东户数/两融/龙虎榜 + 清洗器三盲区 + 首页数字卡片渲染 + GitHub Actions CI；1847 passed；两波合计见下两节)
+> 最新更新: 2026-08-06 (**每日定时扫描停用**：launchd com.aegis.scan 已卸载删除，全项目转纯手动触发，零自主运行；恢复一条命令 `bash scripts/install_launchd.sh`)
+
+## 🛑 2026-08-06 每日定时扫描停用（转纯手动触发）
+
+**决定**：aegis 完全休眠——用户不主动修改/调用它，它就不该有任何自主运行。
+
+**原因**：launchd 定时任务每天 16:30 自动扫描票池，触发时自动调 DeepSeek API 复研。2026-08-04 因比亚迪公告触发复研，单日烧掉 $5.49（超 $5 日预算）。无人值守消耗 API 费用不可接受。
+
+**已做**：
+1. `launchctl bootout gui/$(id -u)/com.aegis.scan` 卸载任务，随后删除 `~/Library/LaunchAgents/com.aegis.scan.plist`。删除前与仓库模板 diff 核对：唯一差异是 `__PROJECT_ROOT__` 占位符被安装脚本替换为真实路径，无实质配置漂移，模板无需回改。
+2. 验证：`launchctl list | grep -i aegis` 无输出；无 aegis / scan_watchlist 残留进程；`/Library/LaunchDaemons` 无 aegis 条目；crontab 为空。
+3. 自主运行入口盘点（目标态=零自主运行，已达成）：
+   - 仓库模板 [configs/launchd/com.aegis.scan.plist](configs/launchd/com.aegis.scan.plist) 保留（仅参考，不再安装）。
+   - `run_server.sh` 是前台手动启动（Ctrl+C 退出），无自启/常驻逻辑。
+   - ⚠ 注意：`server/app.py` 的 `/search` 页有一个去抖 30 分钟的兜底后台扫描（`_maybe_background_scan`）——仅在用户**手动**跑着 server 并打开 dashboard 时触发，不属无人值守，但若扫描命中触发条件仍会产生 LLM 费用。手动开 server 时心里有数即可。
+   - 代码里的 watchdog / heartbeat 均为进程内超时保护与 SSE 心跳，与调度无关。
+
+**手动跑一次扫描**：
+```bash
+python scripts/scan_watchlist.py            # 真实一轮（触发时会调 LLM 复研，产生费用）
+python scripts/scan_watchlist.py --dry-run  # 只判触发，零副作用
+python scripts/scan_watchlist.py --smoke    # rule-based 复研，无 LLM 成本
+```
+
+**日后恢复定时任务**（幂等重装，模板占位符自动替换）：
+```bash
+bash scripts/install_launchd.sh
+```
 
 ## 📦 2026-08-01 深夜 第二波六路并行批（第一波收尾后同晚追加）
 
