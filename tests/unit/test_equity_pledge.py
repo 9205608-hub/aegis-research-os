@@ -24,6 +24,8 @@ import pytest
 from aegis.core.acquisition.connectors.equity_pledge import (
     _assemble,
     _csdc_row,
+    _fetch_csdc_ratio,
+    _fetch_csdc_ratio_datacenter,
     _holder_agg,
     _recent_csdc_dates,
     fetch_equity_pledge,
@@ -245,6 +247,11 @@ class TestFetchNeverRaises:
     def test_fetch_end_to_end_with_fake_akshare(self, monkeypatch):
         import sys
         import types
+
+        import aegis.core.acquisition.connectors.equity_pledge as ep
+
+        # datacenter 排前：必须 stub，否则本测会打真网
+        monkeypatch.setattr(ep, "_fetch_csdc_ratio_datacenter", lambda c, t: None)
         fake = types.ModuleType("akshare")
         fake.stock_gpzy_pledge_ratio_em = lambda date: _csdc_df()
         fake.stock_gpzy_individual_pledge_ratio_detail_em = (
@@ -261,6 +268,165 @@ class TestFetchNeverRaises:
         assert "胡学民 占总股本 0.49%" in blob
         for v in (0.49, 5.86):
             assert v in out["sanctioned_pcts"]
+
+
+class TestFetchCsdcRatioDatacenter:
+    """datacenter 按码过滤：命中 / 空+补快照日 / 失败回退 / 口径。不打真网。"""
+
+    def _em_row(self, code: str = "301358", name: str = "湖南裕能",
+                td: str = "2026-07-31 00:00:00",
+                ratio: float = 7.09, shares_wan: float = 6008.33,
+                count: int = 6) -> dict:
+        """2026-08-13 实测 RPT_CSDC_LIST 行缩样。"""
+        return {
+            "SECUCODE": f"{code}.SZ",
+            "SECURITY_CODE": code,
+            "SECURITY_NAME_ABBR": name,
+            "TRADE_DATE": td,
+            "PLEDGE_RATIO": ratio,
+            "REPURCHASE_BALANCE": shares_wan,
+            "PLEDGE_DEAL_NUM": count,
+        }
+
+    def _ok(self, rows: list, count: int | None = None) -> dict:
+        return {
+            "success": True, "code": 0, "message": "ok",
+            "result": {"data": rows, "count": count if count is not None else len(rows)},
+        }
+
+    def _empty_9201(self) -> dict:
+        return {
+            "version": None, "result": None, "success": False,
+            "message": "返回数据为空", "code": 9201,
+        }
+
+    def _patch_requests(self, monkeypatch, handler):
+        import sys
+        import types
+
+        fake = types.ModuleType("requests")
+
+        class _Resp:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def json(self):
+                if isinstance(self._payload, Exception):
+                    raise self._payload
+                return self._payload
+
+        def get(url, params=None, **kwargs):
+            return _Resp(handler(params or {}))
+
+        fake.get = get
+        monkeypatch.setitem(sys.modules, "requests", fake)
+
+    def test_hit_percent_passthrough_and_wan_to_shares(self, monkeypatch):
+        # today=2026-08-01 → 日历最近周五 2026-07-31，与行对齐，只发一次按码请求
+        def handler(params):
+            assert params["reportName"] == "RPT_CSDC_LIST"
+            assert '(SECURITY_CODE="301358")' in params.get("filter", "")
+            return self._ok([self._em_row()])
+
+        self._patch_requests(monkeypatch, handler)
+        out = _fetch_csdc_ratio_datacenter("301358", date(2026, 8, 1))
+        assert out["listed"] is True
+        assert out["trade_date"] == "2026-07-31"
+        assert out["pledge_ratio_total"] == pytest.approx(7.09)  # 百分数透传
+        assert out["pledge_count"] == 6
+        assert out["pledged_shares"] == pytest.approx(60_083_300.0)  # 万股→股
+
+    def test_success_empty_plus_micro_request_snapshot_date(self, monkeypatch):
+        calls: list[dict] = []
+
+        def handler(params):
+            calls.append(params)
+            if params.get("filter"):
+                return {"success": True, "code": 0,
+                        "result": {"data": [], "count": 0}}
+            # pageSize=1 不带码过滤：全市场最新快照日
+            assert params.get("pageSize") == "1"
+            return self._ok([self._em_row(
+                code="600503", name="华丽家族",
+                td="2026-08-07 00:00:00", ratio=5.62, shares_wan=9007.58, count=1,
+            )])
+
+        self._patch_requests(monkeypatch, handler)
+        out = _fetch_csdc_ratio_datacenter("300502", date(2026, 8, 1))
+        assert out["listed"] is False
+        assert out["trade_date"] == "2026-08-07"
+        assert out["pledge_ratio_total"] == pytest.approx(0.0)
+        assert out["pledge_count"] == 0
+        assert out["pledged_shares"] == pytest.approx(0.0)
+        assert len(calls) == 2
+
+    def test_empty_code_9201_plus_micro_request(self, monkeypatch):
+        def handler(params):
+            if params.get("filter"):
+                return self._empty_9201()
+            return self._ok([self._em_row(
+                code="600503", td="2026-08-07 00:00:00",
+            )])
+
+        self._patch_requests(monkeypatch, handler)
+        out = _fetch_csdc_ratio_datacenter("999999", date(2026, 8, 1))
+        assert out == {
+            "trade_date": "2026-08-07", "listed": False,
+            "pledge_ratio_total": 0.0, "pledge_count": 0, "pledged_shares": 0.0,
+        }
+
+    def test_stale_history_is_absent_from_current_snapshot(self, monkeypatch):
+        # 300502 实测形态：按码有行但停在 2023-10-27，当前快照 2026-08-07 未收录
+        def handler(params):
+            if params.get("filter"):
+                return self._ok([self._em_row(
+                    code="300502", name="新易盛",
+                    td="2023-10-27 00:00:00", ratio=1.37, shares_wan=974.4, count=1,
+                )])
+            return self._ok([self._em_row(
+                code="600503", td="2026-08-07 00:00:00",
+            )])
+
+        self._patch_requests(monkeypatch, handler)
+        out = _fetch_csdc_ratio_datacenter("300502", date(2026, 8, 1))
+        assert out["listed"] is False
+        assert out["trade_date"] == "2026-08-07"
+        assert out["pledge_ratio_total"] == pytest.approx(0.0)
+
+    def test_datacenter_fail_falls_back_akshare(self, monkeypatch):
+        import sys
+        import types
+
+        import aegis.core.acquisition.connectors.equity_pledge as ep
+
+        def handler(params):
+            raise ConnectionError("net down")
+
+        self._patch_requests(monkeypatch, handler)
+        fake = types.ModuleType("akshare")
+        fake.stock_gpzy_pledge_ratio_em = lambda date: _csdc_df()
+        monkeypatch.setitem(sys.modules, "akshare", fake)
+        # 编排器：datacenter None → akshare 全表命中 301358
+        out = _fetch_csdc_ratio("301358", date(2026, 8, 1))
+        assert out["listed"] is True
+        assert out["pledge_ratio_total"] == pytest.approx(7.09)
+        assert out["pledged_shares"] == pytest.approx(60_083_300.0)
+        assert out["trade_date"] == "2026-07-31"
+        # 直接函数也是 None，确认回退发生在编排器而非 datacenter 内部
+        assert ep._fetch_csdc_ratio_datacenter("301358", date(2026, 8, 1)) is None
+
+    def test_micro_request_fail_returns_none(self, monkeypatch):
+        def handler(params):
+            if params.get("filter"):
+                return self._empty_9201()
+            raise ConnectionError("market date down")
+
+        self._patch_requests(monkeypatch, handler)
+        assert _fetch_csdc_ratio_datacenter("300502", date(2026, 8, 1)) is None
+
+    def test_malformed_payload_returns_none(self, monkeypatch):
+        self._patch_requests(monkeypatch, lambda p: ["not-a-dict"])
+        assert _fetch_csdc_ratio_datacenter("301358", date(2026, 8, 1)) is None
 
 
 class TestSanctionedPctsExtraction:
