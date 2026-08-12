@@ -340,6 +340,29 @@ def seed_core_metrics(registry: MetricRegistry) -> MetricRegistry:
             validation_rules=["same_entity", "same_currency"],
             effective_from=date(2020, 1, 1),
         ),
+        # 2026-08-13: orchestrator 运行时注入的实时 TTM 市盈率（非报告期
+        # 口径）。live price ÷ TTM EPS（yfinance trailingPE / pe_stats.current），
+        # 与 pe_ratio_v1（price / FY EPS）并列，供同口径同行比较。
+        MetricDefinition(
+            metric_name="pe_ratio_ttm",
+            display_name="P/E Ratio (TTM)",
+            definition_id="pe_ratio_ttm_v1",
+            definition_status="approved",
+            formula_version=1,
+            expression="live_price / ttm_eps",
+            allowed_inputs=["live_price", "ttm_eps"],
+            unit_policy="ratio",
+            period_compatibility=["quarterly", "annual"],
+            accounting_standard_compatibility=ALL_STANDARDS,
+            quality_tier="A",
+            publishable=True,
+            common_failure_modes=[
+                "confusing TTM P/E with fiscal-year static pe_ratio",
+                "using a stale trailingPE snapshot as if it were FY EPS",
+            ],
+            validation_rules=["same_entity", "same_currency"],
+            effective_from=date(2020, 1, 1),
+        ),
 
         # =====================================================================
         # DILUTION / SBC
