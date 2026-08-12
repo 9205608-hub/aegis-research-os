@@ -4,11 +4,13 @@
 （治理/平仓风险）**——agents 此前只能把"大股东质押比例"写进
 open_questions。数据源两路互补，2026-08-01 均经真实网络调用实测：
 
-1. akshare ``stock_gpzy_pledge_ratio_em(date)``（东财-上市公司质押比例，
-   RPT_CSDC_LIST，中登周五快照）：全市场约 2200 行，``质押比例`` 为
-   **百分数**（7.09 = 7.09%），``质押股数`` 单位**万股**。个股无质押
-   登记则不在表内——表拉取成功而个股缺席 = 全股质押比例视为 ≈0，这
-   本身是有价值的负面证据。日期按周五回退试探（快照滞后防御）。
+1. 东财 datacenter ``RPT_CSDC_LIST`` 按 ``SECURITY_CODE`` 过滤（中登周五
+   快照主路径）：一次小页拿该股历史快照行，用全市场最新 ``TRADE_DATE``
+   判定当前周是否收录。``PLEDGE_RATIO`` 为**百分数**（7.09 = 7.09%），
+   ``REPURCHASE_BALANCE`` 单位**万股**。个股不在当前快照 = 全股质押
+   比例视为 ≈0（负面证据；按码过滤会带回陈年行，不能把历史最新行
+   当成现口径）。失败回退 akshare ``stock_gpzy_pledge_ratio_em(date)``
+   全表周五试探（最多 6 周，快照滞后防御）。
 2. akshare ``stock_gpzy_individual_pledge_ratio_detail_em(symbol)``
    （东财-重要股东股权质押明细，RPTA_APP_ACCUMDETAILS 按代码过滤）：
    逐笔质押记录，``占所持股份比例`` / ``占总股本比例`` 为**百分数**，
@@ -41,8 +43,13 @@ _HIGH_PLEDGE_THRESHOLD_PCT = 30.0
 # 补仓空间枯竭，平仓/控制权移转风险的市场惯例判定线。
 _HOLDER_STRAIN_THRESHOLD_PCT = 80.0
 
-# 中登快照按周五发布；最多回退试探的周数
+# 中登快照按周五发布；akshare 全表回退最多试探的周数
 _CSDC_LOOKBACK_WEEKS = 6
+
+# 东财 datacenter 直连（与 margin_trading._fetch_ggmx 同主机同三态）
+_EM_DATACENTER_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+_EM_EMPTY_CODE = 9201  # success=false「返回数据为空」
+_CSDC_DC_PAGE_SIZE = 8  # 按码过滤倒序，够对齐当前快照日
 
 # 东财明细 vs 中登口径的对账容差（百分点）。中登是质押登记的权威口径；
 # 东财明细的"未解押"状态更新滞后是已知数据缺陷——2026-08-01 实测
@@ -87,7 +94,141 @@ def fetch_equity_pledge(
 
 
 def _fetch_csdc_ratio(code: str, today: date) -> dict[str, Any] | None:
-    """中登周五快照 → 个股全股质押比例。失败返回 None，永不 raise。"""
+    """中登周五快照编排：datacenter 按码优先，失败回退 akshare 全表。
+
+    失败返回 None，永不 raise。
+    """
+    out = _fetch_csdc_ratio_datacenter(code, today)
+    if out is not None:
+        return out
+    return _fetch_csdc_ratio_akshare(code, today)
+
+
+def _iso_date(v: Any) -> str | None:
+    """``2026-08-07 00:00:00`` / ``2026-08-07`` → ``YYYY-MM-DD``。"""
+    s = str(v or "").strip()
+    return s[:10] if len(s) >= 10 and s[4] == "-" and s[7] == "-" else None
+
+
+def _csdc_absent(trade_date: str) -> dict[str, Any]:
+    """当前快照未收录该股 = 中登无质押登记（负面证据）。"""
+    return {
+        "trade_date": trade_date,
+        "listed": False,
+        "pledge_ratio_total": 0.0,
+        "pledge_count": 0,
+        "pledged_shares": 0.0,
+    }
+
+
+def _csdc_from_em_row(row: dict[str, Any], trade_date: str) -> dict[str, Any]:
+    """RPT_CSDC_LIST 原始行 → 与 ``_csdc_row`` 同形状。
+
+    字段名来自 akshare 源码列映射 + 2026-08-13 真网核对：
+    ``PLEDGE_RATIO`` 百分数原样；``REPURCHASE_BALANCE`` 万股 → 股。
+    """
+    ratio = _f(row.get("PLEDGE_RATIO"))
+    count = _f(row.get("PLEDGE_DEAL_NUM"))
+    shares_wan = _f(row.get("REPURCHASE_BALANCE"))
+    return {
+        "trade_date": trade_date,
+        "listed": True,
+        "pledge_ratio_total": round(ratio, 2) if ratio is not None else None,
+        "pledge_count": int(count) if count is not None else None,
+        "pledged_shares": shares_wan * 1e4 if shares_wan is not None else None,
+    }
+
+
+def _em_csdc_get(
+    *, filt: str | None, page_size: int,
+) -> list[dict[str, Any]] | None:
+    """RPT_CSDC_LIST 三态：有行 / 空列表（明确空） / None（失败）。永不 raise。"""
+    try:
+        with _no_proxy():
+            import requests
+            params: dict[str, str] = {
+                "reportName": "RPT_CSDC_LIST",
+                "columns": "ALL",
+                "sortColumns": "TRADE_DATE",
+                "sortTypes": "-1",
+                "pageNumber": "1",
+                "pageSize": str(page_size),
+                "source": "WEB",
+                "client": "WEB",
+            }
+            if filt:
+                params["filter"] = filt
+            resp = requests.get(
+                _EM_DATACENTER_URL,
+                params=params,
+                timeout=30,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            payload = resp.json()
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("result")
+    if payload.get("success") and isinstance(result, dict):
+        data = result.get("data")
+        return [r for r in data if isinstance(r, dict)] \
+            if isinstance(data, list) else None
+    if payload.get("code") == _EM_EMPTY_CODE:
+        return []
+    return None
+
+
+def _fetch_latest_csdc_trade_date() -> str | None:
+    """全市场最新快照日（pageSize=1、不带码过滤、TRADE_DATE 倒序）。"""
+    rows = _em_csdc_get(filt=None, page_size=1)
+    if not rows:
+        return None
+    return _iso_date(rows[0].get("TRADE_DATE"))
+
+
+def _fetch_csdc_ratio_datacenter(
+    code: str, today: date,
+) -> dict[str, Any] | None:
+    """东财 RPT_CSDC_LIST 按码过滤取当前中登快照。失败返回 None。
+
+    三态（照 ``_fetch_ggmx``）：有当前快照行 = 解析；success 且空 /
+    仅有陈年行 = 负面证据；网络/结构失败 = None。
+
+    按码过滤返回该股**全部历史周五**（2026-08-13 实测 300502 最新行
+    停在 2023-10-27，当前周表内缺席）。必须用全市场最新 TRADE_DATE
+    判定「当前快照是否收录」，否则会把陈年质押行当成现口径。
+    """
+    try:
+        rows = _em_csdc_get(
+            filt=f'(SECURITY_CODE="{code}")',
+            page_size=_CSDC_DC_PAGE_SIZE,
+        )
+        if rows is None:
+            return None
+
+        # 日历最近周五与该股最新行对齐则可省掉第二次请求
+        latest_friday = _recent_csdc_dates(today, 1)[0].isoformat()
+        if rows:
+            row_td = _iso_date(rows[0].get("TRADE_DATE"))
+            if row_td == latest_friday:
+                return _csdc_from_em_row(rows[0], row_td)
+
+        # 空结果、或最新行不是日历最近周五 → 锚定全市场最新快照日
+        market_td = _fetch_latest_csdc_trade_date()
+        if market_td is None:
+            return None
+        if rows:
+            for r in rows:
+                if _iso_date(r.get("TRADE_DATE")) == market_td:
+                    return _csdc_from_em_row(r, market_td)
+        return _csdc_absent(market_td)
+    except Exception:
+        return None
+
+
+def _fetch_csdc_ratio_akshare(code: str, today: date) -> dict[str, Any] | None:
+    """akshare 全表周五试探（datacenter 失败时的回退）。永不 raise。"""
     try:
         with _no_proxy():
             import akshare as ak
