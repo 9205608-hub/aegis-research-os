@@ -219,7 +219,8 @@ class TestSegmentScaling:
 
 class TestGateContext:
     ORCHESTRATOR_STEP12_KEYS = {
-        "run_manifest_id", "__data_quality_issues", "meta_facts",
+        "run_manifest_id", "registered_metric_ids",
+        "__data_quality_issues", "meta_facts",
         "computed_metrics", "market_data", "segment_detail",
         "segment_projections", "scenarios", "dcf_input", "dcf_output",
         "sensitivity_table",

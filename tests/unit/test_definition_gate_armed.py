@@ -1,19 +1,13 @@
-"""definition_gate 武装回归（2026-08-01）。
+"""definition_gate 武装回归（2026-08-01）+ 拧紧（2026-08-13）。
 
 背景：主流程 Step 12 起给 ctx 传 registered_metric_ids（Step 5 seed 的
-22 个 *_v1 definition_id）。离线对齐率测量（30 个缓存 run / 210 份
-judgment）显示 judgment.used_metric_ids 携带的是去版本裸名（"roe"、
-"net_debt"——_compute_metrics 用 replace("_v1","") 作 computed_metrics
-的 key，agent 从该 key 集合自报），原样精确比对对齐率 0%、每 run 必
-block；版本归一化后 95.5%（按 distinct id）/ 99.8%（按出现次数），唯一
-残留 pe_ratio_ttm（orchestrator 运行时注入的实时 TTM 市盈率，registry
-无条目）。因此 gate 侧：
-1. 比对前双侧剥离尾部 _v<N>；
-2. 未注册 id 默认 severity="warn" 不 block（policy 开关
-   definition_gate_block=False，软着陆），拧成 True 才 block。
+*_v1 definition_id）。judgment.used_metric_ids 携带去版本裸名，gate 双侧
+剥 _v<N> 再比对。2026-08-13 普查（30 个缓存 run / 210 份 judgment）在
+seed 补 pe_ratio_ttm_v1 后 distinct-id 对齐率 100%，默认政策翻成
+definition_gate_block=True：未注册 id → severity=block。
 
-本文件锁定武装后的行为矩阵；未传 registry 的调用方（replay_from_cache）
-行为不变，由 test_publish_gate_quality.py 的
+未传 registry 的调用方仍走 "not armed" 分支（措辞契约），由
+test_publish_gate_quality.py 的
 test_unarmed_definition_gate_not_harvested_as_skip 锁定。
 """
 
@@ -96,19 +90,18 @@ def test_armed_gate_accepts_exact_versioned_ids_too():
     assert _definition_check(result).passed
 
 
-def test_armed_gate_unregistered_id_warns_but_does_not_block_by_default():
-    """软着陆：pe_ratio_ttm（实测唯一残留）记 warn，run 仍可发布。"""
+def test_unregistered_id_blocks_when_policy_true():
+    """默认政策 True：未注册 id（幻觉/拼写变体，不进 seed）直接 block。"""
     result = PublishGate().evaluate(
-        [_judgment(["roe", "pe_ratio_ttm"])], [_bias_pass()], context=_ctx(),
+        [_judgment(["roe", "not_a_real_metric"])], [_bias_pass()], context=_ctx(),
     )
 
     check = _definition_check(result)
     assert not check.passed
-    assert check.severity == "warn"
-    assert "pe_ratio_ttm" in check.message
-    assert "definition_gate" not in result.blocked_by
-    assert any("pe_ratio_ttm" in w for w in result.warnings)
-    # 失败分支也不得被 B4 skip 收割谓词命中（谓词要求 passed=True）
+    assert check.severity == "block"
+    assert "not_a_real_metric" in check.message
+    assert "definition_gate" in result.blocked_by
+    assert not result.publishable
     harvested = [
         c.gate_name for c in result.checks
         if c.passed and c.severity == "warn" and "skipped" in c.message
@@ -117,10 +110,10 @@ def test_armed_gate_unregistered_id_warns_but_does_not_block_by_default():
 
 
 def test_armed_gate_blocks_when_policy_tightened():
-    """definition_gate_block=True 拧紧后未注册 id 直接 block。"""
+    """显式 definition_gate_block=True 未注册 id 直接 block。"""
     gate = PublishGate(policy={"definition_gate_block": True})
     result = gate.evaluate(
-        [_judgment(["roe", "pe_ratio_ttm"])], [_bias_pass()], context=_ctx(),
+        [_judgment(["roe", "not_a_real_metric"])], [_bias_pass()], context=_ctx(),
     )
 
     check = _definition_check(result)
@@ -128,6 +121,36 @@ def test_armed_gate_blocks_when_policy_tightened():
     assert check.severity == "block"
     assert "definition_gate" in result.blocked_by
     assert not result.publishable
+
+
+def test_pe_ratio_ttm_now_registered_passes():
+    """2026-08-13 seed 补 pe_ratio_ttm_v1 后，裸名与版本化 id 均过。"""
+    for used in (["roe", "pe_ratio_ttm"], ["pe_ratio_ttm_v1"]):
+        result = PublishGate().evaluate(
+            [_judgment(used)], [_bias_pass()], context=_ctx(),
+        )
+        check = _definition_check(result)
+        assert check.passed, check.message
+        assert "definition_gate" not in result.blocked_by
+        assert "skipped" not in check.message
+
+
+def test_replay_ctx_includes_registered_metric_ids():
+    """replay _build_gate_context 与主流程同款传入 registry id。"""
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[2] / "scripts" / "replay_from_cache.py"
+    spec = importlib.util.spec_from_file_location("replay_from_cache_ut", script)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    ctx = mod._build_gate_context({"run_id": "run_test", "meta_facts": {}})
+    assert "registered_metric_ids" in ctx
+    ids = ctx["registered_metric_ids"]
+    assert "pe_ratio_ttm_v1" in ids
+    assert "pe_ratio_v1" in ids
 
 
 def test_armed_gate_empty_used_metric_ids_not_penalized():

@@ -74,13 +74,14 @@ DEFAULT_GATE_POLICY: dict[str, Any] = {
     # passed every gate because all prior checks were one-directional or
     # keyed to high-capex/negative-FCF profiles).
     "valuation_sanity_ratio": 3.0,
-    # 2026-08-01 definition_gate 武装（软着陆）。离线对齐率测量（30 个缓存
-    # run / 210 份 judgment）：版本归一化后 21/22 个 distinct id 已注册
-    # （95.5%，按出现次数 99.8%），唯一残留 pe_ratio_ttm 是 orchestrator
-    # 运行时注入的实时 TTM 市盈率、registry 无对应条目——硬 block 会误伤
-    # 正常 run（nvda 实测命中）。默认 False = 未注册 id 记 warn 不 block；
-    # 待 registry 补齐运行时注入指标后再拧成 True。
-    "definition_gate_block": False,
+    # 2026-08-01 definition_gate 武装（软着陆）：版本归一化后 21/22
+    # distinct id 已注册（95.5% / 出现次数 99.8%），唯一残留 pe_ratio_ttm
+    # 是 orchestrator 运行时注入的实时 TTM 市盈率。2026-08-13 普查复跑
+    # （30 个缓存 run / 210 份 judgment）：BEFORE 仍 21/22（95.5%，
+    # 3925/3932 = 99.8%），残留仅 pe_ratio_ttm ×7（nvda）；seed 补
+    # pe_ratio_ttm_v1 后 AFTER 22/22 = 100%（3932/3932）。拧成 True =
+    # 未注册 id 直接 block。
+    "definition_gate_block": True,
 }
 
 
@@ -185,20 +186,20 @@ class PublishGate:
         ``_compute_metrics`` keys computed_metrics with
         ``definition_id.replace("_v1", "")`` and agents self-report
         used_metric_ids from those keys — raw exact matching is 0% aligned
-        and would block every run, while normalized matching is 95.5% by
-        distinct id / 99.8% occurrence-weighted (sole residual:
-        pe_ratio_ttm, a runtime-injected live-price metric with no registry
-        entry). Unregistered findings therefore default to severity="warn"
-        via the ``definition_gate_block`` policy switch.
+        and would block every run. 2026-08-13 census: AFTER seeding the
+        runtime-injected ``pe_ratio_ttm`` entry, normalized matching is
+        22/22 = 100% by distinct id (3932/3932 occurrence-weighted).
+        Unregistered findings now default to severity="block" via
+        ``definition_gate_block=True``.
         """
         registry_ids = set(ctx.get("registered_metric_ids", []))
         if not registry_ids:
-            # Callers that don't wire a registry (e.g. replay_from_cache)
-            # keep the pre-armed behavior. The B4 skip harvest (orchestrator
-            # and replay both match on the "skipped" substring) must not
-            # collect this branch, or the medium confidence cap becomes
-            # permanent and "high" is structurally unreachable. Wording
-            # here is load-bearing.
+            # Callers that omit registered_metric_ids keep the pre-armed
+            # behavior. The B4 skip harvest (orchestrator and replay both
+            # match on the "skipped" substring) must not collect this
+            # branch, or the medium confidence cap becomes permanent and
+            # "high" is structurally unreachable. Wording here is
+            # load-bearing.
             return GateCheck(
                 gate_name="definition_gate",
                 passed=True,

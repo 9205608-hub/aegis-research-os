@@ -147,9 +147,20 @@ def _build_gate_context(state: dict) -> dict:
     never actually ran, and any faithful skip accounting would have cost
     confidence for a purely replay-side omission.
     """
+    from aegis.core.truth.registry.metric_registry import MetricRegistry
+    from aegis.core.truth.registry.seed_metrics import seed_core_metrics
+
+    # 与主流程 Step 5 / Step 12 同款：seed 后把 definition_id 列表交给
+    # definition_gate（版本归一化比对）。缺此键会走 "not armed" 分支。
+    metric_registry = MetricRegistry()
+    seed_core_metrics(metric_registry)
+
     meta_facts = state.get("meta_facts") or {}
     return {
         "run_manifest_id": state.get("run_id"),
+        "registered_metric_ids": [
+            d.definition_id for d in metric_registry.list_all()
+        ],
         "__data_quality_issues": meta_facts.get("__data_quality_issues", []),
         "meta_facts": meta_facts,
         "computed_metrics": state.get("computed_metrics"),
