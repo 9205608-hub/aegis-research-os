@@ -29,6 +29,23 @@ python scripts/scan_watchlist.py --smoke    # rule-based 复研，无 LLM 成本
 bash scripts/install_launchd.sh
 ```
 
+## 📦 2026-08-13 夜 跨模型派工双票收货（遗留 #3/#4 销项）
+
+**背景**：HQ 夜班指挥经 M0 桥派 grok 双工单（隔离 worktree + 收据 + referee 独立复跑），全部 ACCEPT 合 main。合并后主库全量 **1977 passed / 7 skipped**。
+
+### definition_gate 拧紧（遗留 #3 销项）
+seed 补 `pe_ratio_ttm_v1`（运行时注入实时 TTM 市盈率）→ 普查工具 `scripts/defgate_census.py`（30 缓存 run / 210 judgment）AFTER **22/22 distinct = 100%（3932/3932 出现次数）** → `definition_gate_block=True`；replay `_build_gate_context` 补 `registered_metric_ids`（与主流程 Step 12 同款派生）。replay smoke（nvda，无 key 环境）：definition_gate armed 且通过，未被其 block。"not armed" 措辞未动（B4 收割契约）。
+
+### equity_pledge 提速（遗留 #4 销项）
+中登快照主路径改东财 datacenter `RPT_CSDC_LIST` 按 `SECURITY_CODE` 过滤（`margin_trading._fetch_ggmx` 同主机同三态），akshare 全表周五试探降级为回退。**实测 300502 全链 23s → 2.1s（≈11×）**。⚠ 数据陷阱（已防御+测试锁定）：按码过滤返回该股**全部历史周五行**（300502 停 2023-10-27），不能把历史最新行当现口径——实现用全市场最新 `TRADE_DATE`（pageSize=1 微请求）对齐判定当前收录，缺席走负面证据。字段：`PLEDGE_RATIO` 百分数、`REPURCHASE_BALANCE` 质押股数万股（referee 独立核对：PLEDGE_MARKET_CAP÷价≈同值）、`PLEDGE_DEAL_NUM` 笔数。
+
+### 顺手
+golden `smoke_nvda` 同日重录（catalysts 未来日期越期，golden_master.py 已载明的漂移面）。派工档案（票据/收据/resume 链）在 `.scratch/dispatch/aeg-*/`。
+
+### 遗留
+- owner 的 watchlist.yaml 换标改动（比亚迪/宁德/紫金）派工期间曾 stash 保管，收货后已 pop 还原为未提交工作区改动——是否提交由 owner 定夺。
+- definition_gate 现为硬 block：下次真实 run 若遇合法新运行时指标被 block，处方=照 pe_ratio_ttm 先例补 seed 条目（census 工具复测 100% 再放行）。
+
 ## 📦 2026-08-01 深夜 第二波六路并行批（第一波收尾后同晚追加）
 
 **背景**：第一波合 main 推送后（9236c78→3708496），用户要求继续加码。六路隔离 worktree agent 并行，全部合并回本分支。合并后全量 **1847 passed / 15 skipped**（本 worktree golden 28 绿 / 8 条件 skip）。
