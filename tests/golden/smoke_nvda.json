@@ -120,12 +120,6 @@
     "bias": "warned",
     "catalysts": [
       {
-        "date": "2026-08-09",
-        "impact": "Low",
-        "note": "10-Q Q2 filing deadline (period ending 2026-06-30)",
-        "title": "SEC 10-Q Q2 Due"
-      },
-      {
         "date": "2026-11-09",
         "impact": "Low",
         "note": "10-Q Q3 filing deadline (period ending 2026-09-30)",
