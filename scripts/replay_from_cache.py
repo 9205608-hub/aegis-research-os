@@ -197,6 +197,65 @@ def _recover_editor_fields(prior_html_paths, thesis_core: str):
     return None
 
 
+def _recover_product_form_stamp(prior_html_paths):
+    """审计终验补丁（2026-08-28）：产品形态盖章回收（零 LLM）。
+
+    缓存 pkl 早于 orchestrator 的 product_form 盖章机制时，replay 只能从
+    重建 decision 降级重算 reason——证据缺口计数会塌缩（300502：真实 run
+    「13 处」→ replay「1 处」，误差方向美化自己，审计终验唯一阻塞项）。
+    与前页字段同款思路：真实 run 的 reason 原句仍在先前渲染 HTML 的
+    ``window.REPORT.productForm`` 里，按候选顺序回收。
+
+    防呆（关键）：replay 自己渲染的 HTML 里 reason 已是塌缩版，不可回收
+    ——鉴别特征＝``pipelineDuration``：真实 run 渲染携带真实时长
+    （如 "2h 17m"），replay 渲染恒为 "—"（replay 不传 pipeline_duration）。
+    候选须同时满足 productForm 非空 + pipelineDuration 有值。
+
+    Returns: 可直接盖回 ``scenarios["product_form"]`` 的 stamp dict
+    （form/label_zh/label_en/reason_zh/reason_en，附 _source）或 None。
+    渲染层只读 form/label_*/reason_*，回收串同时填 zh/en 槽位（渲染语言
+    与原始渲染一致，取值等价）。
+    """
+    import json as _json
+    import re as _re
+
+    for p in prior_html_paths:
+        try:
+            p = Path(p)
+            if not p.exists():
+                continue
+            html = p.read_text(encoding="utf-8")
+            m = _re.search(r"window\.REPORT = ", html)
+            if not m:
+                continue
+            end = html.index(";</script>", m.end())
+            rep = _json.loads(
+                html[m.end():end]
+                .replace("<\\/", "</")
+                .replace("<\\u0021--", "<!--")
+            )
+            pf = rep.get("productForm")
+            duration = str(rep.get("pipelineDuration") or "").strip()
+            if not (isinstance(pf, dict) and pf.get("form")):
+                continue
+            if duration in ("", "—"):
+                # replay 渲染产物（无真实时长）——reason 可能已塌缩，弃用
+                continue
+            label = str(pf.get("label") or "").strip()
+            reason = str(pf.get("reason") or "").strip()
+            if not reason:
+                continue
+            return {
+                "form": str(pf["form"]),
+                "label_zh": label, "label_en": label,
+                "reason_zh": reason, "reason_en": reason,
+                "_source": str(p),
+            }
+        except Exception:
+            continue
+    return None
+
+
 def _h2_anchor_from_verification(ver_rows):
     """H2 兑现锚推导（与 html_report_v2 监控合约 anchorNote 同源同式）：
     同年全年一致预期归母 − H1 实际归母。两块 evidence 任一缺失返回 None。
@@ -1032,13 +1091,12 @@ def main() -> int:
     # 首尾屏重复与前页卡消失（审计官复验抓出的回归）。从先前渲染的
     # HTML（当前产物 → *_preaudit 对照版）回收真编辑器产出；两个候选
     # 都不可用时打 warning，不再静默降级。
+    _period_str = state["config"].period.lower()
+    _out = Path("demos") / f"{args.ticker.lower()}_{_period_str}_auto_report.html"
+    _prior_candidates = [_out, _out.with_name(_out.stem + "_preaudit.html")]
     if edited_report is None:
-        _period_str = state["config"].period.lower()
-        _out = Path("demos") / f"{args.ticker.lower()}_{_period_str}_auto_report.html"
         _core = getattr(state.get("synthesized_thesis"), "core_thesis", "") or ""
-        edited_report = _recover_editor_fields(
-            [_out, _out.with_name(_out.stem + "_preaudit.html")], _core,
-        )
+        edited_report = _recover_editor_fields(_prior_candidates, _core)
         if edited_report is not None:
             # H2 锚口径更正（与监控合约 anchorNote 同源同数）：编辑器产出
             # 里的 H2 门槛引用（预告区间口径 ¥117 / ¥117~128亿）统一到
@@ -1077,6 +1135,25 @@ def main() -> int:
         else:
             print("  ⚠ Editor 前页字段缺失：--editor 未开且无先前编辑器产出可回收，"
                   "headline/lede/前页数字卡将走 thesis 兜底（首尾屏会重复、卡片消失）")
+
+    # ── 审计终验补丁（2026-08-28）：产品形态盖章回收 ──
+    # 缓存无 product_form 盖章时，渲染层从重建 decision 降级重算 reason，
+    # 证据缺口计数会塌缩（真实 run 13 处 → replay 1 处，误差方向美化
+    # 自己）。从真实 run 渲染的 HTML（pipelineDuration 有值为鉴别特征）
+    # 回收原句盖回 scenarios；无候选时打 warning，不再静默降级。
+    _sc_state = state.get("scenarios")
+    if isinstance(_sc_state, dict) and not _sc_state.get("product_form"):
+        _pf_stamp = _recover_product_form_stamp(_prior_candidates)
+        if _pf_stamp is not None:
+            _sc_state["product_form"] = _pf_stamp
+            state["scenarios"] = _sc_state
+            print(f"  [backfill] 产品形态盖章回收: form={_pf_stamp['form']} "
+                  f"(reason 原句 {len(_pf_stamp['reason_zh'])} 字, "
+                  f"source: {_pf_stamp['_source']})")
+        else:
+            print("  ⚠ 产品形态盖章缺失：缓存无盖章且无真实 run 渲染可回收，"
+                  "productForm.reason 将按 replay 重算口径降级推导"
+                  "（证据缺口计数可能与原始 run 不符）")
 
     # ── Step 5: HTML Report ──
     t5 = time.time()

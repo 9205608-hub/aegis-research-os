@@ -395,3 +395,46 @@ class TestH2AnchorFromVerification:
     def test_anchor_none_on_missing_pieces(self, replay_mod):
         assert replay_mod._h2_anchor_from_verification([]) is None
         assert replay_mod._h2_anchor_from_verification([self.ROWS[1]]) is None
+
+
+class TestRecoverProductFormStamp:
+    """审计终验补丁（2026-08-28）：productForm.reason 回收——replay 重算的
+    证据缺口计数会塌缩（真实 run 13 处→replay 1 处），从真实 run 渲染
+    回收原句；鉴别特征＝pipelineDuration（replay 渲染恒 "—"）。"""
+
+    @staticmethod
+    def _pf_html(tmp_path, name, *, duration, pf):
+        import json
+        rep = {"pipelineDuration": duration, "productForm": pf}
+        p = tmp_path / name
+        p.write_text("<html><script>window.REPORT = "
+                     + json.dumps(rep, ensure_ascii=False)
+                     + ";</script></html>", encoding="utf-8")
+        return p
+
+    PF = {"form": "observation_framework",
+          "label": "条件化观察框架 + 监控合约",
+          "reason": "本产出物为观察框架：证据缺口（核心叙事有 13 处引用仍未闭合的研究问题）。"}
+
+    def test_recovers_from_real_run_render(self, replay_mod, tmp_path):
+        p = self._pf_html(tmp_path, "a.html", duration="2h 17m", pf=self.PF)
+        stamp = replay_mod._recover_product_form_stamp([p])
+        assert stamp is not None
+        assert stamp["form"] == "observation_framework"
+        assert "13 处" in stamp["reason_zh"]
+        assert stamp["reason_en"] == stamp["reason_zh"]  # 双槽位同值
+
+    def test_rejects_replay_render_by_duration_marker(self, replay_mod, tmp_path):
+        # replay 渲染产物（pipelineDuration "—"）reason 可能已塌缩——不可回收
+        bad = self._pf_html(tmp_path, "b.html", duration="—",
+                            pf={**self.PF, "reason": "……（核心叙事有 1 处引用……）"})
+        good = self._pf_html(tmp_path, "c.html", duration="2h 17m", pf=self.PF)
+        stamp = replay_mod._recover_product_form_stamp([bad, good])
+        assert stamp is not None and "13 处" in stamp["reason_zh"]
+        assert stamp["_source"].endswith("c.html")
+
+    def test_none_when_no_valid_candidate(self, replay_mod, tmp_path):
+        only_replay = self._pf_html(tmp_path, "d.html", duration="—", pf=self.PF)
+        no_pf = self._pf_html(tmp_path, "e.html", duration="2h", pf=None)
+        assert replay_mod._recover_product_form_stamp(
+            [only_replay, no_pf, tmp_path / "nope.html"]) is None
