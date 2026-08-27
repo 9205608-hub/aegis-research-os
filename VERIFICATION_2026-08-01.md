@@ -2,7 +2,7 @@
 
 > 验证 agent 独立 worktree run。零真实 LLM 消耗（全部调用被伪造 key 401 拒绝，未产生任何计费）。
 > 分支: `claude/project-progress-commercialization-ae872e`
-> Worktree: `/Users/spensir/Desktop/智能投研助手/.claude/worktrees/agent-a9a6a362e68ff9135`
+> Worktree: `~/Desktop/智能投研助手/.claude/worktrees/agent-a9a6a362e68ff9135`
 > 结论：**六项全部通过，未发现 wiring 级 bug，零代码改动。**
 
 ## 1. 跑法（离线/零 LLM 花费）
