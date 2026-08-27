@@ -66,15 +66,17 @@ flowchart LR
 
 ## 📈 报告长什么样
 
-五份冒烟报告随仓库携带（`demos/smoke/`）：
+五份冒烟报告随仓库携带（`demos/smoke/`，clone 后用浏览器直接打开）：
 [NVDA](demos/smoke/nvda_fy2026_auto_report.html) ·
 [贵州茅台 600519](demos/smoke/600519_fy2025_auto_report.html) ·
 [康达新材 002669](demos/smoke/002669_fy2025_auto_report.html) ·
 [特变电工 600089](demos/smoke/600089_fy2025_auto_report.html) ·
 [中珠 600568](demos/smoke/600568_fy2025_auto_report.html)。
-报告含：执行摘要与关键数字卡、DCF 三情景与敏感性矩阵、7 位 agent 的观点与
-分歧、critic 告警、发布门槛结果与置信度档位、时效性警告 banner（数据源落后
-超 15 个月时强制显示）。
+报告含：执行摘要与投资论点、DCF 三情景与敏感性分析、各专家视角的分析章节、
+时效性警告 banner（数据源落后超 15 个月时强制显示）。注意这五份是**规则模式**
+产物（零 LLM，用于验管道）；全量 LLM run 的报告在论点深度、agent 分歧与
+critic 复核痕迹上远厚于此。发布门槛与红旗判定结果输出在运行日志与 thesis
+持久化产物中。
 
 ## 🚀 快速开始
 
