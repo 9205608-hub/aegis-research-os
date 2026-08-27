@@ -238,7 +238,10 @@ const SECTIONS_ZH = [
   { id: "sec-dcf",         num: "06", title: "DCF 推导" },
   { id: "sec-agents",      num: "07", title: "七位专家观点" },
   { id: "sec-sensitivity", num: "08", title: "敏感性分析" },
-  { id: "sec-conclusion",  num: "09", title: "结论与催化剂" },
+  // 审计处方三 2（2026-08-28）：监控合约（kill 条件 + 监控点）此前只落
+  // 日志不进报告，产品形态却承诺「监控点、阈值、证伪触发」。
+  { id: "sec-monitoring",  num: "09", title: "监控合约" },
+  { id: "sec-conclusion",  num: "10", title: "结论与催化剂" },
 ];
 const SECTIONS_EN = [
   { id: "sec-summary",     num: "01", title: "Executive summary" },
@@ -249,7 +252,8 @@ const SECTIONS_EN = [
   { id: "sec-dcf",         num: "06", title: "DCF derivation" },
   { id: "sec-agents",      num: "07", title: "Seven-agent views" },
   { id: "sec-sensitivity", num: "08", title: "Sensitivity analysis" },
-  { id: "sec-conclusion",  num: "09", title: "Conclusion & catalysts" },
+  { id: "sec-monitoring",  num: "09", title: "Monitoring contract" },
+  { id: "sec-conclusion",  num: "10", title: "Conclusion & catalysts" },
 ];
 
 // ---------- Helpers ----------
@@ -272,6 +276,7 @@ const _SECTION_DATA_GUARD = {
   "sec-dcf":         () => REPORT.dcf && REPORT.dcf.projection?.length,
   "sec-agents":      () => Array.isArray(REPORT.agents) && REPORT.agents.length > 0,
   "sec-sensitivity": () => REPORT.sensitivity && REPORT.sensitivity.matrix?.length,
+  "sec-monitoring":  () => REPORT.monitoring && (REPORT.monitoring.kills?.length || REPORT.monitoring.monitorables?.length),
   "sec-conclusion":  () => REPORT.conclusion && REPORT.conclusion.paragraphs?.length,
 };
 const SECTIONS = _SECTIONS_FULL.filter(s => {
@@ -465,6 +470,10 @@ function RightRail() {
 
 function Verdict() {
   const wordClass = REPORT.rating.tone;
+  // 审计处方一 1（2026-08-28）：观察框架票抑制卖方包装——评级卡位标
+  // 「产品形态」，目标价卡位由数据侧改标「DCF 参照系 · 非目标价」，
+  // 差额卡位改中性措辞，期限/风险等级卡位整体隐藏。
+  const isObs = !!(REPORT.rating && REPORT.rating.observationFramework);
   // When DCF is n/m the target is null — guard the implied-return math so
   // we render a dash instead of crashing on `null / number`.
   const _hasTarget = (typeof REPORT.rating.target === "number") && Number.isFinite(REPORT.rating.target);
@@ -474,28 +483,34 @@ function Verdict() {
   return (
     <div className="verdict">
       <div className="rating">
-        <span className="tag">{L("评级", "Rating")}</span>
+        <span className="tag">{isObs ? L("产品形态", "Form") : L("评级", "Rating")}</span>
         <span className={`word ${wordClass}`}>{REPORT.rating.word}</span>
       </div>
       <div style={{display:"flex", gap: 36, flexWrap:"wrap", alignItems:"center"}}>
         <div className="tgt">
-          <span className="lbl">{L("目标价", "Target")} · {REPORT.rating.weighted || L("概率加权", "Probability-weighted")}</span>
+          <span className="lbl">{isObs
+            ? (REPORT.rating.weighted || L("DCF 参照系 · 非目标价", "DCF reference frame · not a target"))
+            : <>{L("目标价", "Target")} · {REPORT.rating.weighted || L("概率加权", "Probability-weighted")}</>}</span>
           <span className="val">{_hasTarget ? `${CURR()}${fmtNum(REPORT.rating.target)}` : "n/m"}</span>
         </div>
         <div className="tgt">
-          <span className="lbl">{L("隐含回报", "Implied return")}</span>
+          <span className="lbl">{isObs ? L("参照系 vs 现价差额", "Reference vs price gap") : L("隐含回报", "Implied return")}</span>
           <span className="val" style={{color: spreadColor}}>
             {spread === null ? "—" : `${spread > 0 ? "+" : ""}${spread.toFixed(1)}%`}
           </span>
         </div>
-        <div className="tgt">
-          <span className="lbl">{L("时间跨度", "Time horizon")}</span>
-          <span className="val">{REPORT.rating.timeHorizon || L("12 个月", "12 months")}</span>
-        </div>
-        <div className="tgt">
-          <span className="lbl">{L("风险等级", "Risk level")}</span>
-          <span className="val">{REPORT.rating.riskLevel || L("中", "Medium")}</span>
-        </div>
+        {!isObs && (
+          <div className="tgt">
+            <span className="lbl">{L("时间跨度", "Time horizon")}</span>
+            <span className="val">{REPORT.rating.timeHorizon || L("12 个月", "12 months")}</span>
+          </div>
+        )}
+        {!isObs && (
+          <div className="tgt">
+            <span className="lbl">{L("风险等级", "Risk level")}</span>
+            <span className="val">{REPORT.rating.riskLevel || L("中", "Medium")}</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1317,11 +1332,85 @@ function SensitivitySection() {
   );
 }
 
+// 审计处方三 2（2026-08-28）：监控合约区块。产品形态横幅承诺「监控点、
+// 阈值、证伪触发」，数据侧 decision.kill_criteria / monitorables 此前只
+// 落日志——这里渲染 kill 条件表（描述/阈值/检查频率）+ 监控点按来源
+// agent 分组列表；anchorNote 为 H2 兑现锚的唯一推导口径（数据侧从
+// verification evidence 推导，缺件即 null 隐藏）。
+function MonitoringContract() {
+  const m = REPORT.monitoring;
+  if (!m || !((m.kills || []).length || (m.monitorables || []).length)) return null;
+  const kills = m.kills || [];
+  const mons = m.monitorables || [];
+  // 按来源 agent 分组（保持首次出现顺序）
+  const groups = [];
+  const byAgent = {};
+  mons.forEach(x => {
+    const key = x.agent || L("未标注来源", "Unattributed");
+    if (!byAgent[key]) { byAgent[key] = []; groups.push(key); }
+    byAgent[key].push(x);
+  });
+  const cellStyle = {background:"var(--bg-elev)", padding:"12px 16px", fontSize:13.5, color:"var(--text-2)"};
+  return (
+    <section id="sec-monitoring">
+      <SectionHead idx={L("09 · 监控合约", "09 · Monitoring contract")}
+                   title={L("监控合约", "Monitoring contract")}
+                   subtitle={L("证伪触发（Kill 条件）与监控点 · 决策引擎结构化输出", "Kill criteria & monitorables · structured decision output")}/>
+      {m.anchorNote && (
+        <div className="mono" style={{fontSize:12.5, color:"var(--text-2)", background:"var(--accent-bg)", border:"1px solid var(--hairline)", borderRadius:6, padding:"10px 14px", marginBottom:18}}>
+          {m.anchorNote}
+        </div>
+      )}
+      {kills.length > 0 && (
+        <div style={{marginBottom:28}}>
+          <div className="eyebrow" style={{marginBottom:10}}>
+            {L(`证伪触发 · Kill 条件（${kills.length}）`, `Kill criteria (${kills.length})`)}
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"minmax(0,1.6fr) minmax(0,1fr) 92px", gap:1, background:"var(--hairline)", border:"1px solid var(--hairline)", borderRadius:8, overflow:"hidden"}}>
+            <div style={{...cellStyle, fontFamily:"var(--mono)", fontSize:11, color:"var(--text-3)", letterSpacing:"0.06em"}}>{L("描述", "Description")}</div>
+            <div style={{...cellStyle, fontFamily:"var(--mono)", fontSize:11, color:"var(--text-3)", letterSpacing:"0.06em"}}>{L("触发阈值", "Threshold")}</div>
+            <div style={{...cellStyle, fontFamily:"var(--mono)", fontSize:11, color:"var(--text-3)", letterSpacing:"0.06em"}}>{L("频率", "Cadence")}</div>
+            {kills.map((k, i) => (
+              <React.Fragment key={i}>
+                <div style={cellStyle}>{k.description}</div>
+                <div style={{...cellStyle, color:"var(--text)"}}>{k.threshold || "—"}</div>
+                <div style={{...cellStyle, fontFamily:"var(--mono)", fontSize:12, color:"var(--text-3)"}}>{k.frequency || "—"}</div>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+      )}
+      {mons.length > 0 && (
+        <div>
+          <div className="eyebrow" style={{marginBottom:10}}>
+            {L(`监控点（${mons.length}）· 按来源分组`, `Monitorables (${mons.length}) · by source`)}
+          </div>
+          {groups.map(g => (
+            <div key={g} style={{marginBottom:16}}>
+              <div style={{fontFamily:"var(--mono)", fontSize:11.5, color:"var(--text-3)", letterSpacing:"0.05em", margin:"10px 0 6px"}}>
+                {g} · {byAgent[g].length}
+              </div>
+              <ul style={{margin:0, paddingLeft:18}}>
+                {byAgent[g].map((x, i) => (
+                  <li key={i} style={{fontSize:13.5, color:"var(--text-2)", margin:"4px 0"}}>
+                    {x.description}
+                    {x.frequency ? <span className="mono" style={{fontSize:11, color:"var(--text-4)"}}> · {x.frequency}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Conclusion() {
   const c = REPORT.conclusion || {};
   return (
     <section id="sec-conclusion">
-      <SectionHead idx={L("09 · 结论", "09 · Conclusion")} title={c.title || L("结论", "Conclusion")} subtitle={c.subtitle || L("首席分析师 · 终稿", "Chief Analyst · Final")}/>
+      <SectionHead idx={L("10 · 结论", "10 · Conclusion")} title={c.title || L("结论", "Conclusion")} subtitle={c.subtitle || L("首席分析师 · 终稿", "Chief Analyst · Final")}/>
       {(c.paragraphs && c.paragraphs.length > 0) && (
         <div className="reading wide prose">
           {c.paragraphs.map((html, i) => (
@@ -1503,6 +1592,7 @@ function App() {
           <DcfSection/>
           <AgentsSection/>
           <SensitivitySection/>
+          <MonitoringContract/>
           <Conclusion/>
         </main>
         {tweakState.showRail && <RightRail/>}

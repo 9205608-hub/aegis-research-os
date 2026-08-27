@@ -1203,6 +1203,31 @@ def build_report_dict(
     _v_sanity = sc.get("valuation_sanity") if isinstance(sc.get("valuation_sanity"), dict) else {}
     _sanity_mismatch = bool(_v_sanity.get("mismatch"))
 
+    # ── R5-L4 产品形态（提前判定；审计处方一 1, 2026-08-28）──
+    # 形态判定原本只在报告顶部横幅处消费；但 Verdict 面板/核心判断的
+    # 卖方包装（评级/目标价/期限/风险等级）与「条件化观察框架，非可执行
+    # 投资论点」直接冲突（300502 审计实锤：横幅declare观察框架，面板却
+    # 渲染「回避 + 目标价 ¥154.49 + 12个月」）。提前算出 _pf_stamp，
+    # 让评级链与核心判断按形态分支；横幅装配仍在下方原位。
+    _pf_stamp = sc.get("product_form") if isinstance(sc.get("product_form"), dict) else None
+    if _pf_stamp is None and decision is not None:
+        try:
+            from aegis.core.thesis.product_form import derive_product_form
+            _pf_stamp = derive_product_form(
+                valuation_mismatch=_sanity_mismatch,
+                evidence_gap_hits=sum(
+                    1 for _c in (_g(decision, "unresolved_conflicts", None) or [])
+                    if getattr(_c, "topic", "") == "evidence_gap"),
+                publishing_status=str(_g(decision, "publishing_status", "") or ""),
+                open_question_count=len(_g(decision, "open_questions", None) or []),
+            )
+        except Exception:
+            _pf_stamp = None
+    _is_observation = bool(
+        isinstance(_pf_stamp, dict)
+        and _pf_stamp.get("form") == "observation_framework"
+    )
+
     # DCF-meaningful guard. Refactor 4 (2026-05-04): prefer the engine-
     # set flag from DCFOutput; the engine has the most accurate view
     # (e.g. enterprise_value < 0 even when per_share rounds positive).
@@ -1269,6 +1294,14 @@ def build_report_dict(
             rating_word, rating_tone = ("持有", "hold") if is_zh else ("Hold", "hold")
     else:
         rating_word, rating_tone = _derive_rating(target, price_last, is_zh)
+
+    # 审计处方一 1（2026-08-28）：产品形态=观察框架时抑制卖方包装。
+    # 买入/持有/回避是投资论点的语汇；观察框架票（productForm 横幅已
+    # 自我声明「非可执行投资论点」）不得同时给方向性评级。blocked /
+    # needs_review 的既有文案本就不是评级（暂不评级/审核中），保留原样。
+    if _is_observation and _ps not in ("blocked", "needs_review"):
+        rating_word = "观察框架 · 不评级" if is_zh else "Observation framework · Not rated"
+        rating_tone = "hold"
 
     confidence_raw = _g(decision, "confidence_bucket", "medium")
     # Title-case the English version so it matches the visual weight of
@@ -1450,6 +1483,30 @@ def build_report_dict(
                 f"({_why_str}); use peer-multiple, asset-based, or "
                 f"restructuring-option frameworks instead."
             )
+    elif _is_observation:
+        # 审计处方一 1（2026-08-28）：观察框架票不给「估值回归空间」的
+        # 方向性预判——DCF 值是参照系，差额量化市场相对该框架所付的
+        # 溢价/折价（措辞对齐 Editor frontPageNumbers 的「非目标价，
+        # 而是参照系」口径）。
+        _gap_pct = ((target / price_last - 1) * 100 if price_last > 0 else 0)
+        if is_zh:
+            core_callout = (
+                f"<strong>DCF 参照系：</strong>"
+                f"基准 {curr_sym}{base_value:.2f}、"
+                f"概率加权 {curr_sym}{target:.2f}，"
+                f"现价 {curr_sym}{price_last:.2f} 与参照系差额 <strong>"
+                f"{_gap_pct:+.1f}%</strong>——该差额量化市场相对 DCF 框架"
+                f"所付的溢价/折价，为参照系而非目标价，不构成回归预判。"
+            )
+        else:
+            core_callout = (
+                f"<strong>DCF reference frame: </strong>"
+                f"base {curr_sym}{base_value:.2f}, "
+                f"probability-weighted {curr_sym}{target:.2f}; "
+                f"spot {curr_sym}{price_last:.2f} sits <strong>{_gap_pct:+.1f}%</strong> "
+                f"from the reference frame — a measure of the premium/discount "
+                f"the market pays vs the DCF framework, not a price target."
+            )
     elif is_zh:
         core_callout = (
             f"<strong>核心判断：</strong>"
@@ -1488,7 +1545,21 @@ def build_report_dict(
     # the orchestrator decided the ratio was not meaningful — surface
     # zero (renderer's `if val:` check then skips the row).
     ev_ebitda = _f(computed_metrics.get("ev_to_ebitda"))
-    pe_ttm = _f(computed_metrics.get("pe_ratio_ttm") or computed_metrics.get("pe_ratio"))
+    # 审计处方二 2（2026-08-28，TTM 标签错配）：此前 pe_ratio_ttm 缺失时
+    # 静默回退 FY 静态 pe_ratio，卡片却仍标「市盈率 (TTM)」（300502 实锤：
+    # 标 TTM 渲染 59.8×，与相对估值表的 PE(TTM) 43.5× 互相矛盾）。修法：
+    # ① canonical 键缺失时用 TTM 引擎产出（meta_facts.ttm_net_income，
+    #    与相对估值表同源口径）现算 市值/TTM归母；
+    # ② 两者都拿不到才回退 FY 静态值，且标签如实改「市盈率 (静态)」。
+    ttm_revenue = _f(meta_facts.get("ttm_revenue"))
+    ttm_net_income = _f(meta_facts.get("ttm_net_income"))
+    pe_ttm = _f(computed_metrics.get("pe_ratio_ttm"))
+    pe_is_ttm = pe_ttm > 0
+    if not pe_is_ttm and ttm_net_income > 0 and mkt_cap > 0:
+        pe_ttm = mkt_cap / ttm_net_income
+        pe_is_ttm = True
+    if not pe_is_ttm:
+        pe_ttm = _f(computed_metrics.get("pe_ratio"))
 
     def _unit(v: float) -> str:
         """Format big numbers via the canonical display context.
@@ -1520,8 +1591,19 @@ def build_report_dict(
     # no n/m branching, no string-prefix conditionals. If the key isn't
     # there, skip the row.
     if pe_ttm:
-        quick.append({"lbl": "市盈率 (TTM)" if is_zh else "P/E (TTM)", "val": f"{pe_ttm:.1f}×",
-                      "sub": "" if not eps_basic else (f"EPS {eps_basic:.2f}" if not is_zh else f"每股收益 {eps_basic:.2f}")})
+        # 审计处方二 2：标签如实（TTM 值标 TTM，静态值标静态）；副行 EPS
+        # 与主值同口径同股本推导，保证卡片内自洽（市值/EPS×股本 = PE）。
+        if pe_is_ttm:
+            _pe_lbl = "市盈率 (TTM)" if is_zh else "P/E (TTM)"
+            _eps_shown = (ttm_net_income / _shares) if (ttm_net_income > 0 and _shares > 0) else 0.0
+            _eps_sub = ("" if not _eps_shown else
+                        (f"每股收益(TTM) {_eps_shown:.2f}" if is_zh else f"EPS (TTM) {_eps_shown:.2f}"))
+        else:
+            _pe_lbl = "市盈率 (静态)" if is_zh else "P/E (FY)"
+            _eps_shown = (net_income / _shares) if (net_income > 0 and _shares > 0) else eps_basic
+            _eps_sub = ("" if not _eps_shown else
+                        (f"每股收益 {_eps_shown:.2f}" if is_zh else f"EPS {_eps_shown:.2f}"))
+        quick.append({"lbl": _pe_lbl, "val": f"{pe_ttm:.1f}×", "sub": _eps_sub})
     if ev_ebitda:
         quick.append({"lbl": "EV / EBITDA", "val": f"{ev_ebitda:.1f}×", "sub": ""})
     if op_margin:
@@ -1926,7 +2008,11 @@ def build_report_dict(
     # Refactor 3: orchestrator omits non-meaningful ratios — just render
     # if present, no n/m guard needed.
     if pe_ttm:
-        _kpi("市盈率 (静态)", "P/E (static)", f"{pe_ttm:.1f}×")
+        # 审计处方二 2：标签随实际口径走（quick 卡同一 pe_is_ttm 判定）。
+        if pe_is_ttm:
+            _kpi("市盈率 (TTM)", "P/E (TTM)", f"{pe_ttm:.1f}×")
+        else:
+            _kpi("市盈率 (静态)", "P/E (static)", f"{pe_ttm:.1f}×")
     if ev_ebitda:
         _kpi("EV / EBITDA", "EV / EBITDA", f"{ev_ebitda:.1f}×")
 
@@ -2008,6 +2094,105 @@ def build_report_dict(
             if len(catalysts_out) >= 8:
                 break
 
+    # ── 监控合约（审计处方三 2, 2026-08-28）──
+    # 产品形态自我声明「其价值在于给出可监控的验证/证伪路径（监控点、
+    # 阈值、证伪触发）」，但 decision.kill_criteria / monitorables 此前
+    # 只落日志不进 HTML（300502 实锤：5 kill + 32 monitorables 在报告里
+    # 零对应区块）。这里把两者装配成「监控合约」区块：kill 条件表 +
+    # monitorables 按来源 agent 分组列表。数据源 = DecisionEngine 持久化
+    # 在 decision 上的结构化字段，纯装配零推断。
+    _FREQ_ZH = {
+        "quarterly": "季度", "semiannually": "半年", "annually": "年度",
+        "monthly": "月度", "weekly": "周度", "daily": "每日",
+        "event-driven": "事件驱动", "event_driven": "事件驱动",
+    }
+
+    def _freq_label(freq: str) -> str:
+        f = str(freq or "").strip()
+        return _FREQ_ZH.get(f, f) if is_zh else (f.replace("_", "-") or "—")
+
+    monitoring_kills = []
+    for _k in (_g(decision, "kill_criteria", None) or []):
+        if not isinstance(_k, dict):
+            continue
+        _kd = str(_k.get("description") or "").strip()
+        if not _kd:
+            continue
+        monitoring_kills.append({
+            "description": _kd,
+            "threshold": str(_k.get("threshold") or "").strip(),
+            "frequency": _freq_label(_k.get("check_frequency")),
+        })
+    monitoring_items = []
+    for _m in (_g(decision, "monitorables", None) or []):
+        if not isinstance(_m, dict):
+            continue
+        _md = str(_m.get("description") or "").strip()
+        if not _md:
+            continue
+        _agent_raw = str(_m.get("source_agent") or "").strip()
+        monitoring_items.append({
+            "description": _md,
+            "frequency": _freq_label(_m.get("check_frequency")),
+            "agent": (_AGENT_ZH.get(_agent_raw, _agent_raw) if is_zh
+                      else _AGENT_EN.get(_agent_raw, _agent_raw.replace("_", " ").title())),
+        })
+
+    # 下期兑现锚（审计处方二 1 的可程序化部分）：正文叙事里 H2 净利门槛
+    # 出现多套数字（LLM 产文无法程序化改写）；这里从 verification 的
+    # 结构化 evidence 推导**唯一口径**并标明推导式——canonical 阈值 =
+    # 同年全年一致预期归母 − 中期实际归母（审计处方指定推导）。两块
+    # evidence 任一缺失则不出此行（宁缺毋滥）。
+    monitoring_anchor = None
+    try:
+        _ver_rows = (meta_facts or {}).get("__verification") or []
+        _h1_ni = None
+        _h1_year = None
+        _cons_np = None
+        _cons_year = None
+        for _row in _ver_rows:
+            if not isinstance(_row, dict):
+                continue
+            _ev = _row.get("evidence") or {}
+            if _row.get("check_id") == "cfo_to_net_income":
+                _p = str(_ev.get("period") or "")
+                if _p.endswith("-06-30") and isinstance(_ev.get("net_income"), (int, float)):
+                    _h1_ni = float(_ev["net_income"])
+                    _h1_year = int(_p[:4])
+            if _row.get("check_id") == "forecast_vs_consensus":
+                if isinstance(_ev.get("consensus_net_profit"), (int, float)):
+                    _cons_np = float(_ev["consensus_net_profit"])
+                    _cons_year = _ev.get("year")
+        if (_h1_ni and _cons_np and _h1_year is not None
+                and _cons_year == _h1_year and _cons_np > _h1_ni):
+            _implied_h2 = _cons_np - _h1_ni
+            if is_zh:
+                monitoring_anchor = (
+                    f"H2 兑现锚（唯一推导口径）：FY{_h1_year} 全年一致预期归母 "
+                    f"¥{_cons_np / 1e8:.2f}亿 − H1 实际归母 ¥{_h1_ni / 1e8:.2f}亿 "
+                    f"≈ ¥{_implied_h2 / 1e8:.1f}亿。正文叙事中出现的其他 H2 "
+                    f"门槛数字（预告中值口径等）以本推导为准。"
+                )
+            else:
+                monitoring_anchor = (
+                    f"H2 delivery anchor (single derivation): FY{_h1_year} "
+                    f"consensus net profit {_cons_np / 1e8:.2f}e8 − H1 actual "
+                    f"{_h1_ni / 1e8:.2f}e8 ≈ {_implied_h2 / 1e8:.1f}e8. This "
+                    f"derivation supersedes any other H2 threshold quoted in "
+                    f"the narrative."
+                )
+    except Exception:
+        monitoring_anchor = None
+
+    monitoring_block = (
+        {
+            "kills": monitoring_kills,
+            "monitorables": monitoring_items,
+            "anchorNote": monitoring_anchor,
+        }
+        if (monitoring_kills or monitoring_items) else None
+    )
+
     # ── Macro section ──
     # Filled from the FRED-sourced MacroSnapshot when present (US path only —
     # FRED is US-only). When macro_snapshot is None the template auto-hides.
@@ -2034,8 +2219,18 @@ def build_report_dict(
     net_debt = _f(meta_facts.get("net_debt"))
     if mkt_cap:
         mkvs.append({"k": "市值" if is_zh else "Market Cap", "v": _unit(mkt_cap)})
-    if revenue:
-        mkvs.append({"k": "营收 (TTM)" if is_zh else "Revenue (TTM)", "v": _unit(revenue)})
+    # 审计处方二 2（2026-08-28，TTM 标签错配）：此前把 FY 年度营收标成
+    # 「营收 (TTM)」（300502 实锤：标 TTM 渲染 FY2025 的 ¥248.4亿，真
+    # TTM = ¥353.1亿）。有 TTM 引擎产出（meta_facts.ttm_revenue）用真
+    # TTM 值；没有则标签如实标注财报期，不再冒充 TTM。
+    if ttm_revenue:
+        mkvs.append({"k": "营收 (TTM)" if is_zh else "Revenue (TTM)",
+                     "v": _unit(ttm_revenue)})
+    elif revenue:
+        _rev_period = period_raw if (period_raw and period_raw != "—") else ""
+        _rev_lbl = (f"营收 ({_rev_period})" if _rev_period else "营收 (年报)") if is_zh \
+            else (f"Revenue ({_rev_period})" if _rev_period else "Revenue (FY)")
+        mkvs.append({"k": _rev_lbl, "v": _unit(revenue)})
     if cash:
         mkvs.append({"k": "现金及等价物" if is_zh else "Cash & equiv.", "v": _unit(cash)})
     if total_debt:
@@ -2151,22 +2346,11 @@ def build_report_dict(
     # orchestrator 决策后盖进 scenarios["product_form"]；replay / 旧 pkl
     # 缺章时按决策对象上可得的信号降级重算（同一 derive 函数 = 同一规则）。
     # 仅观察框架票出横幅；干净发布的投资论点无需自我声明。
-    _pf_stamp = sc.get("product_form") if isinstance(sc.get("product_form"), dict) else None
-    if _pf_stamp is None and decision is not None:
-        try:
-            from aegis.core.thesis.product_form import derive_product_form
-            _pf_stamp = derive_product_form(
-                valuation_mismatch=_sanity_mismatch,
-                evidence_gap_hits=sum(
-                    1 for _c in (_g(decision, "unresolved_conflicts", None) or [])
-                    if getattr(_c, "topic", "") == "evidence_gap"),
-                publishing_status=str(_g(decision, "publishing_status", "") or ""),
-                open_question_count=len(_g(decision, "open_questions", None) or []),
-            )
-        except Exception:
-            _pf_stamp = None
+    # （审计处方一 1, 2026-08-28：_pf_stamp 的判定已提前到评级链之前——
+    # 见 _sanity_mismatch 之后的「产品形态（提前判定）」段——此处只做
+    # 横幅装配，不再重复推导。）
     product_form_block = None
-    if isinstance(_pf_stamp, dict) and _pf_stamp.get("form") == "observation_framework":
+    if _is_observation:
         product_form_block = {
             "form": "observation_framework",
             "label": (
@@ -2314,9 +2498,15 @@ def build_report_dict(
             # AUDIT-C2: downgraded reports keep their rating but the target
             # label becomes an explicit caveat (rendered by Verdict in
             # report.jsx via `rating.weighted`).
+            # 审计处方一 1（2026-08-28）：观察框架票的目标价标签改「DCF
+            # 参照系 · 非目标价」——数字保留（¥154.49 仍展示），语义从
+            # 卖方目标价改为参照系（对齐 frontPageNumbers 的「非目标价，
+            # 而是参照系」口径）。失配票仍优先（连数字都不给）。
             "weighted": (
                 ("估值失配 · 不提供目标价" if is_zh else "Valuation mismatch · target withheld")
                 if _sanity_mismatch else
+                ("DCF 参照系 · 非目标价" if is_zh else "DCF reference frame · not a target")
+                if _is_observation else
                 ("评级已降级 · 存在未解决分歧" if is_zh else "Downgraded · unresolved conflicts")
                 if _rating_downgraded else
                 ("概率加权" if is_zh else "Probability-weighted")
@@ -2324,8 +2514,12 @@ def build_report_dict(
                 ("DCF 不适用 · 见同业/资产框架" if is_zh else "DCF n/m · see peer/asset framing")
             ),
             "downgraded": _rating_downgraded,
-            "timeHorizon": "12 个月" if is_zh else "12 months",
-            "riskLevel": "中高" if is_zh else "Medium-High",
+            # 审计处方一 1：观察框架票去掉期限/风险等级的卖方包装（
+            # 12 个月目标期限只对可执行论点有意义），前端按
+            # observationFramework 同步隐藏对应卡位。
+            "observationFramework": _is_observation,
+            "timeHorizon": None if _is_observation else ("12 个月" if is_zh else "12 months"),
+            "riskLevel": None if _is_observation else ("中高" if is_zh else "Medium-High"),
             "dcfMeaningful": _dcf_meaningful,
             "bookValuePerShare": round(book_per_share, 2) if book_per_share > 0 else None,
         },
@@ -2367,6 +2561,11 @@ def build_report_dict(
 
         "sensitivity": sens_dict,
         "driverSensitivity": driver_sens,
+
+        # 审计处方三 2（2026-08-28）：监控合约区块（kill 条件表 +
+        # monitorables 分组列表 + H2 兑现锚）。None = 无结构化监控数据，
+        # 前端隐藏该节。
+        "monitoring": monitoring_block,
 
         "conclusion": conclusion_block,
         "catalysts": catalysts_out,

@@ -432,6 +432,92 @@ def main() -> int:
         except Exception as e:
             print(f"  [backfill] synthesized_thesis fallback failed: {e}")
 
+    # 审计处方一 2 backfill（2026-08-28）：占位符标签撒谎的存量修复。
+    # 合成期 strict 清洗把占位符一律打成「估值失配·幅度结论已停用」，但
+    # strict 的触发源可能是证据缺口而非失配（300502 实锤：
+    # valuationSanity.mismatch=False，标签却写估值失配）。源头已修
+    # （thesis_synthesizer 按 strict_reason 分档文案）；对已烧进缓存的
+    # 合成文本，此处按缓存内可证的失配判定回贴正确标签——仅当盖章的
+    # valuation_sanity 明确为 mismatch=False 时才改写（宁缺勿滥）。
+    # 注意：被删数字无法从清洗后文本恢复（LLM 产文不可逆），这里只修
+    # 标签诚实性，不虚构数字。
+    _WRONG_TAG = "〔估值失配·幅度结论已停用〕"
+    _RIGHT_TAG = "〔未经核准的数字已略去〕"
+    _sc_sanity = (state.get("scenarios") or {}).get("valuation_sanity")
+    _mismatch_provably_false = (
+        isinstance(_sc_sanity, dict)
+        and "mismatch" in _sc_sanity
+        and not _sc_sanity.get("mismatch")
+    )
+    _st_baked = state.get("synthesized_thesis")
+    if _mismatch_provably_false and _st_baked is not None:
+        def _retag(val):
+            if isinstance(val, str):
+                return val.replace(_WRONG_TAG, _RIGHT_TAG)
+            if isinstance(val, list):
+                return [_retag(v) for v in val]
+            if isinstance(val, dict):
+                return {k: _retag(v) for k, v in val.items()}
+            return val
+
+        _n_retagged = 0
+        for _fname in getattr(_st_baked, "__dataclass_fields__", {}):
+            _v = getattr(_st_baked, _fname)
+            _cnt = repr(_v).count(_WRONG_TAG)
+            if _cnt:
+                object.__setattr__(_st_baked, _fname, _retag(_v))
+                _n_retagged += _cnt
+        if _n_retagged:
+            print(f"  [backfill] 占位符标签回贴: {_n_retagged} 处 "
+                  f"「估值失配」→「未经核准的数字已略去」"
+                  f"（本 run 失配闸未触发，原标签与触发原因不符）")
+
+    # 审计处方二 3 backfill（2026-08-28）：「经营现金流/净利润约67%的FCF
+    # 折损率」三重错——67% 实为 FCF/归母净利的**转化率**（FCF 63.8亿 /
+    # 归母 95.3亿 ≈ 0.67），既非 OCF/NI 口径也非「折损」。措辞源头是合成
+    # 期 LLM 产文（已冻结），此处做**收据校验后的定点更正**：仅当缓存数
+    # 据确证 FCF/NI ≈ 67%（±2pp）时才替换该唯一短语，校验不过一字不动。
+    _WRONG_FCF = "经营现金流/净利润约67%的FCF折损率"
+    _RIGHT_FCF = "约67%的FCF/归母净利转化率（经营现金流扣资本开支口径）"
+    if _st_baked is not None:
+        _fcf_v = (state.get("computed_metrics") or {}).get("fcf_simple")
+        _ni_v = (state.get("meta_facts") or {}).get("net_income")
+        if (isinstance(_fcf_v, (int, float)) and isinstance(_ni_v, (int, float))
+                and _ni_v > 0 and abs(_fcf_v / _ni_v - 0.67) < 0.02):
+            _n_fcf = 0
+            for _fname in getattr(_st_baked, "__dataclass_fields__", {}):
+                _v = getattr(_st_baked, _fname)
+                if isinstance(_v, str) and _WRONG_FCF in _v:
+                    _n_fcf += _v.count(_WRONG_FCF)
+                    object.__setattr__(
+                        _st_baked, _fname, _v.replace(_WRONG_FCF, _RIGHT_FCF))
+            if _n_fcf:
+                print(f"  [backfill] FCF 措辞更正: {_n_fcf} 处 "
+                      f"「折损率」→「转化率」（收据: FCF {_fcf_v/1e8:.1f}亿 / "
+                      f"归母 {_ni_v/1e8:.1f}亿 = {_fcf_v/_ni_v:.2f}）")
+
+    # 审计处方三 1 backfill（2026-08-28）：验证表期间对齐的存量修复。
+    # 缓存里的 __verification 是 run 时冻结输出；forecast_vs_consensus
+    # 的期间对齐修复（H1 预告 vs 全年一致预期 = 假红旗）要在 replay 里
+    # 生效，需用缓存的 __recent_events 重跑该单项检查并原位替换。
+    if mf and mf.get("__verification") and mf.get("__recent_events"):
+        try:
+            from aegis.core.truth.verification import _check_forecast_vs_consensus
+            _fresh = _check_forecast_vs_consensus(mf["__recent_events"])
+            _rows = mf["__verification"]
+            for _i, _row in enumerate(_rows):
+                if isinstance(_row, dict) and _row.get("check_id") == "forecast_vs_consensus":
+                    _old_status = _row.get("status")
+                    if _old_status != _fresh.status:
+                        _rows[_i] = _fresh.to_dict()
+                        mf["__verification"] = _rows
+                        state["meta_facts"] = mf
+                        print(f"  [backfill] verification.forecast_vs_consensus: "
+                              f"{_old_status} → {_fresh.status}（期间对齐重检）")
+                    break
+        except Exception as _ver_err:
+            print(f"  [backfill] verification 重检失败: {_ver_err}")
+
     # BUG-28 backfill: FCF = OCF - abs(capex). Old caches computed
     # FCF = OCF - capex, which gave wrong sign when capex was negative
     # (A-share convention). Re-derive FCF from cached OCF and capex.

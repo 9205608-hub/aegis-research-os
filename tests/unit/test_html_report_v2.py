@@ -469,3 +469,165 @@ class TestStaleBanner:
         rep = _build_cn(period=f"FY{now.year}",
                         decision=_decision(period=f"FY{now.year}"))
         assert rep["staleBanner"] is None
+
+
+# ─────────────────────────────────────────────────────────────────
+# 审计处方（2026-08-28，300502 对抗性审计回归锁）
+# ─────────────────────────────────────────────────────────────────
+
+class TestObservationFrameworkVerdict:
+    """处方一 1：产品形态=观察框架时抑制卖方包装。"""
+
+    @staticmethod
+    def _obs_decision(**over):
+        # downgraded + 待解问题 ≥ 8 → derive_product_form 判观察框架
+        base = dict(
+            publishing_status="downgraded",
+            open_questions=[{"question": f"q{i}"} for i in range(8)],
+        )
+        base.update(over)
+        return _decision(**base)
+
+    def test_observation_ticket_suppresses_sellside_packaging(self):
+        rep = _build_cn(decision=self._obs_decision())
+        assert rep["productForm"] is not None  # 横幅在
+        # 评级：不再给方向性评级（旧行为：downgraded 保留 买入/回避）
+        assert rep["rating"]["word"] == "观察框架 · 不评级"
+        assert rep["rating"]["tone"] == "hold"
+        # 目标价数字保留，但语义改「参照系」
+        assert rep["rating"]["target"] == 150.0
+        assert rep["rating"]["weighted"] == "DCF 参照系 · 非目标价"
+        # 期限/风险等级的卖方包装去掉
+        assert rep["rating"]["observationFramework"] is True
+        assert rep["rating"]["timeHorizon"] is None
+        assert rep["rating"]["riskLevel"] is None
+        # 核心判断改参照系措辞，不再有「估值回归空间」的方向性预判
+        assert "参照系" in rep["coreCalloutHtml"]
+        assert "估值回归空间" not in rep["coreCalloutHtml"]
+
+    def test_investment_thesis_keeps_packaging(self):
+        rep = _build_cn()  # published、无缺口 → 投资论点
+        assert rep["productForm"] is None
+        assert rep["rating"]["observationFramework"] is False
+        assert rep["rating"]["timeHorizon"] == "12 个月"
+        assert rep["rating"]["riskLevel"] == "中高"
+        assert "估值回归空间" in rep["coreCalloutHtml"]
+
+    def test_mismatch_priority_over_observation_label(self):
+        # 失配票（本身也是观察框架）目标价被扣留优先于参照系标签
+        scen = dict(_CN_SCENARIOS)
+        scen["valuation_sanity"] = {"mismatch": True, "ratio": 11.6}
+        rep = _build_cn(decision=self._obs_decision(), scenarios=scen)
+        assert rep["rating"]["target"] is None
+        assert rep["rating"]["weighted"] == "估值失配 · 不提供目标价"
+
+    def test_blocked_wording_not_overridden(self):
+        # blocked 的既有文案本就不是评级——观察框架覆盖不动它
+        rep = _build_cn(decision=self._obs_decision(publishing_status="blocked"))
+        assert rep["rating"]["word"] == "预期无法验证 · 暂不评级"
+        assert rep["rating"]["observationFramework"] is True
+
+
+class TestTTMLabelHonesty:
+    """处方二 2：TTM 标签与数值口径一致（quick 卡 + rail）。"""
+
+    MD = {"current_price": 100.0, "market_cap": 1.6e11}
+
+    def test_quick_pe_derived_from_ttm_engine(self):
+        meta = dict(_CN_META, ttm_net_income=4e9, ttm_revenue=2.4e10)
+        rep = _build_cn(market_data=dict(self.MD), meta_facts=meta)
+        pe_card = [c for c in rep["quick"] if c["lbl"].startswith("市盈率")][0]
+        assert pe_card["lbl"] == "市盈率 (TTM)"
+        assert pe_card["val"] == "40.0×"          # 1600亿 / 40亿 TTM 归母
+        assert "每股收益(TTM) 4.00" in pe_card["sub"]  # 与主值同口径同股本
+        rail = {kv["k"]: kv["v"] for kv in rep["rail"]["marketKvs"]}
+        assert rail["营收 (TTM)"] == "¥240.0 亿"   # 真 TTM，非 FY 值
+
+    def test_quick_pe_fy_fallback_label_honest(self):
+        # 无 TTM 源 → 回退 FY 静态值，但标签不再冒充 TTM
+        rep = _build_cn(
+            market_data=dict(self.MD),
+            computed_metrics={"pe_ratio": 53.3},
+        )
+        pe_card = [c for c in rep["quick"] if c["lbl"].startswith("市盈率")][0]
+        assert pe_card["lbl"] == "市盈率 (静态)"
+        assert pe_card["val"] == "53.3×"
+        assert "每股收益 3.00" in pe_card["sub"]  # FY 归母 30亿 / 10亿股
+        rail = {kv["k"]: kv["v"] for kv in rep["rail"]["marketKvs"]}
+        assert "营收 (TTM)" not in rail
+        assert rail["营收 (FY2025)"] == "¥200.0 亿"
+
+    def test_canonical_pe_ratio_ttm_key_still_first(self):
+        # orchestrator 的 canonical 键优先于 TTM 引擎现算
+        meta = dict(_CN_META, ttm_net_income=4e9)
+        rep = _build_cn(
+            market_data=dict(self.MD), meta_facts=meta,
+            computed_metrics={"pe_ratio_ttm": 41.7},
+        )
+        pe_card = [c for c in rep["quick"] if c["lbl"].startswith("市盈率")][0]
+        assert pe_card["lbl"] == "市盈率 (TTM)"
+        assert pe_card["val"] == "41.7×"
+
+
+class TestMonitoringContractBlock:
+    """处方三 2：监控合约区块（kill 条件 + monitorables + H2 兑现锚）。"""
+
+    KILLS = [
+        {"description": "H2 归母净利润兑现失败", "threshold": "低于¥100亿",
+         "check_frequency": "quarterly"},
+        {"description": "激励考核门槛显著低于预期", "threshold": "低于¥170亿",
+         "check_frequency": "event-driven"},
+    ]
+    MONS = [
+        {"description": "光互联产品毛利率环比", "check_frequency": "quarterly",
+         "source_agent": "valuation_analyst"},
+        {"description": "大客户集中度变化", "check_frequency": "annually",
+         "source_agent": "risk_analyst"},
+        {"description": "两融余额占比", "check_frequency": "monthly",
+         "source_agent": "risk_analyst"},
+    ]
+
+    def test_monitoring_block_renders_kills_and_monitorables(self):
+        dec = _decision(kill_criteria=list(self.KILLS),
+                        monitorables=list(self.MONS))
+        rep = _build_cn(decision=dec)
+        mon = rep["monitoring"]
+        assert mon is not None
+        assert len(mon["kills"]) == 2
+        assert mon["kills"][0]["threshold"] == "低于¥100亿"
+        assert mon["kills"][0]["frequency"] == "季度"
+        assert mon["kills"][1]["frequency"] == "事件驱动"
+        assert len(mon["monitorables"]) == 3
+        assert mon["monitorables"][0]["agent"] == "估值分析师"
+        assert mon["monitorables"][1]["agent"] == "风险分析师"
+
+    def test_monitoring_none_when_no_structured_data(self):
+        rep = _build_cn()
+        assert rep["monitoring"] is None
+
+    def test_anchor_note_derived_from_verification_evidence(self):
+        # canonical H2 阈值 = 同年全年一致预期归母 − H1 实际归母（处方二 1
+        # 指定推导），两块 evidence 齐备才出锚行
+        meta = dict(_CN_META)
+        meta["__verification"] = [
+            {"check_id": "cfo_to_net_income", "status": "fail",
+             "evidence": {"period": "2026-06-30", "net_income": 7.529e9}},
+            {"check_id": "forecast_vs_consensus", "status": "insufficient",
+             "evidence": {"year": 2026, "consensus_net_profit": 1.9757e10}},
+        ]
+        dec = _decision(kill_criteria=list(self.KILLS))
+        rep = _build_cn(decision=dec, meta_facts=meta)
+        note = rep["monitoring"]["anchorNote"]
+        assert note is not None
+        assert "¥122.3亿" in note          # 197.57 − 75.29 ≈ 122.3
+        assert "唯一推导口径" in note
+
+    def test_anchor_note_absent_when_evidence_incomplete(self):
+        meta = dict(_CN_META)
+        meta["__verification"] = [
+            {"check_id": "cfo_to_net_income", "status": "pass",
+             "evidence": {"period": "2025-12-31", "net_income": 9.5e9}},
+        ]
+        dec = _decision(kill_criteria=list(self.KILLS))
+        rep = _build_cn(decision=dec, meta_facts=meta)
+        assert rep["monitoring"]["anchorNote"] is None

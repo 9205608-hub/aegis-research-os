@@ -383,6 +383,10 @@ def _check_forecast_vs_consensus(recent_events: Any) -> VerificationResult:
 
     红线 5：一致预期覆盖 gate（insufficient_coverage）不过 → 数据不足，
     禁止引用残缺一致预期数字。
+
+    审计处方三 1（2026-08-28）：期间对齐——一致预期是年度口径，预告报告
+    期为半年度/季度（期末非 12-31）时禁止直接比（300502 假红旗实锤），
+    降级为「期间口径不可比」并把隐含剩余期贡献放进 evidence 供监控参照。
     """
     check_id = "forecast_vs_consensus"
     if recent_events is None:
@@ -424,6 +428,37 @@ def _check_forecast_vs_consensus(recent_events: Any) -> VerificationResult:
         if _get(p, "year") == fc_year and isinstance(np_, (int, float)):
             cons_np = float(np_)
             break
+    # 审计处方三 1（2026-08-28，期间对齐）：一致预期是**年度**口径，业绩
+    # 预告的报告期可能是半年度/季度（report_period 期末非 12-31）。此前
+    # 只按年份对齐——300502 实锤：H1 预告中值 75 亿 vs FY2026 全年一致
+    # 预期 197.57 亿被判「缺口 62% 未通过」，半年对全年，假红旗。铁律：
+    # 半年度预告只能与半年度口径或折算口径比；系统没有半年度一致预期
+    # → 诚实降级为「期间口径不可比」，隐含剩余期贡献只入 evidence 供
+    # 下游（监控合约）参照，不构成红旗。
+    _is_annual_period = period.endswith("12-31") or len(period) <= 4
+    if not _is_annual_period and cons_np is not None and cons_np != 0:
+        _pm = period[5:7] if len(period) >= 7 else ""
+        _period_label = {"03": "一季度", "06": "半年度", "09": "三季度"}.get(
+            _pm, "期中")
+        implied_rest = cons_np - mid
+        return VerificationResult(
+            check_id=check_id, name_zh=CHECK_NAMES_ZH[check_id],
+            status="insufficient",
+            detail_zh=(
+                f"最新业绩预告为 {fc_year} 年{_period_label}口径（期末 "
+                f"{period}，中值 {_fmt_cny(mid)}），一致预期为全年口径 "
+                f"{_fmt_cny(cons_np)}，期间不可直接比（半年度/季度预告"
+                f"只能与同期间或折算口径比对），不构成预期缺口红旗；"
+                f"隐含剩余期贡献 ≈ {_fmt_cny(implied_rest)}"
+                f"（全年一致预期 − 预告中值，仅作监控参照）"
+            ),
+            evidence={
+                "year": fc_year, "period": period,
+                "period_alignment": "interim_vs_fy",
+                "forecast_mid": mid, "consensus_net_profit": cons_np,
+                "implied_remaining": implied_rest,
+            },
+        )
     if cons_np is None or cons_np == 0:
         # 诚实的「无可比」说明（Grok §3.5 + 校准闭环实证）：A 股最新业绩预告
         # 几乎总是针对已披露/当期报告期，而一致预期只覆盖前瞻年度，两者结构性
@@ -592,12 +627,17 @@ def annotate_verification_focus(
             state = "pass"
         else:
             state = "insufficient"
+        # 审计处方三 1（2026-08-28）：insufficient 态此前 evidence 恒空——
+        # 「数据不足」的原因说明（如期间口径不可比）被丢弃，读者无从判断
+        # 是数据缺失还是口径限制。determinate 空时回退用命中检查器的
+        # detail_zh 作依据行。
+        _evidence_src = determinate if determinate else hits
         out.append({
             "text": str(text),
             "state": state,
             "status": _DISPLAY_ZH[state],
             "evidence": "；".join(
-                str(h.get("detail_zh", "")) for h in determinate if h.get("detail_zh")
+                str(h.get("detail_zh", "")) for h in _evidence_src if h.get("detail_zh")
             ),
         })
 

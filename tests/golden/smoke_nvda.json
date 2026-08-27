@@ -398,7 +398,7 @@
           "value": "76.3%"
         },
         {
-          "label": "P/E (static)",
+          "label": "P/E (TTM)",
           "value": "42.8×"
         },
         {
@@ -484,6 +484,158 @@
       "title": "Macro Context"
     },
     "model": "—",
+    "monitoring": {
+      "anchorNote": null,
+      "kills": [
+        {
+          "description": "Credit rating downgrade or negative outlook",
+          "frequency": "monthly",
+          "threshold": "事件触发：downgrade"
+        },
+        {
+          "description": "Debt covenant breach or waiver request",
+          "frequency": "quarterly",
+          "threshold": "事件触发：covenant breach"
+        },
+        {
+          "description": "Adverse regulatory action or investigation",
+          "frequency": "monthly",
+          "threshold": "事件触发：investigation"
+        }
+      ],
+      "monitorables": [
+        {
+          "agent": "Accounting Analyst",
+          "description": "Restatement of prior-period financials",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Accounting Analyst",
+          "description": "Auditor change or qualified audit opinion",
+          "frequency": "annually"
+        },
+        {
+          "agent": "Accounting Analyst",
+          "description": "Material related-party transaction disclosure not previously reported",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Business Analyst",
+          "description": "Gross margin decline of >300bps for two consecutive quarters",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Business Analyst",
+          "description": "Major customer loss or contract non-renewal",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Business Analyst",
+          "description": "New well-funded competitor entering core market",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Management Analyst",
+          "description": "CEO or CFO departure / succession event",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Management Analyst",
+          "description": "Material insider selling exceeding normal vesting schedule",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Management Analyst",
+          "description": "New related-party transaction disclosed with material revenue impact",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Management Analyst",
+          "description": "Regulatory action targeting corporate governance or related parties",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Valuation Analyst",
+          "description": "Consensus revenue revision turns negative for 3 consecutive months",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Valuation Analyst",
+          "description": "Forward P/E moves above 95th percentile of 5-year range",
+          "frequency": "weekly"
+        },
+        {
+          "agent": "Valuation Analyst",
+          "description": "Management lowers guidance below bear-case assumption",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Variant Analyst",
+          "description": "Consensus converges to our variant view (edge absorbed by market)",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Variant Analyst",
+          "description": "Catalyst timeline passes without materialization",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Variant Analyst",
+          "description": "New information invalidates the basis of our variant thesis",
+          "frequency": "weekly"
+        },
+        {
+          "agent": "Variant Analyst",
+          "description": "Consensus revision momentum reverses sharply against our variant direction (e.g. broad downgrade for bullish thesis, or broad upgrade for bearish thesis)",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Risk Analyst",
+          "description": "Credit rating downgrade or negative outlook",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Risk Analyst",
+          "description": "Debt covenant breach or waiver request",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Risk Analyst",
+          "description": "Key customer/supplier loss announced",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Risk Analyst",
+          "description": "Adverse regulatory action or investigation",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Sector Context Agent",
+          "description": "Monitor leading indicator: Capex guidance from hyperscalers",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Sector Context Agent",
+          "description": "Monitor leading indicator: Semiconductor booking-to-billing ratio",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Sector Context Agent",
+          "description": "Monitor leading indicator: Memory pricing trends",
+          "frequency": "monthly"
+        },
+        {
+          "agent": "Sector Context Agent",
+          "description": "Disruption risk materializes: Custom silicon (Google TPU, Amazon Trainium)",
+          "frequency": "quarterly"
+        },
+        {
+          "agent": "Sector Context Agent",
+          "description": "Disruption risk materializes: Architecture shift (RISC-V, photonics)",
+          "frequency": "quarterly"
+        }
+      ]
+    },
     "period": "FY2026",
     "pipelineDuration": "<NORMALIZED>",
     "price": {
@@ -504,7 +656,7 @@
       },
       {
         "lbl": "P/E (TTM)",
-        "sub": "EPS 4.93",
+        "sub": "",
         "val": "42.8×"
       },
       {
@@ -531,7 +683,7 @@
           "v": "$5.14T"
         },
         {
-          "k": "Revenue (TTM)",
+          "k": "Revenue (FY2026)",
           "v": "$215.9B"
         },
         {
@@ -561,6 +713,7 @@
       "bookValuePerShare": 6.47,
       "dcfMeaningful": true,
       "downgraded": false,
+      "observationFramework": false,
       "riskLevel": "Medium-High",
       "target": 161.2,
       "timeHorizon": "12 months",

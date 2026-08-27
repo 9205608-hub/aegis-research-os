@@ -420,3 +420,101 @@ class TestLogicCriticEnAbsoluteExpansion:
         assert [i.issue_code for i in hits] == [
             "LOGIC_SEGMENT_NET_MARGIN_IMPOSSIBLE"
         ]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 审计处方一 2（2026-08-28）：占位符文案按触发原因分档 + 相对估值表
+# 倍数白名单（300502 对抗性审计回归锁）
+# ═══════════════════════════════════════════════════════════════════
+
+from aegis.core.chief_analyst.thesis_synthesizer import (  # noqa: E402
+    relative_valuation_sanctioned_multiples,
+)
+
+
+class TestStrictTagByReason:
+    """strict 占位符不许对读者撒谎：估值失配字样只许失配触发时用。"""
+
+    RAW = {"core_thesis": "重估空间约 45%，安全边际充足。"}
+
+    def test_evidence_gap_strict_uses_neutral_tag(self):
+        # 300502 实锤：mismatch=False 的证据缺口票，占位符却写「估值失配」
+        out, _ = _scrub_fair_value_claims(
+            dict(self.RAW), SANE_SCEN, MKT,
+            strict=True, strict_reason="evidence_gap",
+        )
+        assert "〔未经核准的数字已略去〕" in out["core_thesis"]
+        assert "估值失配" not in out["core_thesis"]
+
+    def test_mismatch_strict_keeps_mismatch_tag(self):
+        out, _ = _scrub_fair_value_claims(
+            dict(self.RAW), MISMATCH_SCEN, MKT,
+            strict=True, strict_reason="mismatch",
+        )
+        assert "〔估值失配·幅度结论已停用〕" in out["core_thesis"]
+
+    def test_default_reason_is_mismatch_for_editor_compat(self):
+        # report_editor 的 strict 只由失配触发（不传 strict_reason），
+        # 默认值必须保持失配文案——否则 editor 路径文案回归。
+        out, _ = _scrub_fair_value_claims(
+            dict(self.RAW), MISMATCH_SCEN, MKT, strict=True,
+        )
+        assert "〔估值失配·幅度结论已停用〕" in out["core_thesis"]
+
+    def test_non_strict_tag_unchanged(self):
+        raw = {"core_thesis": "下行空间 81-89%，风险显著。"}
+        out, _ = _scrub_fair_value_claims(dict(raw), SANE_SCEN, MKT)
+        assert "〔回报口径详见DCF情景〕" in out["core_thesis"]
+        assert "估值失配" not in out["core_thesis"]
+
+
+class TestStrictMultipleWhitelist:
+    """相对估值表公开渲染的倍数不得一处展示一处删除（红线 9 同则）。"""
+
+    def test_relval_multiples_survive_strict(self):
+        raw = {"core_thesis": (
+            "TTM市盈率43.5倍处于同业第20分位（同业中位数114.1倍），"
+            "估值折价明显。"
+        )}
+        out, _ = _scrub_fair_value_claims(
+            raw, MISMATCH_SCEN, MKT, strict=True,
+            extra_sanctioned_multiples=[43.5, 114.1],
+        )
+        assert "43.5" in out["core_thesis"]
+        assert "114.1" in out["core_thesis"]
+
+    def test_unsanctioned_multiple_still_scrubbed(self):
+        raw = {"core_thesis": "PE 从22倍到30倍的重估空间清晰可见。"}
+        out, _ = _scrub_fair_value_claims(
+            raw, MISMATCH_SCEN, MKT, strict=True,
+            extra_sanctioned_multiples=[43.5, 114.1],
+        )
+        assert "22倍" not in out["core_thesis"] or "30倍" not in out["core_thesis"]
+
+    def test_whitelist_tolerance_matches_rendering_rounding(self):
+        # 表渲染四舍五入到 1 位小数（43.5），叙事可能引 43.47/43.5 —— 两者都豁免
+        raw = {"core_thesis": "估值锚：市盈率43.47倍，重估空间有限。"}
+        out, _ = _scrub_fair_value_claims(
+            raw, MISMATCH_SCEN, MKT, strict=True,
+            extra_sanctioned_multiples=[43.5],
+        )
+        assert "43.47" in out["core_thesis"]
+
+
+class TestRelvalMultiplesHelper:
+
+    def test_rounding_follows_table_rendering(self):
+        relval = {
+            "insufficient_peers": False,
+            "target_pe_ttm": 43.47886709, "peer_pe_median": 114.06818949,
+            "target_pb": 23.47597917, "peer_pb_median": 15.849179,
+        }
+        assert relative_valuation_sanctioned_multiples(relval) == [
+            15.85, 23.48, 43.5, 114.1,
+        ]
+
+    def test_insufficient_peers_gate(self):
+        assert relative_valuation_sanctioned_multiples(
+            {"insufficient_peers": True, "target_pe_ttm": 43.5}) == []
+        assert relative_valuation_sanctioned_multiples(None) == []
+        assert relative_valuation_sanctioned_multiples({}) == []

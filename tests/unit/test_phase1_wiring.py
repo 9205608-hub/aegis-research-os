@@ -449,6 +449,64 @@ class TestVerificationChecks:
         assert "无可比期次" in r.detail_zh and "已披露实现" in r.detail_zh
         assert "非数据缺失" in r.detail_zh
 
+    def test_forecast_vs_consensus_interim_period_not_red_flag(self):
+        # 审计处方三 1（2026-08-28，300502 假红旗回归锁）：H1 业绩预告
+        # （report_period 期末 06-30）不得与全年一致预期直接比出 fail——
+        # 半年对全年是期间错配（75 亿 vs 197.57 亿 ≠ 缺口 62%）。
+        # 铁律：半年度预告只能与半年度口径或折算口径比。
+        events = {
+            **MOCK_EVENTS,
+            "forecasts": [
+                {"report_period": "2026-06-30", "forecast_type": "预增",
+                 "indicator": "归属于上市公司股东的净利润",
+                 "value_low": 7.0e9, "value_high": 8.0e9,
+                 "change_pct_low": 90.0, "change_pct_high": 110.0,
+                 "notice_date": "2026-07-14", "prev_year_value": None},
+            ],
+            "consensus": {
+                "org_count": 17, "latest_report_date": "2026-08-26",
+                "insufficient_coverage": False,
+                "predictions": [
+                    {"year": 2026, "eps": 17.09, "net_profit": 1.9757e10,
+                     "revenue": 6.0e10},
+                ],
+            },
+        }
+        r = [x for x in run_verification(recent_events=events)
+             if x.check_id == "forecast_vs_consensus"][0]
+        assert r.status == "insufficient"  # 期间错配 ≠ 预期缺口红旗
+        assert "期间不可直接比" in r.detail_zh
+        assert "半年度" in r.detail_zh
+        assert r.evidence["period_alignment"] == "interim_vs_fy"
+        # 隐含剩余期贡献 = 全年一致预期 − 预告中值，仅入 evidence 供监控参照
+        assert r.evidence["implied_remaining"] == pytest.approx(
+            1.9757e10 - 7.5e9)
+
+    def test_forecast_vs_consensus_quarterly_period_not_red_flag(self):
+        # 同一铁律的季度口径分支（期末 03-31 / 09-30）。
+        events = {
+            **MOCK_EVENTS,
+            "forecasts": [
+                {"report_period": "2026-09-30", "forecast_type": "预增",
+                 "indicator": "归属于上市公司股东的净利润",
+                 "value_low": 1.2e10, "value_high": 1.4e10,
+                 "change_pct_low": None, "change_pct_high": None,
+                 "notice_date": "2026-10-10", "prev_year_value": None},
+            ],
+            "consensus": {
+                "org_count": 8, "latest_report_date": "2026-10-01",
+                "insufficient_coverage": False,
+                "predictions": [
+                    {"year": 2026, "eps": 17.09, "net_profit": 1.9757e10,
+                     "revenue": 6.0e10},
+                ],
+            },
+        }
+        r = [x for x in run_verification(recent_events=events)
+             if x.check_id == "forecast_vs_consensus"][0]
+        assert r.status == "insufficient"
+        assert "三季度" in r.detail_zh and "期间不可直接比" in r.detail_zh
+
 
 class TestAnnotateVerificationFocus:
 
@@ -492,6 +550,9 @@ class TestAnnotateVerificationFocus:
             ["债务与流动性压力（净负债/EBITDA、再融资安排）"], self.RESULTS)
         assert out[0]["status"] == "数据不足"
         assert out[0]["state"] == "insufficient"
+        # 审计处方三 1（2026-08-28）：insufficient 态不再丢弃原因说明——
+        # 读者要能看到是数据缺失还是口径限制
+        assert "PIT 库无负债合计数据" in out[0]["evidence"]
 
     def test_unmatched_determinate_check_appended(self):
         # 预告 vs 一致预期没有被任何文案吸收 → 追加独立条目，核验不丢失

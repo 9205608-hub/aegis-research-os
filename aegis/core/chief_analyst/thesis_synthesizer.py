@@ -400,6 +400,34 @@ def relative_valuation_sanctioned_pcts(relval: dict[str, Any] | None) -> list[fl
     return sorted(out)
 
 
+def relative_valuation_sanctioned_multiples(
+    relval: dict[str, Any] | None,
+) -> list[float]:
+    """审计处方一 2（2026-08-28）：相对估值表公开渲染的倍数 → strict
+    multiple 清洗（R2-4 分支）的白名单。
+
+    报告的相对估值表本身渲染 "PE(TTM) 43.5× / 中位数 114.1×"，而 strict
+    票的 multiple 清洗此前无任何白名单——同一数字一处公开展示、一处在
+    正文被删成占位符（300502 审计实锤：TTM 43.5× / 中位数 114.1× 被删）。
+    红线 9 同则：真实披露/表内已展示的数字不受 strict 连坐。
+
+    四舍五入口径与相对估值表渲染一致（PE 1 位小数 / PB 2 位小数）。
+    样本不足（insufficient_peers）时不发白名单，与
+    :func:`relative_valuation_sanctioned_pcts` 同一纪律。
+    """
+    if not isinstance(relval, dict) or relval.get("insufficient_peers", True):
+        return []
+    out: set[float] = set()
+    for key, ndigits in (
+        ("target_pe_ttm", 1), ("peer_pe_median", 1),
+        ("target_pb", 2), ("peer_pb_median", 2),
+    ):
+        val = relval.get(key)
+        if isinstance(val, (int, float)) and val > 0:
+            out.add(round(float(val), ndigits))
+    return sorted(out)
+
+
 def _valuation_sanity_verdict(
     scenarios: dict[str, Any] | None,
     market_data: dict[str, Any] | None,
@@ -716,8 +744,22 @@ def _scrub_fair_value_claims(
     extra_sanctioned_pcts: Sequence[float] | None = None,
     strict: bool = False,
     extra_sanctioned_per_share: Sequence[float] | None = None,
+    strict_reason: str = "mismatch",
+    extra_sanctioned_multiples: Sequence[float] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Detect and rewrite per-share fair-value claims that contradict scenarios.
+
+    审计处方一 2（2026-08-28）：
+    - ``strict_reason`` 决定 strict 占位符文案。此前 strict 一律打
+      「估值失配」标签，但 strict 的触发源有两个（估值失配 / 证据缺口，
+      见 synthesize() 的 ``strict=_mismatch or _gap_observation``）——
+      300502 审计实锤：失配闸未触发（mismatch=False）的证据缺口票，
+      占位符却写着「估值失配」，标签对读者撒谎。取值 "mismatch" →
+      估值失配文案；其余（如 "evidence_gap"）→ 中性文案
+      「未经核准的数字已略去」。
+    - ``extra_sanctioned_multiples``：相对估值表公开渲染的倍数白名单
+      （见 relative_valuation_sanctioned_multiples），strict multiple
+      清洗（R2-4 分支）此前无白名单，表内数字在正文被误删。
 
     A claim is considered inconsistent if a cited dollar value (≥10) does
     NOT match any of bear/base/bull within ±15% AND is not the current market
@@ -1065,18 +1107,45 @@ def _scrub_fair_value_claims(
                 # exemption) and the % scrub. Under a magnitude mismatch no
                 # multiple-based headroom claim is anchored either.
                 if strict:
+                    # 审计处方一 2（2026-08-28）：表内公开渲染的倍数
+                    # （相对估值锚 PE/PB 及同业中位数）进白名单——同一
+                    # 数字不得一处展示一处删除。容差对齐渲染的四舍五入
+                    # 口径（±0.05 绝对 或 ±0.5% 相对，取大者）。
+                    _mult_ok = tuple(
+                        float(v) for v in (extra_sanctioned_multiples or ())
+                        if isinstance(v, (int, float)) and v > 0
+                    )
+
+                    def _is_sanctioned_multiple(tok: str) -> bool:
+                        _num = re.search(r"\d+(?:\.\d+)?", tok)
+                        if not _num:
+                            return False
+                        v = float(_num.group(0))
+                        return any(
+                            abs(v - w) <= max(0.05, 0.005 * w)
+                            for w in _mult_ok
+                        )
+
                     for m in _STRICT_MULTIPLE_RE.finditer(text):
                         _win = text[max(0, m.start() - 24):m.end() + 24]
-                        if any(k in _win for k in _MULTIPLE_CONTEXT):
-                            bad_pct.append((m.start(), m.end(), m.group(0)))
+                        if not any(k in _win for k in _MULTIPLE_CONTEXT):
+                            continue
+                        if _is_sanctioned_multiple(m.group(0)):
+                            continue
+                        bad_pct.append((m.start(), m.end(), m.group(0)))
                     bad_pct.sort()
                 if bad_pct:
                     # AUDIT 2026-07-12: this branch used to WARN ONLY — the
                     # misleading % stayed in reader-facing text (Grok's
                     # highest-frequency finding). Now the offending tokens
                     # are spliced out like the money claims above.
-                    if strict:
+                    if strict and strict_reason == "mismatch":
                         _pct_tag = "〔估值失配·幅度结论已停用〕" if is_cny else "[withheld: valuation sanity]"
+                    elif strict:
+                        # 审计处方一 2：非失配触发的 strict 清洗（证据缺口
+                        # 等）不得冒用「估值失配」字样——按真实原因用中性
+                        # 文案，标签不对读者撒谎。
+                        _pct_tag = "〔未经核准的数字已略去〕" if is_cny else "[withheld: unsanctioned figure]"
                     else:
                         _pct_tag = "〔回报口径详见DCF情景〕" if is_cny else "[see DCF scenario returns]"
                     _pct_text = text
@@ -1504,6 +1573,13 @@ class ThesisSynthesizer:
                 )
             ),
             strict=_mismatch or _gap_observation,
+            # 审计处方一 2（2026-08-28）：占位符文案按真实触发原因分档——
+            # 只有失配闸真触发才许写「估值失配」。
+            strict_reason="mismatch" if _mismatch else "evidence_gap",
+            # 审计处方一 2：相对估值表公开渲染的倍数进 strict multiple 白名单。
+            extra_sanctioned_multiples=relative_valuation_sanctioned_multiples(
+                (meta_facts or {}).get("__relative_valuation")
+            ),
             # 盲区 1（2026-08-01）：真实 per-share 值（BPS/EPS/DPS）白名单，
             # 从 meta_facts 确定性派生，算不出即为空（宁缺毋滥）。
             extra_sanctioned_per_share=per_share_sanctioned_values(meta_facts),

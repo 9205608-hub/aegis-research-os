@@ -450,6 +450,138 @@
     "lede": "",
     "macro": null,
     "model": "—",
+    "monitoring": {
+      "anchorNote": null,
+      "kills": [
+        {
+          "description": "Credit rating downgrade or negative outlook",
+          "frequency": "月度",
+          "threshold": "事件触发：downgrade"
+        },
+        {
+          "description": "Debt covenant breach or waiver request",
+          "frequency": "季度",
+          "threshold": "事件触发：covenant breach"
+        },
+        {
+          "description": "Adverse regulatory action or investigation",
+          "frequency": "月度",
+          "threshold": "事件触发：investigation"
+        }
+      ],
+      "monitorables": [
+        {
+          "agent": "会计分析师",
+          "description": "Restatement of prior-period financials",
+          "frequency": "季度"
+        },
+        {
+          "agent": "会计分析师",
+          "description": "Auditor change or qualified audit opinion",
+          "frequency": "年度"
+        },
+        {
+          "agent": "会计分析师",
+          "description": "Material related-party transaction disclosure not previously reported",
+          "frequency": "季度"
+        },
+        {
+          "agent": "业务分析师",
+          "description": "Gross margin decline of >300bps for two consecutive quarters",
+          "frequency": "季度"
+        },
+        {
+          "agent": "业务分析师",
+          "description": "Major customer loss or contract non-renewal",
+          "frequency": "季度"
+        },
+        {
+          "agent": "业务分析师",
+          "description": "New well-funded competitor entering core market",
+          "frequency": "季度"
+        },
+        {
+          "agent": "管理层分析师",
+          "description": "CEO or CFO departure / succession event",
+          "frequency": "月度"
+        },
+        {
+          "agent": "管理层分析师",
+          "description": "Material insider selling exceeding normal vesting schedule",
+          "frequency": "月度"
+        },
+        {
+          "agent": "管理层分析师",
+          "description": "New related-party transaction disclosed with material revenue impact",
+          "frequency": "季度"
+        },
+        {
+          "agent": "管理层分析师",
+          "description": "Regulatory action targeting corporate governance or related parties",
+          "frequency": "季度"
+        },
+        {
+          "agent": "估值分析师",
+          "description": "Consensus revenue revision turns negative for 3 consecutive months",
+          "frequency": "月度"
+        },
+        {
+          "agent": "估值分析师",
+          "description": "Forward P/E moves above 95th percentile of 5-year range",
+          "frequency": "周度"
+        },
+        {
+          "agent": "估值分析师",
+          "description": "Management lowers guidance below bear-case assumption",
+          "frequency": "季度"
+        },
+        {
+          "agent": "变体分析师",
+          "description": "Consensus converges to our variant view (edge absorbed by market)",
+          "frequency": "月度"
+        },
+        {
+          "agent": "变体分析师",
+          "description": "Catalyst timeline passes without materialization",
+          "frequency": "月度"
+        },
+        {
+          "agent": "变体分析师",
+          "description": "New information invalidates the basis of our variant thesis",
+          "frequency": "周度"
+        },
+        {
+          "agent": "变体分析师",
+          "description": "Consensus revision momentum reverses sharply against our variant direction (e.g. broad downgrade for bullish thesis, or broad upgrade for bearish thesis)",
+          "frequency": "月度"
+        },
+        {
+          "agent": "风险分析师",
+          "description": "Credit rating downgrade or negative outlook",
+          "frequency": "月度"
+        },
+        {
+          "agent": "风险分析师",
+          "description": "Debt covenant breach or waiver request",
+          "frequency": "季度"
+        },
+        {
+          "agent": "风险分析师",
+          "description": "Key customer/supplier loss announced",
+          "frequency": "月度"
+        },
+        {
+          "agent": "风险分析师",
+          "description": "Adverse regulatory action or investigation",
+          "frequency": "月度"
+        },
+        {
+          "agent": "宏观分析师",
+          "description": "Sector fundamentals shift materially from current assessment",
+          "frequency": "季度"
+        }
+      ]
+    },
     "period": "FY2025 年报",
     "pipelineDuration": "<NORMALIZED>",
     "price": {
@@ -469,8 +601,8 @@
         "val": "¥41.8 亿"
       },
       {
-        "lbl": "市盈率 (TTM)",
-        "sub": "每股收益 0.43",
+        "lbl": "市盈率 (静态)",
+        "sub": "每股收益 0.41",
         "val": "33.3×"
       },
       {
@@ -497,7 +629,7 @@
           "v": "¥41.8 亿"
         },
         {
-          "k": "营收 (TTM)",
+          "k": "营收 (FY2025)",
           "v": "¥52.4 亿"
         },
         {
@@ -527,6 +659,7 @@
       "bookValuePerShare": 10.14,
       "dcfMeaningful": true,
       "downgraded": false,
+      "observationFramework": false,
       "riskLevel": "中高",
       "target": 2.42,
       "timeHorizon": "12 个月",
