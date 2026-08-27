@@ -295,3 +295,103 @@ class TestGateContext:
             publish_gate_passed=True, gate_skipped_count=2,
         )
         assert with_skip in ("very_low", "low", "medium")
+
+
+# ---------------------------------------------------------------------------
+# 审计补丁二轮（2026-08-28）：编辑器前页字段回收（零 LLM replay 回归锁）
+# ---------------------------------------------------------------------------
+# 审计官复验抓出的回归：replay 跳过 Report Editor 后 headline/lede/
+# frontPageNumbers 静默走 thesis 兜底（headline 截断、lede 与 core_thesis
+# 逐字重复、前页 5 张数字卡消失）。_recover_editor_fields 从先前渲染的
+# HTML 回收真编辑器产出；_h2_anchor_from_verification 提供锚口径校验。
+
+def _fake_report_html(tmp_path, name, headline, lede, fpn):
+    import json
+    rep = {"headline": headline, "lede": lede, "frontPageNumbers": fpn}
+    html = ("<html><script>window.REPORT = "
+            + json.dumps(rep, ensure_ascii=False)
+            + ";</script></html>")
+    p = tmp_path / name
+    p.write_text(html, encoding="utf-8")
+    return p
+
+
+CORE = "现价隐含的增长预期需要近端数据验证，本框架为条件化观察工具。" * 3
+
+
+class TestRecoverEditorFields:
+
+    def test_recovers_editor_fields_from_prior_html(self, replay_mod, tmp_path):
+        p = _fake_report_html(
+            tmp_path, "x_fy2025_auto_report_preaudit.html",
+            headline="公司：完整的编辑器标题——含破折号后的第二分句",
+            lede="这是一段独立于 core_thesis 的编辑器导语，四百字浓缩版。",
+            fpn=[{"label": "ROIC", "value": "86.6%", "context": "ctx"},
+                 {"label": "集中度", "value": "96.2%", "context": ""}],
+        )
+        rec = replay_mod._recover_editor_fields([p], CORE)
+        assert rec is not None
+        assert "第二分句" in rec.headline
+        assert rec.lede.startswith("这是一段独立")
+        assert len(rec.front_page_numbers) == 2
+        assert rec.front_page_numbers[0]["label"] == "ROIC"
+
+    def test_rejects_fallback_html_lede_equals_core(self, replay_mod, tmp_path):
+        # 兜底渲染产物特征：lede == core_thesis —— 不得回收（否则把兜底
+        # 再固化一层）
+        p = _fake_report_html(
+            tmp_path, "y_fy2025_auto_report.html",
+            headline=CORE[:106], lede=CORE, fpn=[],
+        )
+        assert replay_mod._recover_editor_fields([p], CORE) is None
+
+    def test_candidate_order_first_valid_wins(self, replay_mod, tmp_path):
+        bad = _fake_report_html(
+            tmp_path, "a.html", headline=CORE[:106], lede=CORE, fpn=[])
+        good = _fake_report_html(
+            tmp_path, "b.html",
+            headline="编辑器标题", lede="编辑器导语", fpn=[])
+        rec = replay_mod._recover_editor_fields([bad, good], CORE)
+        assert rec is not None and rec.headline == "编辑器标题"
+        assert rec._source.endswith("b.html")
+
+    def test_missing_files_return_none(self, replay_mod, tmp_path):
+        assert replay_mod._recover_editor_fields(
+            [tmp_path / "nope.html"], CORE) is None
+
+    def test_half_empty_entries_dropped(self, replay_mod, tmp_path):
+        p = _fake_report_html(
+            tmp_path, "c.html", headline="标题", lede="导语",
+            fpn=[{"label": "有效", "value": "1%", "context": ""},
+                 {"label": "", "value": "2%"}, {"label": "无值"}],
+        )
+        rec = replay_mod._recover_editor_fields([p], CORE)
+        assert [e["label"] for e in rec.front_page_numbers] == ["有效"]
+
+
+class TestH2AnchorFromVerification:
+
+    ROWS = [
+        {"check_id": "cfo_to_net_income", "status": "fail",
+         "evidence": {"period": "2026-06-30", "net_income": 7.529e9}},
+        {"check_id": "forecast_vs_consensus", "status": "insufficient",
+         "evidence": {"year": 2026, "consensus_net_profit": 1.9757e10}},
+    ]
+
+    def test_anchor_derivation_matches_report_anchor_note(self, replay_mod):
+        # 与 html_report_v2 监控合约 anchorNote 同源同数：197.57−75.29≈122.3
+        got = replay_mod._h2_anchor_from_verification(self.ROWS)
+        assert got is not None
+        year, cons, h1, implied = got
+        assert year == 2026
+        assert round(implied / 1e8, 1) == 122.3
+
+    def test_anchor_none_on_year_mismatch(self, replay_mod):
+        rows = [dict(self.ROWS[0]),
+                {"check_id": "forecast_vs_consensus",
+                 "evidence": {"year": 2027, "consensus_net_profit": 1.9757e10}}]
+        assert replay_mod._h2_anchor_from_verification(rows) is None
+
+    def test_anchor_none_on_missing_pieces(self, replay_mod):
+        assert replay_mod._h2_anchor_from_verification([]) is None
+        assert replay_mod._h2_anchor_from_verification([self.ROWS[1]]) is None

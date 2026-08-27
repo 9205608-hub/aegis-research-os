@@ -2184,14 +2184,113 @@ def build_report_dict(
     except Exception:
         monitoring_anchor = None
 
+    # 审计补丁二轮（2026-08-28）：kills 表头注记——说明证伪对象与方向，
+    # 与结论区「何种证据会改变判断」的反向修正条件构成双向监控对。
+    # 措辞按 kill 描述关键词分档（增长/兑现类 = 增长假说票），不硬编码
+    # 个股叙事。
+    monitoring_kills_note = None
+    if monitoring_kills:
+        _growth_kills = any(
+            ("增长" in k["description"]) or ("兑现" in k["description"])
+            for k in monitoring_kills
+        )
+        if is_zh:
+            monitoring_kills_note = (
+                "注：本表证伪对象＝增长（多头）假说——条件触发即该假说关键"
+                "前提断裂；与结论区「何种证据会改变判断」的偏多修正条件构成"
+                "双向监控对。"
+                if _growth_kills else
+                "注：本表证伪对象＝报告核心假设——条件触发即论点关键前提断裂；"
+                "与结论区「何种证据会改变判断」的反向修正条件构成双向监控对。"
+            )
+        else:
+            monitoring_kills_note = (
+                "Note: these criteria falsify the growth (bull) hypothesis — a "
+                "trigger breaks its key premise; they pair bidirectionally with "
+                "the bull-revision conditions under 'What would change my mind'."
+                if _growth_kills else
+                "Note: these criteria falsify the report's core assumptions; "
+                "they pair bidirectionally with the revision conditions under "
+                "'What would change my mind'."
+            )
+
+    # 审计补丁二轮（2026-08-28）：激励考核门槛口径注——涉及股权激励考核
+    # 门槛的条目，公告原文数值不在结构化库（__recent_events 只有公告标题），
+    # 正文存在多套口径引用；如实注明「待公告核准」，不虚构权威数字。
+    monitoring_incentive_note = None
+    _incentive_hit = any(
+        "激励" in (k["description"] + k["threshold"]) for k in monitoring_kills
+    ) or any("激励" in m_["description"] for m_ in monitoring_items)
+    if _incentive_hit:
+        monitoring_incentive_note = (
+            "激励考核门槛口径注：股权激励考核门槛的公告原文数值未入结构化库，"
+            "正文对该门槛存在多处口径引用，均待公告核准——以公司正式公告原文为准。"
+            if is_zh else
+            "Incentive-hurdle note: the incentive plan's official hurdle figure "
+            "is not in the structured store; narrative references to it vary and "
+            "are pending verification against the company's formal announcement."
+        )
+
     monitoring_block = (
         {
             "kills": monitoring_kills,
             "monitorables": monitoring_items,
             "anchorNote": monitoring_anchor,
+            "killsNote": monitoring_kills_note,
+            "incentiveNote": monitoring_incentive_note,
         }
         if (monitoring_kills or monitoring_items) else None
     )
+
+    # ── 前瞻市盈率口径脚注（审计补丁二轮, 2026-08-28）──
+    # 同一报告里可并存两组前瞻 PE：现价/一致预期 EPS（EPS 为预测发布时
+    # 点股本口径）与 市值/一致预期归母（当前总股本口径）。股本基准相差
+    # >5% 时两组数字显著不同（300502：23.9× vs 28.9×，隐含股本 11.6亿
+    # vs 当前 13.9亿）——都是有据数字，不删除任何一组，就近加一行口径
+    # 脚注调和。数据齐备才出（宁缺勿滥）。
+    agents_footnote = None
+    try:
+        _cons_blk = ((meta_facts or {}).get("__recent_events") or {}).get("consensus") or {}
+        _preds = sorted(
+            (p for p in (_cons_blk.get("predictions") or [])
+             if isinstance(p, dict)
+             and isinstance(p.get("eps"), (int, float)) and p.get("eps") > 0
+             and isinstance(p.get("net_profit"), (int, float)) and p.get("net_profit") > 0),
+            key=lambda p: p.get("year") or 0,
+        )
+        if (_preds and price_last > 0 and mkt_cap > 0
+                and not _cons_blk.get("insufficient_coverage", True)):
+            _implied_shares = _preds[0]["net_profit"] / _preds[0]["eps"]
+            _cur_shares = mkt_cap / price_last
+            if _cur_shares > 0 and abs(_implied_shares / _cur_shares - 1) > 0.05:
+                _pe_eps = "、".join(
+                    f"{p.get('year')}E≈{price_last / p['eps']:.1f}×"
+                    for p in _preds[:2])
+                _pe_mcap = "、".join(
+                    f"{p.get('year')}E≈{mkt_cap / p['net_profit']:.1f}×"
+                    for p in _preds[:2])
+                _diff_pct = abs(_implied_shares / _cur_shares - 1) * 100
+                if is_zh:
+                    agents_footnote = (
+                        f"前瞻市盈率口径注：一致预期 EPS 隐含股本约 "
+                        f"{_implied_shares / 1e8:.1f}亿股（归母预测/EPS），与当前"
+                        f"总股本约 {_cur_shares / 1e8:.1f}亿股（市值/现价）相差约 "
+                        f"{_diff_pct:.0f}%。按 现价/EPS 口径前瞻 PE {_pe_eps}；按 "
+                        f"市值/归母 口径 {_pe_mcap}。正文不同分析师引用的两组前瞻"
+                        f"倍数均有据，差异纯系股本基准不同。"
+                    )
+                else:
+                    agents_footnote = (
+                        f"Forward P/E basis note: consensus-EPS-implied shares "
+                        f"({_implied_shares / 1e9:.2f}B) differ from current shares "
+                        f"({_cur_shares / 1e9:.2f}B, mkt cap / price) by "
+                        f"{_diff_pct:.0f}%. Price/EPS basis: {_pe_eps}; "
+                        f"mkt-cap/net-profit basis: {_pe_mcap}. Both sets quoted "
+                        f"in the narrative are sourced; the gap is purely the "
+                        f"share-count basis."
+                    )
+    except Exception:
+        agents_footnote = None
 
     # ── Macro section ──
     # Filled from the FRED-sourced MacroSnapshot when present (US path only —
@@ -2556,6 +2655,9 @@ def build_report_dict(
         "dcf": dcf_block,
 
         "agents": agents_out,
+        # 审计补丁二轮：前瞻 PE 口径脚注（两组有据倍数的基准差异说明），
+        # None = 数据不齐或无分歧，前端隐藏。
+        "agentsFootnote": agents_footnote,
         "critics": critics_out,
         "thesis": thesis,
 

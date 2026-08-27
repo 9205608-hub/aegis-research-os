@@ -136,6 +136,92 @@ def _scale_sensitivity_for_segment(rankings, table, share_ratio: float,
     return scaled_rankings, scaled_table
 
 
+def _recover_editor_fields(prior_html_paths, thesis_core: str):
+    """审计补丁二轮（2026-08-28）：零 LLM replay 的编辑器前页字段回收。
+
+    replay 默认跳过 Report Editor（LLM 步骤），此前 headline / lede /
+    frontPageNumbers 静默走 thesis 兜底：headline 被截成 core_thesis 前
+    106 字符（分句丢失）、lede 与 core_thesis 逐字重复（首尾屏重复 +
+    多渲染一遍占位符）、5 张前页数字卡整体消失——审计官复验抓出的未
+    自报回归。真编辑器产出仍躺在先前渲染的 HTML 里（window.REPORT
+    JSON），从候选文件按序提取三字段回填。
+
+    防呆（关键）：候选 HTML 自己也可能是兜底渲染产物——兜底特征为
+    lede == core_thesis（渲染层 fallback 直接拿 core_thesis 当 lede）。
+    命中该特征的候选弃用，否则会把兜底再固化一层。
+
+    Returns: SimpleNamespace(headline, lede, front_page_numbers, _source)
+    或 None（无可用候选）。纯文件读取，零 LLM。
+    """
+    import json as _json
+    import re as _re
+    from types import SimpleNamespace
+
+    core = (thesis_core or "").strip()
+    for p in prior_html_paths:
+        try:
+            p = Path(p)
+            if not p.exists():
+                continue
+            html = p.read_text(encoding="utf-8")
+            m = _re.search(r"window\.REPORT = ", html)
+            if not m:
+                continue
+            end = html.index(";</script>", m.end())
+            rep = _json.loads(
+                html[m.end():end]
+                .replace("<\\/", "</")
+                .replace("<\\u0021--", "<!--")
+            )
+            headline = str(rep.get("headline") or "").strip()
+            lede = str(rep.get("lede") or "").strip()
+            if not headline or not lede:
+                continue
+            # 兜底特征检测：lede 与 core_thesis 前缀重合 = 该 HTML 是
+            # 无编辑器渲染产物，里面没有编辑器字段可回收。
+            if core and lede[:80] == core[:80]:
+                continue
+            entries = [
+                {"label": str(e.get("label", "") or ""),
+                 "value": str(e.get("value", "") or ""),
+                 "context": str(e.get("context", "") or "")}
+                for e in (rep.get("frontPageNumbers") or [])
+                if isinstance(e, dict) and e.get("label") and e.get("value")
+            ]
+            return SimpleNamespace(
+                headline=headline, lede=lede,
+                front_page_numbers=entries, _source=str(p),
+            )
+        except Exception:
+            continue
+    return None
+
+
+def _h2_anchor_from_verification(ver_rows):
+    """H2 兑现锚推导（与 html_report_v2 监控合约 anchorNote 同源同式）：
+    同年全年一致预期归母 − H1 实际归母。两块 evidence 任一缺失返回 None。
+    Returns (year, consensus_np, h1_actual, implied_h2) 或 None。
+    """
+    h1_ni = h1_year = cons_np = cons_year = None
+    for row in ver_rows or []:
+        if not isinstance(row, dict):
+            continue
+        ev = row.get("evidence") or {}
+        if row.get("check_id") == "cfo_to_net_income":
+            p = str(ev.get("period") or "")
+            if p.endswith("-06-30") and isinstance(ev.get("net_income"), (int, float)):
+                h1_ni = float(ev["net_income"])
+                h1_year = int(p[:4])
+        if row.get("check_id") == "forecast_vs_consensus":
+            if isinstance(ev.get("consensus_net_profit"), (int, float)):
+                cons_np = float(ev["consensus_net_profit"])
+                cons_year = ev.get("year")
+    if (h1_ni and cons_np and h1_year is not None
+            and cons_year == h1_year and cons_np > h1_ni):
+        return (h1_year, cons_np, h1_ni, cons_np - h1_ni)
+    return None
+
+
 def _build_gate_context(state: dict) -> dict:
     """Build the PublishGate context exactly like orchestrator Step 12.
 
@@ -940,6 +1026,57 @@ def main() -> int:
             print(f"  ⚠ Report Editor failed: {e}")
     else:
         print("  [skipped] Report Editor (use --editor to run)")
+
+    # ── 审计补丁二轮（2026-08-28）：编辑器前页字段回收（零 LLM）──
+    # 编辑器跳过时 headline/lede/frontPageNumbers 走 thesis 兜底会造成
+    # 首尾屏重复与前页卡消失（审计官复验抓出的回归）。从先前渲染的
+    # HTML（当前产物 → *_preaudit 对照版）回收真编辑器产出；两个候选
+    # 都不可用时打 warning，不再静默降级。
+    if edited_report is None:
+        _period_str = state["config"].period.lower()
+        _out = Path("demos") / f"{args.ticker.lower()}_{_period_str}_auto_report.html"
+        _core = getattr(state.get("synthesized_thesis"), "core_thesis", "") or ""
+        edited_report = _recover_editor_fields(
+            [_out, _out.with_name(_out.stem + "_preaudit.html")], _core,
+        )
+        if edited_report is not None:
+            # H2 锚口径更正（与监控合约 anchorNote 同源同数）：编辑器产出
+            # 里的 H2 门槛引用（预告区间口径 ¥117 / ¥117~128亿）统一到
+            # 「一致预期 − H1 实际」推导；verification evidence 校验不过
+            # 则一字不动（宁缺勿滥）。
+            _anchor = _h2_anchor_from_verification(
+                (state.get("meta_facts") or {}).get("__verification"))
+            if _anchor is not None:
+                _y, _cons, _h1, _implied = _anchor
+                _imp_s = f"{_implied / 1e8:.1f}"
+                _pairs = [
+                    ("¥117亿门槛", f"¥{_imp_s}亿门槛"),
+                    ("约¥117~128亿",
+                     f"约¥{_imp_s}亿（一致预期{_cons / 1e8:.2f}"
+                     f"−H1实际{_h1 / 1e8:.2f}，锚口径）"),
+                ]
+                _n_anchor = 0
+                for _old, _new in _pairs:
+                    if _old in edited_report.headline:
+                        _n_anchor += edited_report.headline.count(_old)
+                        edited_report.headline = edited_report.headline.replace(_old, _new)
+                    if _old in edited_report.lede:
+                        _n_anchor += edited_report.lede.count(_old)
+                        edited_report.lede = edited_report.lede.replace(_old, _new)
+                    for _e in edited_report.front_page_numbers:
+                        for _k in ("value", "context"):
+                            if _old in _e[_k]:
+                                _n_anchor += _e[_k].count(_old)
+                                _e[_k] = _e[_k].replace(_old, _new)
+                if _n_anchor:
+                    print(f"  [backfill] 前页 H2 门槛统一到锚口径: {_n_anchor} 处 "
+                          f"→ ¥{_imp_s}亿（{_cons / 1e8:.2f}−{_h1 / 1e8:.2f}）")
+            print(f"  [backfill] Editor 前页字段回收: headline {len(edited_report.headline)} 字 / "
+                  f"lede {len(edited_report.lede)} 字 / 数字卡 {len(edited_report.front_page_numbers)} 张 "
+                  f"(source: {edited_report._source})")
+        else:
+            print("  ⚠ Editor 前页字段缺失：--editor 未开且无先前编辑器产出可回收，"
+                  "headline/lede/前页数字卡将走 thesis 兜底（首尾屏会重复、卡片消失）")
 
     # ── Step 5: HTML Report ──
     t5 = time.time()

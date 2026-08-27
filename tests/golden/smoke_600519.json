@@ -117,6 +117,7 @@
         "thesis": "Sector-specific structural risks identified — these must be factored into valuation discount"
       }
     ],
+    "agentsFootnote": null,
     "bias": "warned",
     "catalysts": [
       {
@@ -452,6 +453,7 @@
     "model": "—",
     "monitoring": {
       "anchorNote": null,
+      "incentiveNote": null,
       "kills": [
         {
           "description": "Credit rating downgrade or negative outlook",
@@ -469,6 +471,7 @@
           "threshold": "事件触发：investigation"
         }
       ],
+      "killsNote": "注：本表证伪对象＝报告核心假设——条件触发即论点关键前提断裂；与结论区「何种证据会改变判断」的反向修正条件构成双向监控对。",
       "monitorables": [
         {
           "agent": "会计分析师",

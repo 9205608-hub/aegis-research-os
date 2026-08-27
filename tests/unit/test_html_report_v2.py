@@ -631,3 +631,70 @@ class TestMonitoringContractBlock:
         dec = _decision(kill_criteria=list(self.KILLS))
         rep = _build_cn(decision=dec, meta_facts=meta)
         assert rep["monitoring"]["anchorNote"] is None
+
+
+class TestAuditRoundTwoNotes:
+    """审计补丁二轮（2026-08-28）：kills 表头注记 / 激励口径注 / 前瞻 PE 脚注。"""
+
+    GROWTH_KILL = [{"description": "H2归母净利润兑现失败，增长路径断档",
+                    "threshold": "低于¥100亿", "check_frequency": "quarterly"}]
+    GENERIC_KILL = [{"description": "信用评级下调", "threshold": "评级下调一档",
+                     "check_frequency": "event-driven"}]
+    INCENTIVE_KILL = [{"description": "管理层激励计划考核门槛显著低于市场预期",
+                       "threshold": "考核门槛低于预期", "check_frequency": "event-driven"}]
+
+    def test_kills_note_growth_wording(self):
+        rep = _build_cn(decision=_decision(kill_criteria=list(self.GROWTH_KILL)))
+        note = rep["monitoring"]["killsNote"]
+        assert "增长（多头）假说" in note
+        assert "双向监控对" in note
+
+    def test_kills_note_generic_wording(self):
+        rep = _build_cn(decision=_decision(kill_criteria=list(self.GENERIC_KILL)))
+        note = rep["monitoring"]["killsNote"]
+        assert "核心假设" in note and "增长（多头）假说" not in note
+
+    def test_incentive_note_present_only_with_incentive_entries(self):
+        rep = _build_cn(decision=_decision(kill_criteria=list(self.INCENTIVE_KILL)))
+        assert "待公告核准" in rep["monitoring"]["incentiveNote"]
+        rep2 = _build_cn(decision=_decision(kill_criteria=list(self.GENERIC_KILL)))
+        assert rep2["monitoring"]["incentiveNote"] is None
+
+    @staticmethod
+    def _meta_with_consensus(eps, net_profit):
+        meta = dict(_CN_META)
+        meta["__recent_events"] = {
+            "consensus": {
+                "org_count": 17, "insufficient_coverage": False,
+                "predictions": [
+                    {"year": 2026, "eps": eps, "net_profit": net_profit},
+                ],
+            },
+        }
+        return meta
+
+    def test_agents_footnote_on_share_basis_divergence(self):
+        # 一致预期 EPS 隐含股本 20亿 vs 当前 10亿（市值 1000亿/现价 100）
+        # → 两组前瞻 PE 分别为 100/5=20.0× 与 1000/100=10.0×，脚注调和
+        meta = self._meta_with_consensus(eps=5.0, net_profit=1.0e10)
+        rep = _build_cn(
+            market_data={"current_price": 100.0, "market_cap": 1.0e11},
+            meta_facts=meta,
+        )
+        note = rep["agentsFootnote"]
+        assert note is not None
+        assert "2026E≈20.0×" in note and "2026E≈10.0×" in note
+        assert "股本基准" in note
+
+    def test_agents_footnote_absent_when_bases_agree(self):
+        # 隐含股本 = 当前股本（10亿）→ 无分歧，不出脚注
+        meta = self._meta_with_consensus(eps=10.0, net_profit=1.0e10)
+        rep = _build_cn(
+            market_data={"current_price": 100.0, "market_cap": 1.0e11},
+            meta_facts=meta,
+        )
+        assert rep["agentsFootnote"] is None
+
+    def test_agents_footnote_absent_without_consensus(self):
+        rep = _build_cn()
+        assert rep["agentsFootnote"] is None

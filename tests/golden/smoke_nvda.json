@@ -117,6 +117,7 @@
         "thesis": "Sector is highly cyclical — current-period metrics may not represent mid-cycle earnings power"
       }
     ],
+    "agentsFootnote": null,
     "bias": "warned",
     "catalysts": [
       {
@@ -486,6 +487,7 @@
     "model": "—",
     "monitoring": {
       "anchorNote": null,
+      "incentiveNote": null,
       "kills": [
         {
           "description": "Credit rating downgrade or negative outlook",
@@ -503,6 +505,7 @@
           "threshold": "事件触发：investigation"
         }
       ],
+      "killsNote": "Note: these criteria falsify the report's core assumptions; they pair bidirectionally with the revision conditions under 'What would change my mind'.",
       "monitorables": [
         {
           "agent": "Accounting Analyst",

@@ -1242,6 +1242,11 @@ function AgentsSection() {
           </div>
         ))}
       </div>
+      {REPORT.agentsFootnote && (
+        <div className="mono" style={{marginTop: 18, fontSize: 12, color: "var(--text-3)", background: "var(--bg-elev)", border: "1px solid var(--hairline)", borderRadius: 6, padding: "10px 14px", lineHeight: 1.7}}>
+          {REPORT.agentsFootnote}
+        </div>
+      )}
     </section>
   );
 }
@@ -1357,8 +1362,13 @@ function MonitoringContract() {
                    title={L("监控合约", "Monitoring contract")}
                    subtitle={L("证伪触发（Kill 条件）与监控点 · 决策引擎结构化输出", "Kill criteria & monitorables · structured decision output")}/>
       {m.anchorNote && (
-        <div className="mono" style={{fontSize:12.5, color:"var(--text-2)", background:"var(--accent-bg)", border:"1px solid var(--hairline)", borderRadius:6, padding:"10px 14px", marginBottom:18}}>
+        <div className="mono" style={{fontSize:12.5, color:"var(--text-2)", background:"var(--accent-bg)", border:"1px solid var(--hairline)", borderRadius:6, padding:"10px 14px", marginBottom:12}}>
           {m.anchorNote}
+        </div>
+      )}
+      {m.incentiveNote && (
+        <div className="mono" style={{fontSize:12.5, color:"var(--text-2)", background:"var(--accent-bg)", border:"1px solid var(--hairline)", borderRadius:6, padding:"10px 14px", marginBottom:18}}>
+          {m.incentiveNote}
         </div>
       )}
       {kills.length > 0 && (
@@ -1366,6 +1376,11 @@ function MonitoringContract() {
           <div className="eyebrow" style={{marginBottom:10}}>
             {L(`证伪触发 · Kill 条件（${kills.length}）`, `Kill criteria (${kills.length})`)}
           </div>
+          {m.killsNote && (
+            <div style={{fontSize:12.5, color:"var(--text-3)", margin:"0 0 10px", lineHeight:1.7}}>
+              {m.killsNote}
+            </div>
+          )}
           <div style={{display:"grid", gridTemplateColumns:"minmax(0,1.6fr) minmax(0,1fr) 92px", gap:1, background:"var(--hairline)", border:"1px solid var(--hairline)", borderRadius:8, overflow:"hidden"}}>
             <div style={{...cellStyle, fontFamily:"var(--mono)", fontSize:11, color:"var(--text-3)", letterSpacing:"0.06em"}}>{L("描述", "Description")}</div>
             <div style={{...cellStyle, fontFamily:"var(--mono)", fontSize:11, color:"var(--text-3)", letterSpacing:"0.06em"}}>{L("触发阈值", "Threshold")}</div>
