@@ -141,7 +141,9 @@ aegis/data_contracts/  全部跨层数据契约（pydantic schema，19 个文件
 configs/          sector packs（16 个行业分解包）· watchlist · launchd 模板
 scripts/          replay_from_cache / golden_master / scan_watchlist / defgate_census 等
 server/ + web/    本地 Web 台（FastAPI + SSE 进度流 + 报告浏览）
-demos/            CLI 入口 auto_research_demo.py + 冒烟样例报告
+demos/            CLI 入口 auto_research_demo.py + 冒烟样例报告 +
+                  完整样例研报 300502_fy2025_auto_report.html（真实 LLM run，
+                  经三轮独立对抗审计修复后签核的展示版本）
 tests/            unit / integration / golden / multi_entity，1977 条离线可跑
 ```
 

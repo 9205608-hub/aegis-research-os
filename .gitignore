@@ -35,6 +35,7 @@ aegis_research.db
 
 # Generated HTML reports — large, regenerated from cache
 demos/*.html
+!demos/300502_fy2025_auto_report.html
 demos/*.json
 demos/*_cache/
 demos/*_payload/
